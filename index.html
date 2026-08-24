@@ -27,12 +27,18 @@
 
     <div id="stage">
       <canvas id="game"></canvas>
+      <canvas id="map" class="hidden"></canvas>
+      <div id="controls">
+        <button id="btnMap" type="button" aria-label="Floor map" title="Floor map (M)">▦</button>
+        <button id="btnOut" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
+        <button id="btnIn" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      </div>
     </div>
 
     <footer id="hint">
       <span>Explore the dungeon · step on the <b>&gt;</b> stairs to go deeper</span>
       <span class="sep">·</span>
-      <span>tap to walk · arrows / WASD · diagonals Y U B N</span>
+      <span>tap to walk · pinch to zoom · ▦ for the floor map</span>
     </footer>
   </div>
 

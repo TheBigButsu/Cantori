@@ -18,6 +18,9 @@ follows you, so dungeons can be larger than the screen.
 - **Keyboard:** arrows / WASD, plus 8-direction keys (vi-keys `y u b n` and the
   numpad) for diagonal steps.
 - **Descend:** step onto the `>` stairs.
+- **Zoom:** pinch, the on-screen `+` / `−` buttons, the mouse wheel, or `+` / `−`.
+- **Floor map:** the `▦` button or `M` — shows the whole explored level, with
+  your position and the stairs; tap it (or `Esc`) to close.
 
 The browser console exposes a small `window.cantori` dev helper
 (`descend()`, `regenerate()`, `peek()`) for testing.

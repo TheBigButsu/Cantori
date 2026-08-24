@@ -57,6 +57,7 @@ body{
 }
 
 #stage{
+  position:relative;
   flex:1 1 auto;
   min-height:0;
   display:flex;
@@ -70,6 +71,47 @@ body{
   image-rendering:pixelated;
   border-radius:6px;
 }
+
+/* Full-level floor map overlay */
+#map{
+  position:absolute;
+  left:0;
+  top:0;
+  border-radius:6px;
+  z-index:4;
+}
+#map.hidden{display:none}
+
+/* Floating on-screen controls (zoom + map) */
+#controls{
+  position:absolute;
+  right:14px;
+  bottom:14px;
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+  z-index:6;
+}
+#controls button{
+  width:46px;
+  height:46px;
+  border-radius:9px;
+  background:rgba(27,23,16,.82);
+  color:var(--amber);
+  border:1px solid var(--line);
+  font-family:var(--mono);
+  font-size:22px;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-backdrop-filter:blur(3px);
+  backdrop-filter:blur(3px);
+}
+#controls button:active{background:rgba(48,39,25,.95)}
+#controls button.on{background:var(--amber);color:#14100a;border-color:var(--amber)}
 
 #hint{
   flex:none;
