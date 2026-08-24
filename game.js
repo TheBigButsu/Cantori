@@ -133,6 +133,7 @@
     walkPath = [];
     monsters = [];
     items = [];
+    turns = 0;
 
     const rooms = [];
     for (let tries = 0; tries < 140 && rooms.length < 12; tries++) {
@@ -164,8 +165,7 @@
       spawnBoss(last);
     } else {
       bossActive = false;
-      const c = roomCenter(last);
-      map[c.y][c.x] = STAIRS;
+      placeExit(last);
       spawnMonsters(rooms);
     }
     spawnItems(rooms);
@@ -240,8 +240,9 @@
   }
 
   function spawnMonsters(rooms) {
-    const pool = biome.monsters;
-    const count = Math.min(9, 3 + Math.floor(depth / 2));
+    const pool = eligiblePool();
+    if (!pool.length) return;
+    const count = biome.spawnInitial != null ? biome.spawnInitial : Math.min(9, 3 + Math.floor(depth / 2));
     let guard = 0;
     while (monsters.length < count && guard++ < 300) {
       const ri = rooms.length > 1 ? randInt(1, rooms.length - 1) : 0;
@@ -253,6 +254,22 @@
       if (monsterAt(x, y)) continue;
       monsters.push(makeMonster(pool[randInt(0, pool.length - 1)], x, y));
     }
+  }
+
+  // Place the level exit. "wall" style carves a gap in the border trees at the
+  // edge of the last clearing (a path onward); otherwise it's stairs in a room.
+  function placeExit(room) {
+    const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2);
+    if (biome.exitStyle === "wall") {
+      const edges = [
+        [cx, room.y - 1], [cx, room.y + room.h],
+        [room.x - 1, cy], [room.x + room.w, cy],
+      ];
+      for (const [x, y] of edges) {
+        if (inBounds(x, y) && map[y][x] === WALL) { map[y][x] = STAIRS; return; }
+      }
+    }
+    map[cy][cx] = STAIRS;
   }
 
   // ---- Field of view (recursive shadowcasting) ----------------------------
@@ -324,12 +341,18 @@
   }
 
   // ---- Combat --------------------------------------------------------------
-  function attack(attacker, target) {
+  function attack(attacker, target, bonus) {
+    bonus = bonus || 0;
     if (attacker === player) {
+      bump(player, target.x, target.y);
+      if (target.evasion && Math.random() < target.evasion) {   // dodge
+        floatText(target.x, target.y, "miss", "#cfe6b0");
+        log("The " + monName(target) + " dodges.");
+        return;
+      }
       const watk = player.weapon ? GEAR[player.weapon].atk : 0;
       const dmg = randInt(player.atkMin, player.atkMax) + watk + player.atkBonus;
       target.hp -= dmg;
-      bump(player, target.x, target.y);
       flash(target);
       floatText(target.x, target.y, "-" + dmg, "#ffe08a");
       if (target.hp <= 0) {
@@ -341,7 +364,7 @@
         log("You strike the " + monName(target) + ". (-" + dmg + ")", "hit");
       }
     } else {
-      let dmg = randInt(attacker.atkMin, attacker.atkMax);
+      let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
       const adef = player.armor ? GEAR[player.armor].def : 0;
       dmg = Math.max(1, dmg - adef);
       player.hp -= dmg;
@@ -349,7 +372,8 @@
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
       updateHUD();
-      log("The " + monName(attacker) + " hits you. (-" + dmg + ")", "hurt");
+      const verb = bonus > 0 ? " charges you!" : attacker.ranged ? " strikes from afar." : " hits you.";
+      log("The " + monName(attacker) + verb + " (-" + dmg + ")", "hurt");
       if (player.hp <= 0) die();
     }
   }
@@ -460,6 +484,40 @@
 
   // ---- Monster turns -------------------------------------------------------
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+  const SENSE = 8;          // how far a monster notices the player (needs line of sight)
+  const CHARGE_MAX = 7;
+  const REGEN_EVERY = 40;   // player heals 1 HP every this many turns
+  let turns = 0;
+
+  // Bresenham line of sight: true if no wall lies strictly between the tiles.
+  function lineOfSight(x0, y0, x1, y1) {
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy, x = x0, y = y0;
+    for (let guard = 0; guard < 200; guard++) {
+      if (x === x1 && y === y1) return true;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+      if (x === x1 && y === y1) return true;
+      if (isWall(x, y)) return false;
+    }
+    return false;
+  }
+  // A straight 8-way direction toward the player, or null if not aligned.
+  function straightDir(m) {
+    const dx = player.x - m.x, dy = player.y - m.y;
+    if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) return [Math.sign(dx), Math.sign(dy)];
+    return null;
+  }
+  const canSee = (m) => cheb(m.x, m.y, player.x, player.y) <= SENSE && lineOfSight(m.x, m.y, player.x, player.y);
+  function randomFloor() {
+    for (let t = 0; t < 30; t++) {
+      const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+      if (map[y][x] === FLOOR) return { x, y };
+    }
+    return null;
+  }
 
   function stepMonsterToward(m) {
     let best = null, bestD = Infinity;
@@ -484,20 +542,74 @@
     }
     if (opts.length) { const c = opts[randInt(0, opts.length - 1)]; m.x = c[0]; m.y = c[1]; }
   }
+  function patrolStep(m) {
+    if (!m.patrol || (m.x === m.patrol.x && m.y === m.patrol.y)) m.patrol = randomFloor();
+    if (!m.patrol) return;
+    let best = null, bestD = Infinity;
+    for (const [dx, dy] of DIRS8) {
+      const nx = m.x + dx, ny = m.y + dy;
+      if (!canStep(m.x, m.y, dx, dy)) continue;
+      if (nx === player.x && ny === player.y) continue;
+      if (monsterAt(nx, ny)) continue;
+      const d = cheb(nx, ny, m.patrol.x, m.patrol.y);
+      if (d < bestD) { bestD = d; best = [nx, ny]; }
+    }
+    if (best && bestD < cheb(m.x, m.y, m.patrol.x, m.patrol.y)) { m.x = best[0]; m.y = best[1]; }
+    else m.patrol = randomFloor();       // stuck — pick a new destination
+  }
+  function doCharge(m) {
+    const dir = straightDir(m);
+    let moved = 0;
+    while (cheb(m.x, m.y, player.x, player.y) > 1) {
+      const nx = m.x + dir[0], ny = m.y + dir[1];
+      if (nx === player.x && ny === player.y) break;
+      if (!canStep(m.x, m.y, dir[0], dir[1]) || monsterAt(nx, ny)) break;
+      m.x = nx; m.y = ny; moved++;
+    }
+    if (cheb(m.x, m.y, player.x, player.y) === 1) attack(m, player, moved);  // +1 dmg per tile crossed
+  }
+
+  function eligiblePool() {
+    const f = floorInBiome(depth);
+    return biome.monsters.filter((k) => (VERMIN[k].minFloor || 1) <= f);
+  }
+  function spawnOne() {
+    const pool = eligiblePool();
+    if (!pool.length) return;
+    for (let t = 0; t < 40; t++) {
+      const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+      if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
+      if (cheb(x, y, player.x, player.y) < 6) continue;    // arrive out of sight, at a distance
+      monsters.push(makeMonster(pool[randInt(0, pool.length - 1)], x, y));
+      return;
+    }
+  }
+  function maybeReinforce() {
+    if (bossActive) return;
+    const every = biome.spawnEvery || 0;
+    const cap = biome.spawnCap || 12;
+    if (every > 0 && turns % every === 0 && monsters.length < cap) spawnOne();
+  }
 
   function worldTurn() {
+    turns++;
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
-      if (cheb(m.x, m.y, player.x, player.y) === 1) {
-        attack(m, player);
-        if (dead) return;
-        continue;
+      const d = cheb(m.x, m.y, player.x, player.y);
+      if (d === 1) { attack(m, player); if (dead) return; continue; }
+      if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) {
+        attack(m, player); if (dead) return; continue;
       }
-      const sensed = visible[m.y][m.x] && cheb(m.x, m.y, player.x, player.y) <= FOV_RADIUS;
-      if (sensed && Math.random() >= m.erratic) stepMonsterToward(m);
-      else if (sensed) stepMonsterRandom(m);
-      else if (Math.random() < 0.45) stepMonsterRandom(m);
+      if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) {
+        doCharge(m); if (dead) return; continue;
+      }
+      if (canSee(m)) { if (Math.random() >= m.erratic) stepMonsterToward(m); else stepMonsterRandom(m); }
+      else patrolStep(m);
     }
+    if (turns % REGEN_EVERY === 0 && player.hp < player.maxHp) {
+      player.hp++; updateHUD(); floatText(player.x, player.y, "+1", "#8ed69a");
+    }
+    maybeReinforce();
   }
 
   // ---- Pathfinding (BFS, 8-direction, across explored tiles) --------------
@@ -627,9 +739,10 @@
   const SPRITE_NAMES = Array.from(new Set([
     "player", "dagger", "sword", "mace", "leather", "chain", "plate",
     "potion", "scroll", "stairs",
-    ...Object.keys(DATA.monsters),                      // rat … orange_demon
+    ...Object.keys(DATA.monsters),                      // rat … harpy
     ...Object.keys(DATA.bosses),                        // piper … demigod
     ...DATA.biomes.flatMap((b) => [b.floor, b.wall]),   // per-biome terrain
+    ...DATA.biomes.map((b) => b.exitSprite).filter(Boolean),
   ]));
   const SPRITES = {};
   for (const n of SPRITE_NAMES) {
@@ -743,7 +856,7 @@
             ctx.fillStyle = shade((mx + my) % 2 === 0 ? COL.floorA : COL.floorB, b);
             ctx.fillRect(px, py, tile, tile);
           }
-          if (t === STAIRS) drawImg(SPRITES.stairs, px, py);
+          if (t === STAIRS) drawImg(SPRITES[biome.exitSprite || "stairs"], px, py);
         }
         dim(px, py, 1 - b);                                   // torch falloff / memory
         if (!vis) { ctx.fillStyle = "rgba(70,90,130,0.10)"; ctx.fillRect(px, py, tile, tile); }
@@ -1133,6 +1246,8 @@
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),
     walking: () => walkPath.length,
+    tick: () => { if (!dead) worldTurn(); },
+    turns: () => turns,
   };
 
   // ---- Go ------------------------------------------------------------------

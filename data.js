@@ -33,6 +33,14 @@ window.CANTORI_DATA = {
     snake:  { name: "Snake",  hp: 4, atkMin: 2, atkMax: 3, erratic: 0.0,  glyph: "s", color: "#7ec98a" },
     spider: { name: "Spider", hp: 3, atkMin: 1, atkMax: 3, erratic: 0.2,  glyph: "x", color: "#d68f8f" },
     // Forest
+    //   evasion 0..1 = chance to dodge an attack
+    //   charge  = rushes in a straight line (line of sight), +1 damage per tile crossed
+    //   ranged  = attacks from afar up to `range` tiles (line of sight)
+    //   minFloor = earliest floor *within the biome* (1..5) it may appear
+    wolf:   { name: "Wolf",   hp: 7,  atkMin: 2, atkMax: 4, erratic: 0.05, glyph: "W", color: "#9aa0a8" },
+    bee:    { name: "Bee",    hp: 2,  atkMin: 2, atkMax: 3, erratic: 0.4,  evasion: 0.45, glyph: "e", color: "#e6c34a" },
+    bear:   { name: "Bear",   hp: 12, atkMin: 3, atkMax: 5, erratic: 0.0,  charge: true, minFloor: 3, glyph: "B", color: "#8a6a44" },
+    harpy:  { name: "Harpy",  hp: 5,  atkMin: 2, atkMax: 4, erratic: 0.1,  ranged: true, range: 4, minFloor: 4, glyph: "H", color: "#6b6f7a" },
     jackal: { name: "Jackal", hp: 3, atkMin: 1, atkMax: 2, erratic: 0.1,  glyph: "j", color: "#b79a6b" },
     hornet: { name: "Hornet", hp: 2, atkMin: 2, atkMax: 3, erratic: 0.35, glyph: "h", color: "#e0a13c" },
     // Tomb
@@ -95,10 +103,18 @@ window.CANTORI_DATA = {
        boss:       which boss (key from `bosses`) guards the 5th floor
        bossCount:  how many of that boss appear (default 1)
        final:      true on the last biome — beating its boss WINS the game
+       spawnInitial: how many monsters a fresh floor starts with
+       spawnEvery:   a new monster wanders in every N turns (0 = none)
+       spawnCap:     never exceed this many monsters at once
+       exitStyle:    "wall" carves the exit as a gap in the border (a path);
+                     otherwise it's stairs in a room
+       exitSprite:   sprite drawn on the exit tile (default "stairs")
      ========================================================================== */
   biomes: [
     { key: "forest", name: "Forest",      floor: "forest_floor", wall: "forest_wall",
-      monsters: ["jackal", "hornet", "snake", "spider"], boss: "piper" },
+      monsters: ["rat", "wolf", "bee", "bear", "harpy"], boss: "piper",
+      spawnInitial: 6, spawnEvery: 14, spawnCap: 16,
+      exitStyle: "wall", exitSprite: "exit_forest" },
     { key: "cave",   name: "Cave",        floor: "floor",        wall: "wall",
       monsters: ["rat", "bat", "snake", "spider"],       boss: "golem" },
     { key: "tomb",   name: "Tomb",        floor: "tomb_floor",   wall: "tomb_wall",
