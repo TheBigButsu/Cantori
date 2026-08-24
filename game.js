@@ -42,16 +42,38 @@
   const floorInBiome = (d) => ((d - 1) % 5) + 1;
   const isBossDepth = (d) => floorInBiome(d) === 5;
 
+  // Stats → effects (skill tree to spend points comes later)
+  const UNARMED_MIN = 2, UNARMED_MAX = 3;
+  const HP_BASE = 6, HP_PER_VIT = 2;
+  const strBonus = () => Math.floor(player.stats.STR / 4);   // STR → damage
+  const computeMaxHp = () => HP_BASE + player.stats.VIT * HP_PER_VIT; // VIT → health
+  const playerEvasion = () => Math.min(0.35, player.stats.DEX * 0.015); // DEX → dodge
+  const vitResist = () => Math.floor(player.stats.VIT / 5);  // VIT → damage resist
+
   const player = {
-    x: 0, y: 0, hp: 20, maxHp: 20, atkMin: 3, atkMax: 5,
+    x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
     atkBonus: 0, weapon: null, armor: null, inv: [], gold: 0, xp: 0, level: 1,
+    cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
+    statPoints: 0, evasion: 0,
   };
-  function resetPlayer() {
-    player.hp = 20; player.maxHp = 20; player.atkBonus = 0;
+  function applyClass(key) {
+    const c = DATA.classes[key] || DATA.classes.warrior;
+    player.cls = key;
+    player.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, c.stats || {});
+    player.statPoints = 0; player.atkBonus = 0;
+    player.atkMin = UNARMED_MIN; player.atkMax = UNARMED_MAX;
     player.weapon = null; player.armor = null; player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     identified.clear();
+    player.maxHp = computeMaxHp();
+    player.hp = player.maxHp;
+    player.evasion = playerEvasion();
+    if (c.start) {                             // starting kit, already equipped
+      if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = c.start.weapon;
+      if (c.start.armor && GEAR[c.start.armor]) player.armor = c.start.armor;
+    }
   }
+  function resetPlayer() { applyClass(player.cls || "warrior"); }
   let monsters = [];
   let items = [];
   let walkPath = [];
@@ -242,7 +264,11 @@
   function spawnMonsters(rooms) {
     const pool = eligiblePool();
     if (!pool.length) return;
-    const count = biome.spawnInitial != null ? biome.spawnInitial : Math.min(9, 3 + Math.floor(depth / 2));
+    const si = biome.spawnInitial;
+    let count;
+    if (Array.isArray(si)) { const i = floorInBiome(depth) - 1; count = si[i] != null ? si[i] : si[si.length - 1]; }
+    else if (si != null) count = si;
+    else count = Math.min(9, 3 + Math.floor(depth / 2));
     let guard = 0;
     while (monsters.length < count && guard++ < 300) {
       const ri = rooms.length > 1 ? randInt(1, rooms.length - 1) : 0;
@@ -351,7 +377,7 @@
         return;
       }
       const watk = player.weapon ? GEAR[player.weapon].atk : 0;
-      const dmg = randInt(player.atkMin, player.atkMax) + watk + player.atkBonus;
+      const dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus;
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, "-" + dmg, "#ffe08a");
@@ -364,11 +390,16 @@
         log("You strike the " + monName(target) + ". (-" + dmg + ")", "hit");
       }
     } else {
+      bump(attacker, player.x, player.y);
+      if (player.evasion && Math.random() < player.evasion) {   // player dodge (DEX)
+        floatText(player.x, player.y, "miss", "#cfe6b0");
+        log("You dodge the " + monName(attacker) + ".");
+        return;
+      }
       let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
       const adef = player.armor ? GEAR[player.armor].def : 0;
-      dmg = Math.max(1, dmg - adef);
+      dmg = Math.max(1, dmg - adef - vitResist());
       player.hp -= dmg;
-      bump(attacker, player.x, player.y);
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
       updateHUD();
@@ -383,7 +414,8 @@
     if (biome.final) { win(); return; }
     map[y][x] = STAIRS;             // the way down opens where the boss fell
     explored[y][x] = true;
-    log("The " + bossName + " falls — the way down opens.", "hit");
+    player.statPoints += 3;         // boss reward: 3 points to spend later
+    log("The " + bossName + " falls — the way opens. (+3 stat points)", "hit");
   }
 
   function win() {
@@ -399,10 +431,15 @@
     while (player.xp >= threshold) {
       player.xp -= threshold;
       player.level++;
-      player.maxHp += 4;
-      player.hp = Math.min(player.maxHp, player.hp + 4);
-      player.atkBonus += 1;
-      log("You grow stronger — Level " + player.level + "!", "hit");
+      const cls = DATA.classes[player.cls] || DATA.classes.warrior;
+      player.stats[cls.main] += 2;             // main +2
+      player.stats[cls.secondary] += 1;        // secondary +1
+      player.statPoints += 1;                  // free point (spend in the tree)
+      const nm = computeMaxHp();
+      player.hp = Math.min(nm, player.hp + (nm - player.maxHp) + 2);
+      player.maxHp = nm;
+      player.evasion = playerEvasion();
+      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point", "hit");
       threshold = player.level * 8;
     }
     updateHUD();
@@ -1003,13 +1040,19 @@
   }
   function playerAtk() {
     const w = player.weapon ? GEAR[player.weapon].atk : 0;
-    return (player.atkMin + player.atkBonus + w) + "–" + (player.atkMax + player.atkBonus + w);
+    const b = strBonus() + player.atkBonus + w;
+    return (player.atkMin + b) + "–" + (player.atkMax + b);
   }
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
-    const df = player.armor ? GEAR[player.armor].def : 0;
-    document.getElementById("invStats").textContent =
-      "Level " + player.level + "  ·  Attack " + playerAtk() + "  ·  Defense " + df;
+    const df = (player.armor ? GEAR[player.armor].def : 0) + vitResist();
+    const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
+    const s = player.stats;
+    const statLine = `STR ${s.STR} · VIT ${s.VIT} · DEX ${s.DEX} · INT ${s.INT} · RES ${s.RES} · LCK ${s.LCK}`;
+    const pts = player.statPoints > 0 ? `  ·  <b style="color:#f0c14b">${player.statPoints} pts</b>` : "";
+    document.getElementById("invStats").innerHTML =
+      `${cname} · Lv ${player.level} · Atk ${playerAtk()} · Def ${df}` +
+      `<br><span style="opacity:.85">${statLine}${pts}</span>`;
     document.getElementById("invEquip").textContent =
       "Wielding: " + (player.weapon ? GEAR[player.weapon].name : "—") +
       "   ·   Wearing: " + (player.armor ? GEAR[player.armor].name : "—");
@@ -1079,8 +1122,8 @@
       player.hp = Math.min(player.maxHp, player.hp + amt);
       log("You drink a Potion of Healing. (+" + amt + ")", "hit");
     } else if (effect === "strength") {
-      player.atkBonus += 1;
-      log("Strength surges through your arms.", "hit");
+      player.stats.STR += 1;
+      log("Strength surges through your arms. (+1 STR)", "hit");
     } else if (effect === "poison") {
       const amt = randInt(4, 8);
       player.hp -= amt;
@@ -1231,7 +1274,8 @@
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
       return {
         depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
-        atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
+        cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
+        atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         inv: player.inv.map((i) => i.key), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
@@ -1254,6 +1298,7 @@
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);
   resize();
+  resetPlayer();
   generateLevel();
   updateHUD();
   requestAnimationFrame(frame);

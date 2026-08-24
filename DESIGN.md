@@ -107,3 +107,17 @@ Guiding rule: unlocks **broaden choice**, they don't just crank numbers.
 7. **Spells / wands & enchantments** — the INT/RES side of the fantasy.
 
 Steps can reorder; save first is the main dependency.
+
+## Implemented so far (current v1 numbers — tune freely)
+
+- **Warrior** is the only class (single-class focus). Base stats STR 8 / VIT 7 /
+  DEX 4 / INT 3 / RES 3 / LCK 4; starts wielding a Sword and Leather Armor.
+- **Derived effects wired:** STR → +⌊STR/4⌋ damage; VIT → max HP (6 + VIT×2) and
+  −⌊VIT/5⌋ damage taken; DEX → dodge chance (min(35%, DEX×1.5%)). INT / RES / LCK
+  are tracked but not yet used (await spells / enchants / crits).
+- **Leveling:** +2 main stat, +1 secondary, +1 banked point per level; +3 banked
+  points per boss. Banked points accumulate for the **skill tree (next)**.
+- Strength potion now grants +1 STR (permanent).
+
+_Still TODO for the class system: the **skill tree** to spend banked points, and
+selecting among multiple classes at run start._

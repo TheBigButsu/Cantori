@@ -113,7 +113,7 @@ window.CANTORI_DATA = {
   biomes: [
     { key: "forest", name: "Forest",      floor: "forest_floor", wall: "forest_wall",
       monsters: ["rat", "wolf", "bee", "bear", "harpy"], boss: "piper",
-      spawnInitial: 6, spawnEvery: 14, spawnCap: 16,
+      spawnInitial: [3, 5, 5, 5], spawnEvery: 14, spawnCap: 16,   // per floor 1..4 (floor 5 is the boss)
       exitStyle: "wall", exitSprite: "exit_forest" },
     { key: "cave",   name: "Cave",        floor: "floor",        wall: "wall",
       monsters: ["rat", "bat", "snake", "spider"],       boss: "golem" },
@@ -147,6 +147,7 @@ window.CANTORI_DATA = {
      ========================================================================== */
   classes: {
     warrior: { name: "Warrior", main: "STR", secondary: "VIT", unlock: "start",
+               stats: { STR: 8, VIT: 7, DEX: 4, INT: 3, RES: 3, LCK: 4 },
                start: { weapon: "sword", armor: "leather" },
                blurb: "Front-line brawler. Hits hard, endures more." },
     duelist: { name: "Duelist", main: "DEX", secondary: "LCK", unlock: "start",
