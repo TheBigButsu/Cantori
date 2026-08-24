@@ -70,6 +70,7 @@ body{
   /* crisp pixel edges when the board is scaled */
   image-rendering:pixelated;
   border-radius:6px;
+  touch-action:none;   /* we handle taps & pinch ourselves (not inherited) */
 }
 
 /* Full-level floor map overlay */
@@ -79,8 +80,9 @@ body{
   top:0;
   border-radius:6px;
   z-index:4;
+  touch-action:none;
 }
-#map.hidden{display:none}
+#map[hidden]{display:none}
 
 /* Floating on-screen controls (zoom + map) */
 #controls{

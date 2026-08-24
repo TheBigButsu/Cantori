@@ -417,7 +417,7 @@
 
   function toggleMap(force) {
     mapOpen = force === undefined ? !mapOpen : force;
-    mapCanvas.classList.toggle("hidden", !mapOpen);
+    mapCanvas.hidden = !mapOpen;
     document.getElementById("btnMap").classList.toggle("on", mapOpen);
   }
 
