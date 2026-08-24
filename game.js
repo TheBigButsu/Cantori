@@ -57,27 +57,16 @@
     return g;
   }
 
-  // ---- Monsters: classic dungeon vermin -----------------------------------
-  const VERMIN = {
-    rat:    { glyph: "r", color: "#c9b48f", hp: 3, atkMin: 1, atkMax: 2, erratic: 0.0 },
-    bat:    { glyph: "b", color: "#b491d6", hp: 2, atkMin: 1, atkMax: 2, erratic: 0.55 },
-    snake:  { glyph: "s", color: "#7ec98a", hp: 4, atkMin: 2, atkMax: 3, erratic: 0.0 },
-    spider: { glyph: "x", color: "#d68f8f", hp: 3, atkMin: 1, atkMax: 3, erratic: 0.2 },
-  };
+  // ---- Content data (edit game content in data.js) ------------------------
+  const DATA = window.CANTORI_DATA;
+  const VERMIN = DATA.monsters;
   const VERMIN_KEYS = Object.keys(VERMIN);
   const monsterAt = (x, y) => monsters.find((m) => m.hp > 0 && m.x === x && m.y === y) || null;
   const anyMonsterVisible = () =>
     monsters.some((m) => m.hp > 0 && inBounds(m.x, m.y) && visible[m.y][m.x]);
 
-  // ---- Loot: weapons & armor ----------------------------------------------
-  const GEAR = {
-    dagger:  { cat: "weapon", name: "Dagger", atk: 1, glyph: "/", color: "#cfc3a0", weight: 5 },
-    sword:   { cat: "weapon", name: "Sword",  atk: 3, glyph: "/", color: "#d8e0ec", weight: 2 },
-    mace:    { cat: "weapon", name: "Mace",   atk: 5, glyph: "/", color: "#c8a878", weight: 1 },
-    leather: { cat: "armor",  name: "Leather Armor", def: 1, glyph: "[", color: "#b98a5a", weight: 4 },
-    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, glyph: "[", color: "#b9c0c8", weight: 2 },
-    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, glyph: "[", color: "#dfe6f0", weight: 1 },
-  };
+  // ---- Loot: weapons & armor (defined in data.js) -------------------------
+  const GEAR = DATA.gear;
   const GEAR_KEYS = Object.keys(GEAR);
   const itemAt = (x, y) => items.find((it) => it.x === x && it.y === y) || null;
 
@@ -89,14 +78,8 @@
     return GEAR_KEYS[0];
   }
 
-  // ---- Loot: potions & scrolls (identified by use) ------------------------
-  const CONSUM = {
-    heal:     { cat: "potion", name: "Potion of Healing",  effect: "heal",     glyph: "!", color: "#e0685a", weight: 5 },
-    strength: { cat: "potion", name: "Potion of Strength", effect: "strength", glyph: "!", color: "#f0a838", weight: 2 },
-    poison:   { cat: "potion", name: "Potion of Poison",   effect: "poison",   glyph: "!", color: "#7ec98a", weight: 2 },
-    mapping:  { cat: "scroll", name: "Scroll of Magic Mapping", effect: "map",      glyph: "?", color: "#cfe6b0", weight: 3 },
-    teleport: { cat: "scroll", name: "Scroll of Teleport",      effect: "teleport", glyph: "?", color: "#b491d6", weight: 2 },
-  };
+  // ---- Loot: potions & scrolls, identified by use (defined in data.js) ----
+  const CONSUM = DATA.consumables;
   const CONSUM_KEYS = Object.keys(CONSUM);
   const identified = new Set();
   const defOf = (key) => GEAR[key] || CONSUM[key];
