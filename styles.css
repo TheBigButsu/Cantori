@@ -85,3 +85,4 @@ body{
   border-top:1px solid var(--line);
 }
 #hint .sep{opacity:.5}
+#hint b{color:var(--amber);font-weight:700}

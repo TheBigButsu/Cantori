@@ -4,17 +4,23 @@ A permadeath roguelike dungeon crawler — in the spirit of Shattered Pixel
 Dungeon — built as a web game so it plays on a phone (iPhone included) with no
 App Store, and eventually offline.
 
-## Where we are: Depth 0 — "First Light"
+## Where we are: Depth 1 — "The Descent"
 
-The foundation. A single torch-lit stone room you can walk around, with a light
-radius that previews the fog-of-war coming next. It proves the whole pipeline:
-a tiled dungeon, a character, touch + keyboard controls, on a real phone.
+A real dungeon. Each level is procedurally generated (rooms joined by
+corridors), lit by a torch with true fog of war — you see only what's in line
+of sight, places you've been stay dimly remembered, and the rest is dark. Find
+the `>` stairs and step on them to descend to a fresh, deeper level. A camera
+follows you, so dungeons can be larger than the screen.
 
 **Controls**
-- **Phone:** tap anywhere — the character finds a route and walks there,
-  around pillars, diagonals included.
+- **Phone:** tap an explored tile — the character finds a route and walks there,
+  around walls, diagonals included.
 - **Keyboard:** arrows / WASD, plus 8-direction keys (vi-keys `y u b n` and the
   numpad) for diagonal steps.
+- **Descend:** step onto the `>` stairs.
+
+The browser console exposes a small `window.cantori` dev helper
+(`descend()`, `regenerate()`, `peek()`) for testing.
 
 ## Play it locally
 
@@ -41,8 +47,8 @@ tools/make_icons.py   regenerates the icons, no dependencies
 
 Built one "depth" at a time, playable at the end of each:
 
-- **0 · First Light** — walk around a room _(you are here)_
-- **1 · The Descent** — random dungeons, corridors, fog of war, stairs down
+- **0 · First Light** — walk around a room _(done)_
+- **1 · The Descent** — random dungeons, corridors, fog of war, stairs down _(you are here)_
 - **2 · Teeth in the Dark** — monsters, combat, health, permadeath
 - **3 · Spoils** — items, inventory, weapons, potions, scrolls
 - **4 · The Long Way Down** — many monsters, scaling difficulty, a win
