@@ -1,0 +1,10 @@
+<!doctype html><meta charset=utf-8><style>
+body{background:#14100a;margin:0;font-family:monospace;color:#ece2cf}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:14px;padding:20px}
+.c{text-align:center}
+img{width:64px;height:64px;object-fit:contain;image-rendering:pixelated;background:#241c12;border-radius:6px}
+span{display:block;font-size:10px;margin-top:5px;color:#a2947a}
+</style><div class="grid" id="g"></div><script>
+const names=['piper','golem','cultist','mummy','demigod','jackal','hornet','wraith','phantom','ghoul','imp','ufetubus','orange_demon','forest_floor','forest_wall','tomb_floor','tomb_wall','arcane_floor','arcane_wall','space_floor','space_wall'];
+g.innerHTML=names.map(n=>`<div class=c><img src="./assets/tiles/${n}.png"><span>${n}</span></div>`).join('');
+</script>

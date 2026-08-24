@@ -257,8 +257,8 @@ body{
   letter-spacing:.08em;
 }
 
-/* Death screen */
-#gameover{
+/* Death / victory screens */
+#gameover, #win{
   position:fixed;
   inset:0;
   z-index:20;
@@ -269,7 +269,8 @@ body{
   -webkit-backdrop-filter:blur(3px);
   backdrop-filter:blur(3px);
 }
-#gameover[hidden]{display:none}
+#gameover[hidden], #win[hidden]{display:none}
+.go-title.victory{color:#f0c14b}
 .go-card{text-align:center;padding:28px}
 .go-title{
   font-size:36px;

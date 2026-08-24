@@ -4,7 +4,23 @@ A permadeath roguelike dungeon crawler — in the spirit of Shattered Pixel
 Dungeon — built as a web game so it plays on a phone (iPhone included) with no
 App Store, and eventually offline.
 
-## Where we are: Milestone 3 — "Spoils"
+## Where we are: Milestone 4 — "The Long Way Down"
+
+The full journey. The dungeon is **five biomes of five floors each** (25 floors,
+then a win):
+
+1. **Forest** — grass & trees · boss: **The Pied Piper**
+2. **Cave** — brick & pebble · boss: **Stone Golem**
+3. **Tomb** — tiled floors, stone brick · boss: **three Cultists**
+4. **Arcane Tomb** — runed marble · boss: **The Mummy**
+5. **The Beyond** — otherworldly · boss: **The Demi-God**
+
+Each biome has its own tileset and monster set. The 5th floor of each is sealed
+by a boss — beat it and the way down opens where it fell. Slay the Demi-God on
+floor 25 and you **win**. (Bosses are big, hard fights for now; special
+behaviours come later.) Content lives in `data.js` → `biomes` / `bosses`.
+
+## Earlier: Milestone 3 — "Spoils"
 
 Loot and growth. Levels are strewn with items — weapons, armor, gold, and
 mystery potions and scrolls. Walk over something to pick it up; open your **pack**
@@ -76,6 +92,8 @@ Built one "depth" at a time, playable at the end of each:
 - **0 · First Light** — walk around a room _(done)_
 - **1 · The Descent** — random dungeons, corridors, fog of war, stairs down _(done)_
 - **2 · Teeth in the Dark** — monsters, combat, health, permadeath _(done)_
-- **3 · Spoils** — items, inventory, weapons, potions, scrolls _(you are here)_
-- **4 · The Long Way Down** — many monsters, scaling difficulty, a win
+- **3 · Spoils** — items, inventory, weapons, potions, scrolls _(done)_
+- **4 · The Long Way Down** — biomes, bosses, a winnable run _(you are here)_
 - **5 · Made for the Pocket** — app icon, sound, refined touch, full offline play
+
+See `DESIGN.md` for the rogue-lite direction (stats, classes, gods, the town).

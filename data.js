@@ -27,10 +27,22 @@ window.CANTORI_DATA = {
      randomly it moves, glyph/color = fallback if the sprite is missing)
      ========================================================================== */
   monsters: {
+    // Cave / early vermin
     rat:    { name: "Rat",    hp: 3, atkMin: 1, atkMax: 2, erratic: 0.0,  glyph: "r", color: "#c9b48f" },
     bat:    { name: "Bat",    hp: 2, atkMin: 1, atkMax: 2, erratic: 0.55, glyph: "b", color: "#b491d6" },
     snake:  { name: "Snake",  hp: 4, atkMin: 2, atkMax: 3, erratic: 0.0,  glyph: "s", color: "#7ec98a" },
     spider: { name: "Spider", hp: 3, atkMin: 1, atkMax: 3, erratic: 0.2,  glyph: "x", color: "#d68f8f" },
+    // Forest
+    jackal: { name: "Jackal", hp: 3, atkMin: 1, atkMax: 2, erratic: 0.1,  glyph: "j", color: "#b79a6b" },
+    hornet: { name: "Hornet", hp: 2, atkMin: 2, atkMax: 3, erratic: 0.35, glyph: "h", color: "#e0a13c" },
+    // Tomb
+    ghoul:   { name: "Ghoul",   hp: 7, atkMin: 3, atkMax: 5, erratic: 0.0,  glyph: "G", color: "#9fb07a" },
+    wraith:  { name: "Wraith",  hp: 6, atkMin: 3, atkMax: 4, erratic: 0.2,  glyph: "W", color: "#8fa0c0" },
+    phantom: { name: "Phantom", hp: 5, atkMin: 2, atkMax: 4, erratic: 0.45, glyph: "P", color: "#7ee0d0" },
+    // Arcane / Beyond
+    imp:          { name: "Imp",          hp: 5,  atkMin: 3, atkMax: 5, erratic: 0.4, glyph: "i", color: "#c0c0e0" },
+    ufetubus:     { name: "Ufetubus",     hp: 4,  atkMin: 2, atkMax: 4, erratic: 0.5, glyph: "u", color: "#6fb0d0" },
+    orange_demon: { name: "Orange Demon", hp: 10, atkMin: 4, atkMax: 7, erratic: 0.2, glyph: "d", color: "#e07030" },
   },
 
   /* ==========================================================================
@@ -63,6 +75,39 @@ window.CANTORI_DATA = {
     mapping:  { cat: "scroll", name: "Scroll of Magic Mapping", effect: "map",      weight: 3, glyph: "?", color: "#cfe6b0" },
     teleport: { cat: "scroll", name: "Scroll of Teleport",      effect: "teleport", weight: 2, glyph: "?", color: "#b491d6" },
   },
+
+  /* ==========================================================================
+     BOSSES — one waits on the 5th floor of each biome. Beat it to descend.
+     (Special behaviours come later; for now they're big, hard fights.)
+     ========================================================================== */
+  bosses: {
+    piper:   { name: "The Pied Piper", hp: 30,  atkMin: 3, atkMax: 5 },
+    golem:   { name: "Stone Golem",    hp: 55,  atkMin: 5, atkMax: 8 },
+    cultist: { name: "Cultist",        hp: 20,  atkMin: 4, atkMax: 6 },
+    mummy:   { name: "The Mummy",      hp: 90,  atkMin: 7, atkMax: 10 },
+    demigod: { name: "The Demi-God",   hp: 150, atkMin: 9, atkMax: 13 },
+  },
+
+  /* ==========================================================================
+     BIOMES — the dungeon is 5 biomes of 5 floors each (25 floors, then a win).
+       floor/wall: which tile sprites the biome uses
+       monsters:   which creatures spawn here (keys from `monsters`)
+       boss:       which boss (key from `bosses`) guards the 5th floor
+       bossCount:  how many of that boss appear (default 1)
+       final:      true on the last biome — beating its boss WINS the game
+     ========================================================================== */
+  biomes: [
+    { key: "forest", name: "Forest",      floor: "forest_floor", wall: "forest_wall",
+      monsters: ["jackal", "hornet", "snake", "spider"], boss: "piper" },
+    { key: "cave",   name: "Cave",        floor: "floor",        wall: "wall",
+      monsters: ["rat", "bat", "snake", "spider"],       boss: "golem" },
+    { key: "tomb",   name: "Tomb",        floor: "tomb_floor",   wall: "tomb_wall",
+      monsters: ["ghoul", "wraith", "phantom"],          boss: "cultist", bossCount: 3 },
+    { key: "arcane", name: "Arcane Tomb", floor: "arcane_floor", wall: "arcane_wall",
+      monsters: ["wraith", "phantom", "imp"],            boss: "mummy" },
+    { key: "space",  name: "The Beyond",  floor: "space_floor",  wall: "space_wall",
+      monsters: ["ufetubus", "imp", "orange_demon"],     boss: "demigod", final: true },
+  ],
 
   /* ==========================================================================
      STATS   [DESIGN — not wired in yet]

@@ -33,6 +33,15 @@
   let depth = 1;
   let dead = false;
 
+  // ---- Biomes: 5 floors each, boss on the 5th ------------------------------
+  let biomeIndex = 0;
+  let biome = null;
+  let bossActive = false;      // a boss is present and the exit is sealed
+  let bossName = "";
+  const biomeOf = (d) => Math.min(DATA.biomes.length - 1, Math.floor((d - 1) / 5));
+  const floorInBiome = (d) => ((d - 1) % 5) + 1;
+  const isBossDepth = (d) => floorInBiome(d) === 5;
+
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: 3, atkMax: 5,
     atkBonus: 0, weapon: null, armor: null, inv: [], gold: 0, xp: 0, level: 1,
@@ -141,15 +150,62 @@
       rooms.push(room);
     }
 
+    biomeIndex = biomeOf(depth);
+    biome = DATA.biomes[biomeIndex];
+
     const start = roomCenter(rooms[0]);
     player.x = start.x;
     player.y = start.y;
-    const last = roomCenter(rooms[rooms.length - 1]);
-    map[last.y][last.x] = STAIRS;
+    const last = rooms[rooms.length - 1];
 
-    spawnMonsters(rooms);
+    if (isBossDepth(depth)) {
+      // The 5th floor: a boss guards the last room; the exit opens on its defeat.
+      bossActive = true;
+      spawnBoss(last);
+    } else {
+      bossActive = false;
+      const c = roomCenter(last);
+      map[c.y][c.x] = STAIRS;
+      spawnMonsters(rooms);
+    }
     spawnItems(rooms);
     computeFOV();
+    setDepthLabel();
+  }
+
+  // ---- Monster & boss factories -------------------------------------------
+  function makeMonster(type, x, y) {
+    const t = VERMIN[type];
+    return {
+      x, y, type, boss: false, glyph: t.glyph, color: t.color,
+      hp: t.hp, maxHp: t.hp, atkMin: t.atkMin, atkMax: t.atkMax, erratic: t.erratic,
+    };
+  }
+  function makeBoss(key, x, y) {
+    const b = DATA.bosses[key];
+    return {
+      x, y, type: key, boss: true, name: b.name, glyph: "@", color: "#f0a838",
+      hp: b.hp, maxHp: b.hp, atkMin: b.atkMin, atkMax: b.atkMax, erratic: 0.0,
+    };
+  }
+  function monName(m) {
+    return m.boss ? m.name : (VERMIN[m.type] ? VERMIN[m.type].name : m.type);
+  }
+  function spawnBoss(room) {
+    const key = biome.boss;
+    bossName = DATA.bosses[key].name;
+    const n = biome.bossCount || 1;
+    const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2);
+    const spots = [[cx, cy], [cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1], [cx - 1, cy - 1], [cx + 1, cy + 1]];
+    let placed = 0;
+    for (const [x, y] of spots) {
+      if (placed >= n) break;
+      if (map[y] && map[y][x] === FLOOR && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
+        monsters.push(makeBoss(key, x, y));
+        placed++;
+      }
+    }
+    if (placed === 0) monsters.push(makeBoss(key, cx, cy));
   }
 
   function freeFloorSpot(rooms) {
@@ -182,6 +238,7 @@
   }
 
   function spawnMonsters(rooms) {
+    const pool = biome.monsters;
     const count = Math.min(9, 3 + Math.floor(depth / 2));
     let guard = 0;
     while (monsters.length < count && guard++ < 300) {
@@ -192,12 +249,7 @@
       if (map[y][x] !== FLOOR) continue;
       if (x === player.x && y === player.y) continue;
       if (monsterAt(x, y)) continue;
-      const type = VERMIN_KEYS[randInt(0, VERMIN_KEYS.length - 1)];
-      const t = VERMIN[type];
-      monsters.push({
-        x, y, type, glyph: t.glyph, color: t.color,
-        hp: t.hp, maxHp: t.hp, atkMin: t.atkMin, atkMax: t.atkMax, erratic: t.erratic,
-      });
+      monsters.push(makeMonster(pool[randInt(0, pool.length - 1)], x, y));
     }
   }
 
@@ -264,7 +316,9 @@
   }
   function setDepthLabel() {
     const el = document.getElementById("depthLabel");
-    if (el) el.innerHTML = "Depth&nbsp;" + depth;
+    if (!el) return;
+    const b = DATA.biomes[biomeOf(depth)];
+    el.textContent = b.name + "  " + floorInBiome(depth) + "/5" + (isBossDepth(depth) ? "  ⚔" : "");
   }
 
   // ---- Combat --------------------------------------------------------------
@@ -275,10 +329,11 @@
       target.hp -= dmg;
       if (target.hp <= 0) {
         monsters = monsters.filter((m) => m !== target);
-        log("You strike the " + target.type + " — it dies. (-" + dmg + ")", "hit");
-        gainXP(target);
+        log("You strike the " + monName(target) + " — it dies. (-" + dmg + ")", "hit");
+        gainXP(target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp);
+        if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
       } else {
-        log("You strike the " + target.type + ". (-" + dmg + ")", "hit");
+        log("You strike the " + monName(target) + ". (-" + dmg + ")", "hit");
       }
     } else {
       let dmg = randInt(attacker.atkMin, attacker.atkMax);
@@ -286,13 +341,28 @@
       dmg = Math.max(1, dmg - adef);
       player.hp -= dmg;
       updateHUD();
-      log("The " + attacker.type + " bites you. (-" + dmg + ")", "hurt");
+      log("The " + monName(attacker) + " hits you. (-" + dmg + ")", "hurt");
       if (player.hp <= 0) die();
     }
   }
 
-  function gainXP(m) {
-    player.xp += m.maxHp;
+  function onBossDefeated(x, y) {
+    bossActive = false;
+    if (biome.final) { win(); return; }
+    map[y][x] = STAIRS;             // the way down opens where the boss fell
+    explored[y][x] = true;
+    log("The " + bossName + " falls — the way down opens.", "hit");
+  }
+
+  function win() {
+    dead = true;
+    walkPath = [];
+    const el = document.getElementById("win");
+    if (el) el.hidden = false;
+  }
+
+  function gainXP(amount) {
+    player.xp += amount;
     let threshold = player.level * 8;
     while (player.xp >= threshold) {
       player.xp -= threshold;
@@ -374,6 +444,8 @@
     updateHUD();
     const over = document.getElementById("gameover");
     if (over) over.hidden = true;
+    const winEl = document.getElementById("win");
+    if (winEl) winEl.hidden = true;
     generateLevel();
     log("A new adventurer enters the dungeon.");
   }
@@ -542,11 +614,13 @@
   }
 
   // ---- Sprites (CC0 Dungeon Crawl Stone Soup tiles) -----------------------
-  const SPRITE_NAMES = [
-    "player", "rat", "bat", "snake", "spider",
-    "dagger", "sword", "mace", "leather", "chain", "plate",
-    "potion", "scroll", "stairs", "floor", "wall",
-  ];
+  const SPRITE_NAMES = Array.from(new Set([
+    "player", "dagger", "sword", "mace", "leather", "chain", "plate",
+    "potion", "scroll", "stairs",
+    ...Object.keys(DATA.monsters),                      // rat … orange_demon
+    ...Object.keys(DATA.bosses),                        // piper … demigod
+    ...DATA.biomes.flatMap((b) => [b.floor, b.wall]),   // per-biome terrain
+  ]));
   const SPRITES = {};
   for (const n of SPRITE_NAMES) {
     const img = new Image();
@@ -579,6 +653,15 @@
     if (d.cat === "weapon" || d.cat === "armor") return SPRITES[key];
     return d.cat === "potion" ? SPRITES.potion : SPRITES.scroll;
   }
+  // Draw a sprite preserving its aspect, bottom-anchored in the tile (bosses
+  // can be taller than one tile and scale > 1).
+  function drawSpriteFit(img, px, py, scale) {
+    if (!ready(img)) return false;
+    const h = tile * scale;
+    const w = h * (img.naturalWidth / img.naturalHeight);
+    ctx.drawImage(img, px + (tile - w) / 2, (py + tile) - h, w, h);
+    return true;
+  }
 
   // ---- Draw: dungeon view --------------------------------------------------
   function draw() {
@@ -597,9 +680,9 @@
         const px = sx * tile, py = sy * tile;
         const t = map[my][mx];
         if (t === WALL) {
-          if (!drawImg(SPRITES.wall, px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
+          if (!drawImg(SPRITES[biome.wall], px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
         } else {
-          if (!drawImg(SPRITES.floor, px, py)) {
+          if (!drawImg(SPRITES[biome.floor], px, py)) {
             ctx.fillStyle = shade((mx + my) % 2 === 0 ? COL.floorA : COL.floorB, b);
             ctx.fillRect(px, py, tile, tile);
           }
@@ -628,13 +711,13 @@
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
     }
 
-    // monsters
+    // monsters (bosses render larger)
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
       const px = (m.x - camX) * tile, py = (m.y - camY) * tile;
-      drawImg(SPRITES[m.type], px, py);
+      drawSpriteFit(SPRITES[m.type], px, py, m.boss ? 1.5 : 1);
       dim(px, py, (1 - litBright(m.x, m.y)) * 0.8);
-      if (m.hp < m.maxHp) {
+      if (!m.boss && m.hp < m.maxHp) {
         const bw = tile * 0.7, bh = Math.max(2, tile * 0.09);
         const bx = px + (tile - bw) / 2, by = py + tile * 0.06;
         ctx.fillStyle = "rgba(0,0,0,0.6)";
@@ -659,6 +742,33 @@
       ctx.textBaseline = "middle";
       ctx.fillText("@", cx, cy);
     }
+
+    // boss health banner
+    const bosses = monsters.filter((m) => m.boss && inBounds(m.x, m.y) && visible[m.y][m.x]);
+    if (bosses.length) drawBossBar(bosses);
+  }
+
+  function drawBossBar(bosses) {
+    const cur = bosses.reduce((s, m) => s + Math.max(0, m.hp), 0);
+    const max = bosses.reduce((s, m) => s + m.maxHp, 0);
+    const w = viewCols * tile;
+    const bw = Math.min(w - 24, 360);
+    const bx = (w - bw) / 2, by = 14, bh = 12;
+    ctx.fillStyle = "rgba(6,4,2,0.72)";
+    ctx.fillRect(bx - 10, by - 10, bw + 20, bh + 34);
+    ctx.fillStyle = "#ece2cf";
+    ctx.font = `700 12px ${bodyFont()}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const label = bosses.length > 1 ? bossName + " ×" + bosses.length : bossName;
+    ctx.fillText(label.toUpperCase(), bx + bw / 2, by - 4);
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(bx, by + 12, bw, bh);
+    ctx.fillStyle = "#d9584a";
+    ctx.fillRect(bx, by + 12, bw * (cur / Math.max(1, max)), bh);
+    ctx.strokeStyle = "rgba(240,168,56,0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx + 0.5, by + 12.5, bw, bh);
   }
 
   // ---- Draw: floor map -----------------------------------------------------
@@ -866,9 +976,11 @@
   invOverlay.addEventListener("click", (e) => { if (e.target === invOverlay) toggleInv(false); });
   document.getElementById("invClose").addEventListener("click", () => toggleInv(false));
 
-  const over = document.getElementById("gameover");
-  over.addEventListener("click", restart);
-  over.addEventListener("touchstart", (e) => { e.preventDefault(); restart(); }, { passive: false });
+  for (const id of ["gameover", "win"]) {
+    const el = document.getElementById(id);
+    el.addEventListener("click", restart);
+    el.addEventListener("touchstart", (e) => { e.preventDefault(); restart(); }, { passive: false });
+  }
 
   // ---- Mouse wheel zoom ----------------------------------------------------
   canvas.addEventListener("wheel", (e) => {
@@ -936,6 +1048,8 @@
         atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         inv: player.inv.map((i) => i.key), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex,
+        biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
+        hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
