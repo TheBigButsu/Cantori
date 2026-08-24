@@ -4,26 +4,32 @@ A permadeath roguelike dungeon crawler — in the spirit of Shattered Pixel
 Dungeon — built as a web game so it plays on a phone (iPhone included) with no
 App Store, and eventually offline.
 
-## Where we are: Depth 1 — "The Descent"
+## Where we are: Milestone 2 — "Teeth in the Dark"
 
-A real dungeon. Each level is procedurally generated (rooms joined by
-corridors), lit by a torch with true fog of war — you see only what's in line
-of sight, places you've been stay dimly remembered, and the rest is dark. Find
-the `>` stairs and step on them to descend to a fresh, deeper level. A camera
-follows you, so dungeons can be larger than the screen.
+The dungeon bites back. The world is turn-based — when you act, everything else
+gets a turn. Classic vermin (rat, bat, snake, spider) lurk in the rooms, wake
+when they sense you, and hunt you down. Walk into one to attack it; it hits
+back. You and every monster have hit points (yours shown up top). At 0 HP the
+run ends — **permadeath** — and you begin again at Depth 1. Monster numbers grow
+as you descend.
+
+Built on the Depth 1 dungeon: procedural levels, fog of war, stairs, a camera
+that follows you, zoom, and a floor map.
 
 **Controls**
 - **Phone:** tap an explored tile — the character finds a route and walks there,
   around walls, diagonals included.
 - **Keyboard:** arrows / WASD, plus 8-direction keys (vi-keys `y u b n` and the
   numpad) for diagonal steps.
+- **Attack:** walk into a monster.
 - **Descend:** step onto the `>` stairs.
 - **Zoom:** pinch, the on-screen `+` / `−` buttons, the mouse wheel, or `+` / `−`.
 - **Floor map:** the `▦` button or `M` — shows the whole explored level, with
   your position and the stairs; tap it (or `Esc`) to close.
+- **After death:** tap the screen (or `Enter`) to start a new run.
 
 The browser console exposes a small `window.cantori` dev helper
-(`descend()`, `regenerate()`, `peek()`) for testing.
+(`descend()`, `regenerate()`, `restart()`, `hurt(n)`, `place(x,y)`, `peek()`).
 
 ## Play it locally
 
@@ -51,8 +57,8 @@ tools/make_icons.py   regenerates the icons, no dependencies
 Built one "depth" at a time, playable at the end of each:
 
 - **0 · First Light** — walk around a room _(done)_
-- **1 · The Descent** — random dungeons, corridors, fog of war, stairs down _(you are here)_
-- **2 · Teeth in the Dark** — monsters, combat, health, permadeath
+- **1 · The Descent** — random dungeons, corridors, fog of war, stairs down _(done)_
+- **2 · Teeth in the Dark** — monsters, combat, health, permadeath _(you are here)_
 - **3 · Spoils** — items, inventory, weapons, potions, scrolls
 - **4 · The Long Way Down** — many monsters, scaling difficulty, a win
 - **5 · Made for the Pocket** — app icon, sound, refined touch, full offline play

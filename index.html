@@ -16,13 +16,16 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css?v=2">
+  <link rel="stylesheet" href="./styles.css?v=3">
 </head>
 <body>
   <div id="app">
     <header id="hud">
       <span class="mark">CANTORI</span>
-      <span class="depth" id="depthLabel">Depth&nbsp;1</span>
+      <span class="stats">
+        <span class="hp" id="hp">♥ 20/20</span>
+        <span class="depth" id="depthLabel">Depth&nbsp;1</span>
+      </span>
     </header>
 
     <div id="stage">
@@ -36,12 +39,18 @@
     </div>
 
     <footer id="hint">
-      <span>Explore the dungeon · step on the <b>&gt;</b> stairs to go deeper</span>
-      <span class="sep">·</span>
-      <span>tap to walk · pinch to zoom · ▦ for the floor map</span>
+      <span id="log">Explore · tap to move · reach the <b>&gt;</b> stairs · pinch to zoom · ▦ map</span>
     </footer>
   </div>
 
-  <script src="./game.js?v=2"></script>
+  <div id="gameover" hidden>
+    <div class="go-card">
+      <div class="go-title">YOU DIED</div>
+      <div class="go-sub" id="goSub"></div>
+      <div class="go-tap">tap to begin a new run</div>
+    </div>
+  </div>
+
+  <script src="./game.js?v=3"></script>
 </body>
 </html>
