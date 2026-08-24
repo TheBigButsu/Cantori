@@ -171,6 +171,8 @@
     spawnItems(rooms);
     computeFOV();
     setDepthLabel();
+    floaters = [];
+    snapPlayer();
   }
 
   // ---- Monster & boss factories -------------------------------------------
@@ -327,6 +329,9 @@
       const watk = player.weapon ? GEAR[player.weapon].atk : 0;
       const dmg = randInt(player.atkMin, player.atkMax) + watk + player.atkBonus;
       target.hp -= dmg;
+      bump(player, target.x, target.y);
+      flash(target);
+      floatText(target.x, target.y, "-" + dmg, "#ffe08a");
       if (target.hp <= 0) {
         monsters = monsters.filter((m) => m !== target);
         log("You strike the " + monName(target) + " — it dies. (-" + dmg + ")", "hit");
@@ -340,6 +345,9 @@
       const adef = player.armor ? GEAR[player.armor].def : 0;
       dmg = Math.max(1, dmg - adef);
       player.hp -= dmg;
+      bump(attacker, player.x, player.y);
+      flash(player);
+      floatText(player.x, player.y, "-" + dmg, "#ff8f84");
       updateHUD();
       log("The " + monName(attacker) + " hits you. (-" + dmg + ")", "hurt");
       if (player.hp <= 0) die();
@@ -590,8 +598,10 @@
   function setZoom(z) { zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z)); applyLayout(); }
   function updateCamera() {
     const clamp = (v, max) => Math.max(0, Math.min(max, v));
-    camX = clamp(player.x - Math.floor(viewCols / 2), MAP_W - viewCols);
-    camY = clamp(player.y - Math.floor(viewRows / 2), MAP_H - viewRows);
+    const rx = player.rx === undefined ? player.x : player.rx;
+    const ry = player.ry === undefined ? player.y : player.ry;
+    camX = clamp(rx - (viewCols - 1) / 2, MAP_W - viewCols);   // float: smooth scroll
+    camY = clamp(ry - (viewRows - 1) / 2, MAP_H - viewRows);
   }
 
   // ---- Colours & lighting --------------------------------------------------
@@ -663,21 +673,68 @@
     return true;
   }
 
+  // ---- Animation: smooth movement, attack lunges, hit flashes, floaters ----
+  const MOVE_MS = 120, BUMP_MS = 130, HIT_MS = 170, FLOAT_MS = 850;
+  const easeOut = (p) => 1 - (1 - p) * (1 - p);
+  let floaters = [];
+  function animEntity(e, now) {
+    if (e.rx === undefined) { e.rx = e.x; e.ry = e.y; e.lx = e.x; e.ly = e.y; e.ax = e.x; e.ay = e.y; e.at = 0; }
+    if (e.x !== e.lx || e.y !== e.ly) { e.ax = e.rx; e.ay = e.ry; e.at = now; e.lx = e.x; e.ly = e.y; }
+    if (reduceMotion) { e.rx = e.x; e.ry = e.y; return; }
+    const k = easeOut(Math.min(1, (now - e.at) / MOVE_MS));
+    e.rx = e.ax + (e.x - e.ax) * k;
+    e.ry = e.ay + (e.y - e.ay) * k;
+  }
+  function bumpOffset(e, now) {
+    if (reduceMotion || !e.bumpAt) return [0, 0];
+    const p = (now - e.bumpAt) / BUMP_MS;
+    if (p >= 1) return [0, 0];
+    const a = Math.sin(Math.PI * p) * 0.35;
+    return [(e.bumpDx || 0) * a, (e.bumpDy || 0) * a];
+  }
+  function bump(attacker, tx, ty) {
+    attacker.bumpDx = Math.sign(tx - attacker.x);
+    attacker.bumpDy = Math.sign(ty - attacker.y);
+    attacker.bumpAt = performance.now();
+  }
+  const flash = (e) => { e.hitAt = performance.now(); };
+  const floatText = (x, y, text, color) => floaters.push({ x, y, text, color, at: performance.now() });
+  function snapPlayer() {
+    player.rx = player.x; player.ry = player.y;
+    player.lx = player.x; player.ly = player.y;
+    player.ax = player.x; player.ay = player.y; player.at = 0;
+  }
+  function updateAnims(now) {
+    animEntity(player, now);
+    for (const m of monsters) animEntity(m, now);
+    floaters = floaters.filter((f) => now - f.at < FLOAT_MS);
+  }
+
   // ---- Draw: dungeon view --------------------------------------------------
-  function draw() {
+  function hitFlash(e, px, py, now) {
+    if (!e.hitAt) return;
+    const p = (now - e.hitAt) / HIT_MS;
+    if (p >= 1) return;
+    ctx.fillStyle = "rgba(255,255,255," + ((1 - p) * 0.5).toFixed(3) + ")";
+    ctx.fillRect(px, py, tile, tile);
+  }
+
+  function draw(now) {
     updateCamera();
     ctx.imageSmoothingEnabled = false;   // crisp pixel art (reset when canvas resizes)
     ctx.fillStyle = "#0c0905";
     ctx.fillRect(0, 0, viewCols * tile, viewRows * tile);
+    const SX = (mx) => (mx - camX) * tile;
+    const SY = (my) => (my - camY) * tile;
 
-    // terrain
-    for (let sy = 0; sy < viewRows; sy++) {
-      for (let sx = 0; sx < viewCols; sx++) {
-        const mx = camX + sx, my = camY + sy;
+    // terrain (one tile of margin so fractional scrolling leaves no gaps)
+    const x0 = Math.floor(camX) - 1, y0 = Math.floor(camY) - 1;
+    for (let my = y0; my <= y0 + viewRows + 2; my++) {
+      for (let mx = x0; mx <= x0 + viewCols + 2; mx++) {
         if (!inBounds(mx, my) || !explored[my][mx]) continue;
         const vis = visible[my][mx];
         const b = vis ? litBright(mx, my) : MEM;
-        const px = sx * tile, py = sy * tile;
+        const px = SX(mx), py = SY(my);
         const t = map[my][mx];
         if (t === WALL) {
           if (!drawImg(SPRITES[biome.wall], px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
@@ -696,7 +753,7 @@
     // route markers
     for (const s of walkPath) {
       if (!inBounds(s.x, s.y) || !explored[s.y][s.x]) continue;
-      const px = (s.x - camX) * tile, py = (s.y - camY) * tile;
+      const px = SX(s.x), py = SY(s.y);
       const sz = tile * 0.2;
       ctx.fillStyle = "rgba(246,184,69,0.18)";
       ctx.fillRect(px + (tile - sz) / 2, py + (tile - sz) / 2, sz, sz);
@@ -705,30 +762,31 @@
     // floor items
     for (const it of items) {
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
-      const px = (it.x - camX) * tile, py = (it.y - camY) * tile;
+      const px = SX(it.x), py = SY(it.y);
       if (it.key === "gold") drawCoin(px, py);
       else drawImg(spriteForItem(it.key), px, py);
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
     }
 
-    // monsters (bosses render larger)
+    // monsters (glide + lunge + flash; bosses render larger)
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
-      const px = (m.x - camX) * tile, py = (m.y - camY) * tile;
+      const [bx, by] = bumpOffset(m, now);
+      const px = SX(m.rx + bx), py = SY(m.ry + by);
       drawSpriteFit(SPRITES[m.type], px, py, m.boss ? 1.5 : 1);
       dim(px, py, (1 - litBright(m.x, m.y)) * 0.8);
+      hitFlash(m, px, py, now);
       if (!m.boss && m.hp < m.maxHp) {
         const bw = tile * 0.7, bh = Math.max(2, tile * 0.09);
-        const bx = px + (tile - bw) / 2, by = py + tile * 0.06;
-        ctx.fillStyle = "rgba(0,0,0,0.6)";
-        ctx.fillRect(bx, by, bw, bh);
-        ctx.fillStyle = "#d9584a";
-        ctx.fillRect(bx, by, bw * (m.hp / m.maxHp), bh);
+        const hx = px + (tile - bw) / 2, hy = py + tile * 0.06;
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(hx, hy, bw, bh);
+        ctx.fillStyle = "#d9584a"; ctx.fillRect(hx, hy, bw * (m.hp / m.maxHp), bh);
       }
     }
 
-    // player, with a torch glow
-    const px = (player.x - camX) * tile, py = (player.y - camY) * tile;
+    // player, with a torch glow (glide + lunge + flash)
+    const [pbx, pby] = bumpOffset(player, now);
+    const px = SX(player.rx + pbx), py = SY(player.ry + pby);
     const cx = px + tile / 2, cy = py + tile / 2;
     const glow = ctx.createRadialGradient(cx, cy, tile * 0.1, cx, cy, tile * 2.4);
     glow.addColorStop(0, "rgba(246,184,69,0.24)");
@@ -742,6 +800,20 @@
       ctx.textBaseline = "middle";
       ctx.fillText("@", cx, cy);
     }
+    hitFlash(player, px, py, now);
+
+    // floating damage numbers
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `700 ${Math.max(11, Math.floor(tile * 0.5))}px ${bodyFont()}`;
+    for (const f of floaters) {
+      const p = (now - f.at) / FLOAT_MS;
+      const fx = SX(f.x) + tile / 2, fy = SY(f.y) + tile / 2 - p * tile * 0.9;
+      ctx.globalAlpha = Math.max(0, 1 - p);
+      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillText(f.text, fx + 1, fy + 1);
+      ctx.fillStyle = f.color; ctx.fillText(f.text, fx, fy);
+    }
+    ctx.globalAlpha = 1;
 
     // boss health banner
     const bosses = monsters.filter((m) => m.boss && inBounds(m.x, m.y) && visible[m.y][m.x]);
@@ -907,14 +979,14 @@
     } else if (effect === "teleport") {
       for (let t = 0; t < 400; t++) {
         const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
-        if (passable(x, y) && !monsterAt(x, y)) { player.x = x; player.y = y; computeFOV(); break; }
+        if (passable(x, y) && !monsterAt(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); break; }
       }
       log("Reality lurches — you stand somewhere new.");
     }
   }
 
   // ---- Main loop -----------------------------------------------------------
-  const STEP_MS = 145;   // pace of auto-walk steps (higher = slower/calmer)
+  const STEP_MS = 130;   // pace of auto-walk steps (kept just above the glide time)
   let lastT = 0, acc = 0;
   function frame(t) {
     if (!lastT) lastT = t;
@@ -935,8 +1007,9 @@
     }
 
     if (!reduceMotion) flick = Math.sin(t / 420) * 0.14 + Math.sin(t / 130) * 0.05;
+    updateAnims(t);
     if (mapOpen) drawMap();
-    else draw();
+    else draw(t);
     requestAnimationFrame(frame);
   }
 
@@ -993,9 +1066,9 @@
   const dist2 = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   function tileAt(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const sx = Math.floor((clientX - rect.left) / (rect.width / viewCols));
-    const sy = Math.floor((clientY - rect.top) / (rect.height / viewRows));
-    return [camX + sx, camY + sy];
+    const colF = (clientX - rect.left) / (rect.width / viewCols);
+    const rowF = (clientY - rect.top) / (rect.height / viewRows);
+    return [Math.floor(camX + colF), Math.floor(camY + rowF)];
   }
   canvas.addEventListener("touchstart", (e) => {
     if (mapOpen || invOpen || dead) return;
@@ -1057,7 +1130,7 @@
     },
     useIdx: (i) => actItem(i),
     step: (dx, dy) => playerAct(dx, dy),
-    place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); } },
+    place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),
     walking: () => walkPath.length,
   };
