@@ -119,5 +119,23 @@ Steps can reorder; save first is the main dependency.
   points per boss. Banked points accumulate for the **skill tree (next)**.
 - Strength potion now grants +1 STR (permanent).
 
-_Still TODO for the class system: the **skill tree** to spend banked points, and
-selecting among multiple classes at run start._
+- **XP anti-grind:** every monster has a level (= its floor). Killing something
+  2+ levels below you gives 50% XP; 4+ below gives 0.
+- **Full-room visibility** (SPD style): FOV is line-of-sight bound, not radius
+  bound — the room you're in lights up fully; only walls block sight.
+
+## Next up: character screen, hotbar, examine, and the Warrior tree
+
+**Character screen** (SPD-inspired) with tabs: **Stats · Skill Tree · Boons**.
+A **hotbar** for skills/items, and an **examine ("magnifying glass")** tool to
+inspect any visible tile/monster.
+
+**Warrior skills** (spend banked points):
+- **Rush** — dash in a direction until you collide. Hit a monster → damage it;
+  hit a wall → damage yourself. Cooldown 200 turns.
+  - 1 pt: unlock, +0 damage · 2 pts: +3 damage · 3 pts: +5 damage and −50 cooldown
+- **Spin** — strike all adjacent monsters. Cooldown 100 turns.
+  - 1 pt: unlock, +0 damage · 2 pts: +1 damage · 3 pts: +1 damage and +1 range
+    (hits everything within 2 tiles)
+
+_Also still open: selecting among multiple classes at run start._

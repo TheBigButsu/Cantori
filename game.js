@@ -19,9 +19,10 @@
   "use strict";
 
   // ---- Map model -----------------------------------------------------------
-  const MAP_W = 33;
-  const MAP_H = 33;
-  const FOV_RADIUS = 8;
+  const MAP_W = 41;         // ~50% larger floor than before (33 -> 41)
+  const MAP_H = 41;
+  const FOV_RADIUS = 40;    // effectively line-of-sight bound: the whole room you're
+                            // in lights up (Shattered-Pixel style); only walls block
 
   const WALL = 0;
   const FLOOR = 1;
@@ -158,8 +159,10 @@
     turns = 0;
 
     const rooms = [];
-    for (let tries = 0; tries < 140 && rooms.length < 12; tries++) {
-      const w = randInt(4, 8), h = randInt(4, 8);
+    // smaller rooms, more of them: same-ish total room area spread over a bigger
+    // map, so there's much more corridor between chambers
+    for (let tries = 0; tries < 240 && rooms.length < 18; tries++) {
+      const w = randInt(3, 5), h = randInt(3, 5);
       const x = randInt(1, MAP_W - w - 2), y = randInt(1, MAP_H - h - 2);
       const room = { x, y, w, h };
       if (rooms.some((r) => overlaps(r, room, 1))) continue;
@@ -199,16 +202,15 @@
 
   // ---- Monster & boss factories -------------------------------------------
   function makeMonster(type, x, y) {
-    const t = VERMIN[type];
-    return {
-      x, y, type, boss: false, glyph: t.glyph, color: t.color,
-      hp: t.hp, maxHp: t.hp, atkMin: t.atkMin, atkMax: t.atkMax, erratic: t.erratic,
-    };
+    // copy the whole template so ability flags (evasion/charge/ranged/range) carry over
+    return Object.assign({}, VERMIN[type], {
+      x, y, type, boss: false, hp: VERMIN[type].hp, maxHp: VERMIN[type].hp, level: depth,
+    });
   }
   function makeBoss(key, x, y) {
     const b = DATA.bosses[key];
     return {
-      x, y, type: key, boss: true, name: b.name, glyph: "@", color: "#f0a838",
+      x, y, type: key, boss: true, name: b.name, glyph: "@", color: "#f0a838", level: depth,
       hp: b.hp, maxHp: b.hp, atkMin: b.atkMin, atkMax: b.atkMax, erratic: 0.0,
     };
   }
@@ -384,7 +386,13 @@
       if (target.hp <= 0) {
         monsters = monsters.filter((m) => m !== target);
         log("You strike the " + monName(target) + " — it dies. (-" + dmg + ")", "hit");
-        gainXP(target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp);
+        let xp = target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp;
+        if (!target.boss) {                      // over-leveled kills are worth less
+          const diff = player.level - (target.level || 1);
+          if (diff >= 4) xp = 0;
+          else if (diff >= 2) xp = Math.round(xp * 0.5);
+        }
+        gainXP(xp);
         if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
       } else {
         log("You strike the " + monName(target) + ". (-" + dmg + ")", "hit");
@@ -1187,6 +1195,7 @@
     if (invOpen) { if (e.key === "Escape") toggleInv(false); return; }
     if (key === "m") { e.preventDefault(); toggleMap(); return; }
     if (mapOpen) { if (e.key === "Escape") toggleMap(false); return; }
+    if (key === "z" || e.key === "." || e.code === "Numpad5") { e.preventDefault(); waitTurn(); return; }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(zoom * 1.2); return; }
     if (e.key === "-" || e.key === "_") { e.preventDefault(); setZoom(zoom / 1.2); return; }
     const dir = BY_CODE[e.code] || BY_KEY[e.key] || BY_KEY[key];
@@ -1198,6 +1207,8 @@
   document.getElementById("btnOut").addEventListener("click", () => setZoom(zoom / 1.2));
   document.getElementById("btnMap").addEventListener("click", () => toggleMap());
   document.getElementById("btnBag").addEventListener("click", () => toggleInv());
+  function waitTurn() { if (dead || mapOpen || invOpen) return; walkPath = []; worldTurn(); }
+  document.getElementById("btnWait").addEventListener("click", waitTurn);
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -1281,7 +1292,7 @@
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, evasion: m.evasion || 0 })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
       };
     },
