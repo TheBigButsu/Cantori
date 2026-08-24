@@ -480,8 +480,10 @@
   }
 
   function walkTo(tx, ty) {
-    if (!inBounds(tx, ty) || dead) return;
-    if (anyMonsterVisible()) { stepToward(tx, ty); return; }  // stay in control near danger
+    if (dead) return;
+    if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
+    if (!inBounds(tx, ty)) return;
+    if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
     const path = findPath(player.x, player.y, tx, ty);
     if (path.length) walkPath = path;
   }
@@ -819,7 +821,7 @@
   }
 
   // ---- Main loop -----------------------------------------------------------
-  const STEP_MS = 90;
+  const STEP_MS = 145;   // pace of auto-walk steps (higher = slower/calmer)
   let lastT = 0, acc = 0;
   function frame(t) {
     if (!lastT) lastT = t;
@@ -959,6 +961,8 @@
     useIdx: (i) => actItem(i),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); } },
+    tap: (x, y) => walkTo(x, y),
+    walking: () => walkPath.length,
   };
 
   // ---- Go ------------------------------------------------------------------
