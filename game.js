@@ -556,12 +556,53 @@
     return _font;
   }
 
+  // ---- Sprites (CC0 Dungeon Crawl Stone Soup tiles) -----------------------
+  const SPRITE_NAMES = [
+    "player", "rat", "bat", "snake", "spider",
+    "dagger", "sword", "mace", "leather", "chain", "plate",
+    "potion", "scroll", "stairs", "floor", "wall",
+  ];
+  const SPRITES = {};
+  for (const n of SPRITE_NAMES) {
+    const img = new Image();
+    img.src = "./assets/tiles/" + n + ".png";
+    SPRITES[n] = img;
+  }
+  const ready = (img) => img && img.complete && img.naturalWidth > 0;
+  function drawImg(img, px, py) {
+    if (!ready(img)) return false;
+    ctx.drawImage(img, px, py, tile, tile);
+    return true;
+  }
+  function dim(px, py, amount) {
+    if (amount <= 0) return;
+    ctx.fillStyle = "rgba(8,6,3," + amount.toFixed(3) + ")";
+    ctx.fillRect(px, py, tile, tile);
+  }
+  function drawCoin(px, py) {
+    const cx = px + tile / 2, cy = py + tile / 2, r = tile * 0.24;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#f0c14b";
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, tile * 0.05);
+    ctx.strokeStyle = "#a9791f";
+    ctx.stroke();
+  }
+  function spriteForItem(key) {
+    const d = defOf(key);
+    if (d.cat === "weapon" || d.cat === "armor") return SPRITES[key];
+    return d.cat === "potion" ? SPRITES.potion : SPRITES.scroll;
+  }
+
   // ---- Draw: dungeon view --------------------------------------------------
   function draw() {
     updateCamera();
+    ctx.imageSmoothingEnabled = false;   // crisp pixel art (reset when canvas resizes)
     ctx.fillStyle = "#0c0905";
     ctx.fillRect(0, 0, viewCols * tile, viewRows * tile);
 
+    // terrain
     for (let sy = 0; sy < viewRows; sy++) {
       for (let sx = 0; sx < viewCols; sx++) {
         const mx = camX + sx, my = camY + sy;
@@ -571,22 +612,15 @@
         const px = sx * tile, py = sy * tile;
         const t = map[my][mx];
         if (t === WALL) {
-          ctx.fillStyle = shade(COL.wallFace, b);
-          ctx.fillRect(px, py, tile, tile);
-          ctx.fillStyle = shade(COL.wallTop, b);
-          ctx.fillRect(px, py, tile, Math.max(2, tile * 0.16));
+          if (!drawImg(SPRITES.wall, px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
         } else {
-          const base = (mx + my) % 2 === 0 ? COL.floorA : COL.floorB;
-          ctx.fillStyle = shade(base, b);
-          ctx.fillRect(px + 1, py + 1, tile - 1, tile - 1);
-          if (t === STAIRS) {
-            ctx.fillStyle = shade("#f6b845", vis ? Math.max(b, 0.85) : MEM + 0.14);
-            ctx.font = `700 ${Math.floor(tile * 0.82)}px ${bodyFont()}`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(">", px + tile / 2, py + tile / 2 + tile * 0.04);
+          if (!drawImg(SPRITES.floor, px, py)) {
+            ctx.fillStyle = shade((mx + my) % 2 === 0 ? COL.floorA : COL.floorB, b);
+            ctx.fillRect(px, py, tile, tile);
           }
+          if (t === STAIRS) drawImg(SPRITES.stairs, px, py);
         }
+        dim(px, py, 1 - b);                                   // torch falloff / memory
         if (!vis) { ctx.fillStyle = "rgba(70,90,130,0.10)"; ctx.fillRect(px, py, tile, tile); }
       }
     }
@@ -595,60 +629,51 @@
     for (const s of walkPath) {
       if (!inBounds(s.x, s.y) || !explored[s.y][s.x]) continue;
       const px = (s.x - camX) * tile, py = (s.y - camY) * tile;
-      const sz = tile * 0.22;
-      ctx.fillStyle = "rgba(246,184,69,0.16)";
+      const sz = tile * 0.2;
+      ctx.fillStyle = "rgba(246,184,69,0.18)";
       ctx.fillRect(px + (tile - sz) / 2, py + (tile - sz) / 2, sz, sz);
     }
 
-    // floor items (only those the torch shows)
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    // floor items
     for (const it of items) {
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
       const px = (it.x - camX) * tile, py = (it.y - camY) * tile;
-      let g;
-      if (it.key === "gold") {
-        g = { glyph: "$", color: "#f0c14b" };
-      } else {
-        const d = defOf(it.key);
-        const known = d.cat === "weapon" || d.cat === "armor" || identified.has(it.key);
-        g = { glyph: d.glyph, color: known ? d.color : (d.cat === "potion" ? "#b9a2d6" : "#c9c0a0") };
-      }
-      ctx.fillStyle = g.color;
-      ctx.font = `700 ${Math.floor(tile * 0.72)}px ${bodyFont()}`;
-      ctx.fillText(g.glyph, px + tile / 2, py + tile / 2 + tile * 0.04);
+      if (it.key === "gold") drawCoin(px, py);
+      else drawImg(spriteForItem(it.key), px, py);
+      dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
     }
 
-    // monsters (only those the torch shows)
+    // monsters
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
       const px = (m.x - camX) * tile, py = (m.y - camY) * tile;
-      ctx.fillStyle = m.color;
-      ctx.font = `700 ${Math.floor(tile * 0.8)}px ${bodyFont()}`;
-      ctx.fillText(m.glyph, px + tile / 2, py + tile / 2 + tile * 0.04);
+      drawImg(SPRITES[m.type], px, py);
+      dim(px, py, (1 - litBright(m.x, m.y)) * 0.8);
       if (m.hp < m.maxHp) {
-        const bw = tile * 0.66, bh = Math.max(2, tile * 0.09);
-        const bx = px + (tile - bw) / 2, by = py + tile * 0.1;
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        const bw = tile * 0.7, bh = Math.max(2, tile * 0.09);
+        const bx = px + (tile - bw) / 2, by = py + tile * 0.06;
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
         ctx.fillRect(bx, by, bw, bh);
         ctx.fillStyle = "#d9584a";
         ctx.fillRect(bx, by, bw * (m.hp / m.maxHp), bh);
       }
     }
 
-    // player
-    const cx = (player.x - camX) * tile + tile / 2;
-    const cy = (player.y - camY) * tile + tile / 2;
-    const glow = ctx.createRadialGradient(cx, cy, tile * 0.1, cx, cy, tile * 2.6);
-    glow.addColorStop(0, "rgba(246,184,69,0.26)");
+    // player, with a torch glow
+    const px = (player.x - camX) * tile, py = (player.y - camY) * tile;
+    const cx = px + tile / 2, cy = py + tile / 2;
+    const glow = ctx.createRadialGradient(cx, cy, tile * 0.1, cx, cy, tile * 2.4);
+    glow.addColorStop(0, "rgba(246,184,69,0.24)");
     glow.addColorStop(1, "rgba(246,184,69,0)");
     ctx.fillStyle = glow;
     ctx.fillRect(cx - tile * 3, cy - tile * 3, tile * 6, tile * 6);
-    ctx.font = `700 ${Math.floor(tile * 0.8)}px ${bodyFont()}`;
-    ctx.fillStyle = "#f6b845";
-    ctx.fillText("@", cx, cy + tile * 0.04);
-    ctx.fillStyle = "#ffd98a";
-    ctx.fillText("@", cx, cy + tile * 0.04 - Math.max(1, tile * 0.04));
+    if (!drawImg(SPRITES.player, px, py)) {
+      ctx.fillStyle = "#f6b845";
+      ctx.font = `700 ${Math.floor(tile * 0.8)}px ${bodyFont()}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("@", cx, cy);
+    }
   }
 
   // ---- Draw: floor map -----------------------------------------------------

@@ -18,6 +18,11 @@ Consumables: healing / strength / poison potions; magic-mapping / teleport
 scrolls. Built on everything before it — turn-based combat, permadeath,
 procedural dungeons, fog of war, camera, zoom, and floor map.
 
+**Graphics:** the game now renders classic pixel-art sprites (hero, monsters,
+items, terrain) from **Dungeon Crawl Stone Soup**, which are CC0 / public
+domain. See `ART-CREDITS.md`. Sprites live in `assets/tiles/` and are drawn with
+the torch lighting laid over them.
+
 **Controls**
 - **Phone:** tap an explored tile — the character finds a route and walks there,
   around walls, diagonals included.
