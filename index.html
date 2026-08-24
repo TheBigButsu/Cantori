@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css?v=3">
+  <link rel="stylesheet" href="./styles.css?v=4">
 </head>
 <body>
   <div id="app">
@@ -24,6 +24,7 @@
       <span class="mark">CANTORI</span>
       <span class="stats">
         <span class="hp" id="hp">♥ 20/20</span>
+        <span class="lv" id="lv">Lv 1</span>
         <span class="depth" id="depthLabel">Depth&nbsp;1</span>
       </span>
     </header>
@@ -32,6 +33,7 @@
       <canvas id="game"></canvas>
       <canvas id="map" hidden style="position:absolute;left:0;top:0"></canvas>
       <div id="controls" style="position:absolute;right:14px;bottom:14px">
+        <button id="btnBag" type="button" aria-label="Pack" title="Pack (I)">🎒</button>
         <button id="btnMap" type="button" aria-label="Floor map" title="Floor map (M)">▦</button>
         <button id="btnOut" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
         <button id="btnIn" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
@@ -43,6 +45,22 @@
     </footer>
   </div>
 
+  <div id="inv" hidden>
+    <div class="inv-card">
+      <div class="inv-head">
+        <span>PACK</span>
+        <span class="inv-head-right">
+          <span id="invGold">0 gold</span>
+          <button id="invClose" type="button" aria-label="Close pack">✕</button>
+        </span>
+      </div>
+      <div class="inv-stats" id="invStats"></div>
+      <div class="inv-equip" id="invEquip"></div>
+      <ul class="inv-list" id="invList"></ul>
+      <div class="inv-hint">tap an item to equip · ✕ or 🎒 to close</div>
+    </div>
+  </div>
+
   <div id="gameover" hidden>
     <div class="go-card">
       <div class="go-title">YOU DIED</div>
@@ -51,6 +69,6 @@
     </div>
   </div>
 
-  <script src="./game.js?v=3"></script>
+  <script src="./game.js?v=4"></script>
 </body>
 </html>

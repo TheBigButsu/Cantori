@@ -33,8 +33,17 @@
   let depth = 1;
   let dead = false;
 
-  const player = { x: 0, y: 0, hp: 20, maxHp: 20, atkMin: 3, atkMax: 5 };
+  const player = {
+    x: 0, y: 0, hp: 20, maxHp: 20, atkMin: 3, atkMax: 5,
+    atkBonus: 0, weapon: null, armor: null, inv: [], gold: 0, xp: 0, level: 1,
+  };
+  function resetPlayer() {
+    player.hp = 20; player.maxHp = 20; player.atkBonus = 0;
+    player.weapon = null; player.armor = null; player.inv = []; player.gold = 0;
+    player.xp = 0; player.level = 1;
+  }
   let monsters = [];
+  let items = [];
   let walkPath = [];
 
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
@@ -58,6 +67,26 @@
   const monsterAt = (x, y) => monsters.find((m) => m.hp > 0 && m.x === x && m.y === y) || null;
   const anyMonsterVisible = () =>
     monsters.some((m) => m.hp > 0 && inBounds(m.x, m.y) && visible[m.y][m.x]);
+
+  // ---- Loot: weapons & armor ----------------------------------------------
+  const GEAR = {
+    dagger:  { cat: "weapon", name: "Dagger", atk: 1, glyph: "/", color: "#cfc3a0", weight: 5 },
+    sword:   { cat: "weapon", name: "Sword",  atk: 3, glyph: "/", color: "#d8e0ec", weight: 2 },
+    mace:    { cat: "weapon", name: "Mace",   atk: 5, glyph: "/", color: "#c8a878", weight: 1 },
+    leather: { cat: "armor",  name: "Leather Armor", def: 1, glyph: "[", color: "#b98a5a", weight: 4 },
+    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, glyph: "[", color: "#b9c0c8", weight: 2 },
+    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, glyph: "[", color: "#dfe6f0", weight: 1 },
+  };
+  const GEAR_KEYS = Object.keys(GEAR);
+  const itemAt = (x, y) => items.find((it) => it.x === x && it.y === y) || null;
+
+  function weightedGearKey() {
+    let total = 0;
+    for (const k of GEAR_KEYS) total += GEAR[k].weight;
+    let roll = Math.random() * total;
+    for (const k of GEAR_KEYS) { roll -= GEAR[k].weight; if (roll <= 0) return k; }
+    return GEAR_KEYS[0];
+  }
 
   // ---- Dungeon generation --------------------------------------------------
   const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -86,6 +115,7 @@
     visible = blankGrid(false);
     walkPath = [];
     monsters = [];
+    items = [];
 
     const rooms = [];
     for (let tries = 0; tries < 140 && rooms.length < 12; tries++) {
@@ -110,7 +140,34 @@
     map[last.y][last.x] = STAIRS;
 
     spawnMonsters(rooms);
+    spawnItems(rooms);
     computeFOV();
+  }
+
+  function freeFloorSpot(rooms) {
+    for (let t = 0; t < 60; t++) {
+      const room = rooms[randInt(0, rooms.length - 1)];
+      const x = randInt(room.x, room.x + room.w - 1);
+      const y = randInt(room.y, room.y + room.h - 1);
+      if (map[y][x] !== FLOOR) continue;
+      if (x === player.x && y === player.y) continue;
+      if (itemAt(x, y) || monsterAt(x, y)) continue;
+      return { x, y };
+    }
+    return null;
+  }
+
+  function spawnItems(rooms) {
+    const count = randInt(2, 4);
+    for (let i = 0; i < count; i++) {
+      const spot = freeFloorSpot(rooms);
+      if (!spot) continue;
+      if (Math.random() < 0.4) {
+        items.push({ x: spot.x, y: spot.y, key: "gold", amount: randInt(2, 12) + depth * 2 });
+      } else {
+        items.push({ x: spot.x, y: spot.y, key: weightedGearKey() });
+      }
+    }
   }
 
   function spawnMonsters(rooms) {
@@ -189,6 +246,11 @@
     const r = player.hp / player.maxHp;
     el.className = "hp" + (r <= 0.3 ? " low" : r <= 0.6 ? " mid" : "");
   }
+  function updateHUD() {
+    updateHP();
+    const lv = document.getElementById("lv");
+    if (lv) lv.textContent = "Lv " + player.level;
+  }
   function setDepthLabel() {
     const el = document.getElementById("depthLabel");
     if (el) el.innerHTML = "Depth&nbsp;" + depth;
@@ -196,20 +258,41 @@
 
   // ---- Combat --------------------------------------------------------------
   function attack(attacker, target) {
-    const dmg = randInt(attacker.atkMin, attacker.atkMax);
-    target.hp -= dmg;
     if (attacker === player) {
+      const watk = player.weapon ? GEAR[player.weapon].atk : 0;
+      const dmg = randInt(player.atkMin, player.atkMax) + watk + player.atkBonus;
+      target.hp -= dmg;
       if (target.hp <= 0) {
         monsters = monsters.filter((m) => m !== target);
         log("You strike the " + target.type + " — it dies. (-" + dmg + ")", "hit");
+        gainXP(target);
       } else {
         log("You strike the " + target.type + ". (-" + dmg + ")", "hit");
       }
     } else {
-      updateHP();
+      let dmg = randInt(attacker.atkMin, attacker.atkMax);
+      const adef = player.armor ? GEAR[player.armor].def : 0;
+      dmg = Math.max(1, dmg - adef);
+      player.hp -= dmg;
+      updateHUD();
       log("The " + attacker.type + " bites you. (-" + dmg + ")", "hurt");
       if (player.hp <= 0) die();
     }
+  }
+
+  function gainXP(m) {
+    player.xp += m.maxHp;
+    let threshold = player.level * 8;
+    while (player.xp >= threshold) {
+      player.xp -= threshold;
+      player.level++;
+      player.maxHp += 4;
+      player.hp = Math.min(player.maxHp, player.hp + 4);
+      player.atkBonus += 1;
+      log("You grow stronger — Level " + player.level + "!", "hit");
+      threshold = player.level * 8;
+    }
+    updateHUD();
   }
 
   // ---- Movement / a player action -----------------------------------------
@@ -231,11 +314,27 @@
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
       computeFOV();
+      pickUp();
       if (map[ny][nx] === STAIRS) { descend(); return true; }  // fresh level, no world turn
       worldTurn();
       return true;
     }
     return false;
+  }
+
+  function pickUp() {
+    const it = itemAt(player.x, player.y);
+    if (!it) return;
+    if (it.key === "gold") {
+      player.gold += it.amount;
+      items = items.filter((x) => x !== it);
+      log("You find " + it.amount + " gold.");
+      return;
+    }
+    if (player.inv.length >= 12) { log("Your pack is full."); return; }
+    player.inv.push({ key: it.key });
+    items = items.filter((x) => x !== it);
+    log("You pick up the " + GEAR[it.key].name + ".");
   }
 
   function descend() {
@@ -248,7 +347,8 @@
   function die() {
     dead = true;
     walkPath = [];
-    updateHP();
+    toggleInv(false);
+    updateHUD();
     const sub = document.getElementById("goSub");
     if (sub) sub.textContent = "You reached Depth " + depth;
     const over = document.getElementById("gameover");
@@ -258,9 +358,9 @@
   function restart() {
     dead = false;
     depth = 1;
-    player.hp = player.maxHp;
+    resetPlayer();
     setDepthLabel();
-    updateHP();
+    updateHUD();
     const over = document.getElementById("gameover");
     if (over) over.hidden = true;
     generateLevel();
@@ -472,9 +572,19 @@
       ctx.fillRect(px + (tile - sz) / 2, py + (tile - sz) / 2, sz, sz);
     }
 
-    // monsters (only those the torch shows)
+    // floor items (only those the torch shows)
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    for (const it of items) {
+      if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
+      const px = (it.x - camX) * tile, py = (it.y - camY) * tile;
+      const g = it.key === "gold" ? { glyph: "$", color: "#f0c14b" } : GEAR[it.key];
+      ctx.fillStyle = g.color;
+      ctx.font = `700 ${Math.floor(tile * 0.72)}px ${bodyFont()}`;
+      ctx.fillText(g.glyph, px + tile / 2, py + tile / 2 + tile * 0.04);
+    }
+
+    // monsters (only those the torch shows)
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
       const px = (m.x - camX) * tile, py = (m.y - camY) * tile;
@@ -538,8 +648,67 @@
   }
   function toggleMap(force) {
     mapOpen = force === undefined ? !mapOpen : force;
+    if (mapOpen) toggleInv(false);
     mapCanvas.hidden = !mapOpen;
     document.getElementById("btnMap").classList.toggle("on", mapOpen);
+  }
+
+  // ---- Pack / inventory ----------------------------------------------------
+  let invOpen = false;
+  function toggleInv(force) {
+    invOpen = force === undefined ? !invOpen : force;
+    if (invOpen) { toggleMap(false); renderInv(); }
+    document.getElementById("inv").hidden = !invOpen;
+    document.getElementById("btnBag").classList.toggle("on", invOpen);
+  }
+  function playerAtk() {
+    const w = player.weapon ? GEAR[player.weapon].atk : 0;
+    return (player.atkMin + player.atkBonus + w) + "–" + (player.atkMax + player.atkBonus + w);
+  }
+  function renderInv() {
+    document.getElementById("invGold").textContent = player.gold + " gold";
+    const df = player.armor ? GEAR[player.armor].def : 0;
+    document.getElementById("invStats").textContent =
+      "Level " + player.level + "  ·  Attack " + playerAtk() + "  ·  Defense " + df;
+    document.getElementById("invEquip").textContent =
+      "Wielding: " + (player.weapon ? GEAR[player.weapon].name : "—") +
+      "   ·   Wearing: " + (player.armor ? GEAR[player.armor].name : "—");
+    const ul = document.getElementById("invList");
+    ul.innerHTML = "";
+    if (player.inv.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "(nothing carried)";
+      ul.appendChild(li);
+      return;
+    }
+    player.inv.forEach((it, idx) => {
+      const def = GEAR[it.key];
+      const li = document.createElement("li");
+      const tag = def.cat === "weapon" ? "+" + def.atk + " atk" : "+" + def.def + " def";
+      li.innerHTML = '<span class="i-name">' + def.name + "</span><span class=\"i-tag\">" + tag + "</span>";
+      li.addEventListener("click", () => equip(idx));
+      ul.appendChild(li);
+    });
+  }
+  function equip(idx) {
+    const it = player.inv[idx];
+    if (!it) return;
+    const def = GEAR[it.key];
+    player.inv.splice(idx, 1);
+    if (def.cat === "weapon") {
+      if (player.weapon) player.inv.push({ key: player.weapon });
+      player.weapon = it.key;
+      log("You wield the " + def.name + ".");
+    } else {
+      if (player.armor) player.inv.push({ key: player.armor });
+      player.armor = it.key;
+      log("You don the " + def.name + ".");
+    }
+    updateHUD();
+    worldTurn();               // equipping takes a turn
+    if (dead) { toggleInv(false); return; }
+    renderInv();
   }
 
   // ---- Main loop -----------------------------------------------------------
@@ -550,7 +719,7 @@
     const dt = t - lastT;
     lastT = t;
 
-    if (walkPath.length && !mapOpen && !dead) {
+    if (walkPath.length && !mapOpen && !invOpen && !dead) {
       acc += dt;
       while (acc >= STEP_MS && walkPath.length) {
         if (anyMonsterVisible()) { walkPath = []; break; }
@@ -583,6 +752,8 @@
   window.addEventListener("keydown", (e) => {
     if (dead) { if (e.key === "Enter" || e.key === " ") restart(); return; }
     const key = (e.key || "").toLowerCase();
+    if (key === "i") { e.preventDefault(); toggleInv(); return; }
+    if (invOpen) { if (e.key === "Escape") toggleInv(false); return; }
     if (key === "m") { e.preventDefault(); toggleMap(); return; }
     if (mapOpen) { if (e.key === "Escape") toggleMap(false); return; }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(zoom * 1.2); return; }
@@ -595,7 +766,13 @@
   document.getElementById("btnIn").addEventListener("click", () => setZoom(zoom * 1.2));
   document.getElementById("btnOut").addEventListener("click", () => setZoom(zoom / 1.2));
   document.getElementById("btnMap").addEventListener("click", () => toggleMap());
+  document.getElementById("btnBag").addEventListener("click", () => toggleInv());
   mapCanvas.addEventListener("click", () => toggleMap(false));
+
+  // tap outside the pack card closes it
+  const invOverlay = document.getElementById("inv");
+  invOverlay.addEventListener("click", (e) => { if (e.target === invOverlay) toggleInv(false); });
+  document.getElementById("invClose").addEventListener("click", () => toggleInv(false));
 
   const over = document.getElementById("gameover");
   over.addEventListener("click", restart);
@@ -617,7 +794,7 @@
     return [camX + sx, camY + sy];
   }
   canvas.addEventListener("touchstart", (e) => {
-    if (mapOpen || dead) return;
+    if (mapOpen || invOpen || dead) return;
     if (e.touches.length === 2) {
       e.preventDefault();
       touchMode = "pinch";
@@ -656,12 +833,16 @@
 
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
-    descend, regenerate: generateLevel, setZoom, toggleMap, restart,
-    hurt: (n) => { player.hp -= n; updateHP(); if (player.hp <= 0) die(); },
+    descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, restart,
+    hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
+    give: (k) => { if (GEAR[k]) player.inv.push({ key: k }); },
     peek: () => ({
-      depth, hp: player.hp, x: player.x, y: player.y, dead,
+      depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
+      gold: player.gold, weapon: player.weapon, armor: player.armor,
+      inv: player.inv.map((i) => i.key), x: player.x, y: player.y, dead,
       monsters: monsters.length,
       mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp })),
+      items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
     }),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); } },
@@ -672,6 +853,6 @@
   window.addEventListener("orientationchange", resize);
   resize();
   generateLevel();
-  updateHP();
+  updateHUD();
   requestAnimationFrame(frame);
 })();
