@@ -2,24 +2,27 @@
    Cantori — Depth 0: "First Light"
    A single torch-lit stone room you can walk around.
 
-   This is the foundation. It proves the whole pipeline works on a real phone:
-   a tiled dungeon, a character, touch + keyboard controls, and a light radius
-   that previews the fog-of-war coming at Depth 1. Everything else gets built
-   on top of this.
+   Controls:
+     - Tap / click anywhere  -> the character finds a route and walks there,
+                                 around pillars, diagonals included.
+     - Keyboard: arrows / WASD (orthogonal), plus 8-direction keys:
+                 vi-keys  y u b n  and the numpad.
+
+   This is the foundation. Everything else — real dungeons, monsters, loot —
+   gets built on top of it.
    ========================================================================== */
 
 (function () {
   "use strict";
 
   // ---- The room ------------------------------------------------------------
-  // Built as a grid: a walled border with a few pillars to walk around.
   const COLS = 15;
   const ROWS = 21;
 
   const WALL = 1;
   const FLOOR = 0;
 
-  // 2x2 pillar blocks scattered through the room (top-left corner of each).
+  // 2x2 pillar blocks (top-left corner of each) to walk around.
   const PILLARS = [
     [3, 4], [10, 4],
     [3, 12], [10, 12],
@@ -50,24 +53,78 @@
   const map = buildRoom();
   const isWall = (x, y) =>
     x < 0 || y < 0 || x >= COLS || y >= ROWS || map[y][x] === WALL;
+  const passable = (x, y) => !isWall(x, y);
+
+  // A single step (dx, dy) is legal if the destination is open and — for
+  // diagonals — we're not squeezing through a gap between two wall corners.
+  function canStep(x, y, dx, dy) {
+    const nx = x + dx, ny = y + dy;
+    if (!passable(nx, ny)) return false;
+    if (dx !== 0 && dy !== 0 && isWall(x + dx, y) && isWall(x, y + dy)) return false;
+    return true;
+  }
 
   // ---- The player ----------------------------------------------------------
   const player = { x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) };
-  // nudge off a pillar if we happened to land on one
   while (isWall(player.x, player.y)) player.y++;
 
-  function tryMove(dx, dy) {
-    const nx = player.x + dx, ny = player.y + dy;
-    if (!isWall(nx, ny)) {
-      player.x = nx;
-      player.y = ny;
+  let walkPath = [];   // queued tiles the player is auto-walking through
+
+  function move(dx, dy) {
+    // manual move — cancels any auto-walk in progress
+    walkPath = [];
+    if (canStep(player.x, player.y, dx, dy)) {
+      player.x += dx;
+      player.y += dy;
     }
+  }
+
+  // ---- Pathfinding (breadth-first, 8-direction) ---------------------------
+  const DIRS8 = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+  ];
+
+  function findPath(sx, sy, gx, gy) {
+    if (!passable(gx, gy) || (sx === gx && sy === gy)) return [];
+    const key = (x, y) => y * COLS + x;
+    const prev = new Map();
+    prev.set(key(sx, sy), null);
+    const queue = [[sx, sy]];
+    let head = 0;
+    while (head < queue.length) {
+      const [cx, cy] = queue[head++];
+      if (cx === gx && cy === gy) break;
+      for (const [dx, dy] of DIRS8) {
+        if (!canStep(cx, cy, dx, dy)) continue;
+        const nx = cx + dx, ny = cy + dy, k = key(nx, ny);
+        if (prev.has(k)) continue;
+        prev.set(k, [cx, cy]);
+        queue.push([nx, ny]);
+      }
+    }
+    if (!prev.has(key(gx, gy))) return [];   // unreachable
+    const path = [];
+    let cur = [gx, gy];
+    while (cur) {
+      path.push({ x: cur[0], y: cur[1] });
+      cur = prev.get(key(cur[0], cur[1]));
+    }
+    path.reverse();
+    path.shift();                             // drop the starting tile
+    return path;
+  }
+
+  function walkTo(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return;
+    const path = findPath(player.x, player.y, tx, ty);
+    if (path.length) walkPath = path;         // retarget; ignore taps on walls
   }
 
   // ---- Canvas & responsive sizing -----------------------------------------
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
-  let tile = 24;           // pixel size of one tile (recomputed on resize)
+  let tile = 24;
   let dpr = 1;
 
   const reduceMotion =
@@ -78,7 +135,6 @@
     const stage = document.getElementById("stage");
     const availW = stage.clientWidth;
     const availH = stage.clientHeight;
-    // largest whole-pixel tile that fits the board in the available space
     tile = Math.max(8, Math.floor(Math.min(availW / COLS, availH / ROWS)));
 
     const cssW = tile * COLS;
@@ -103,22 +159,18 @@
     playerCore: "#ffd98a",
   };
 
-  // ---- Torch light ---------------------------------------------------------
-  // Brightness falls off with distance from the player. This is a preview of
-  // the real fog-of-war we build at Depth 1.
+  // ---- Torch light (a preview of Depth 1's fog-of-war) --------------------
   let flick = 0;
   function lightAt(x, y) {
     const dx = x - player.x, dy = y - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const radius = 4.4 + flick;      // tiles the torch reaches
-    const soft = 2.2;                // fade width
+    const radius = 4.4 + flick;
+    const soft = 2.2;
     let b = 1 - (dist - (radius - soft)) / soft;
-    b = Math.max(0.06, Math.min(1, b));
-    return b;
+    return Math.max(0.06, Math.min(1, b));
   }
 
   function shade(hex, amount) {
-    // amount 0..1 scales an #rrggbb toward black
     const n = parseInt(hex.slice(1), 16);
     const r = Math.round(((n >> 16) & 255) * amount);
     const g = Math.round(((n >> 8) & 255) * amount);
@@ -136,11 +188,9 @@
       for (let x = 0; x < COLS; x++) {
         const b = lightAt(x, y);
         const px = x * tile, py = y * tile;
-
         if (map[y][x] === WALL) {
           ctx.fillStyle = shade(COL.wallFace, b);
           ctx.fillRect(px, py, tile, tile);
-          // lit top edge for a little depth
           ctx.fillStyle = shade(COL.wallTop, b);
           ctx.fillRect(px, py, tile, Math.max(2, tile * 0.18));
         } else {
@@ -151,10 +201,24 @@
       }
     }
 
+    // faint markers along the route we're about to walk
+    if (walkPath.length) {
+      for (const step of walkPath) {
+        const b = lightAt(step.x, step.y);
+        if (b <= 0.08) continue;
+        ctx.fillStyle = `rgba(246,184,69,${0.14 * b})`;
+        const s = tile * 0.24;
+        ctx.fillRect(
+          step.x * tile + (tile - s) / 2,
+          step.y * tile + (tile - s) / 2,
+          s, s
+        );
+      }
+    }
+
     // player: a glowing amber '@'
     const cx = player.x * tile + tile / 2;
     const cy = player.y * tile + tile / 2;
-
     const glow = ctx.createRadialGradient(cx, cy, tile * 0.1, cx, cy, tile * 2.6);
     glow.addColorStop(0, "rgba(246,184,69,0.28)");
     glow.addColorStop(1, "rgba(246,184,69,0)");
@@ -170,8 +234,27 @@
     ctx.fillText("@", cx, cy + tile * 0.04 - Math.max(1, tile * 0.04));
   }
 
-  // ---- Main loop (only for the gentle torch flicker) -----------------------
+  // ---- Main loop: advance auto-walk + gentle torch flicker ----------------
+  const STEP_MS = 90;   // time between auto-walk steps
+  let lastT = 0, acc = 0;
+
   function frame(t) {
+    if (!lastT) lastT = t;
+    const dt = t - lastT;
+    lastT = t;
+
+    if (walkPath.length) {
+      acc += dt;
+      while (acc >= STEP_MS && walkPath.length) {
+        acc -= STEP_MS;
+        const next = walkPath.shift();
+        player.x = next.x;
+        player.y = next.y;
+      }
+    } else {
+      acc = 0;
+    }
+
     if (!reduceMotion) {
       flick = Math.sin(t / 420) * 0.16 + Math.sin(t / 130) * 0.06;
     }
@@ -179,49 +262,44 @@
     requestAnimationFrame(frame);
   }
 
-  // ---- Input: keyboard -----------------------------------------------------
-  const KEYS = {
+  // ---- Input: keyboard (8 directions) -------------------------------------
+  const BY_KEY = {
     ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
     w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
-    W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0],
+    h: [-1, 0], j: [0, 1], k: [0, -1], l: [1, 0],
+    y: [-1, -1], u: [1, -1], b: [-1, 1], n: [1, 1],
+  };
+  const BY_CODE = {
+    Numpad8: [0, -1], Numpad2: [0, 1], Numpad4: [-1, 0], Numpad6: [1, 0],
+    Numpad7: [-1, -1], Numpad9: [1, -1], Numpad1: [-1, 1], Numpad3: [1, 1],
   };
   window.addEventListener("keydown", (e) => {
-    const move = KEYS[e.key];
-    if (move) {
+    const dir = BY_CODE[e.code] || BY_KEY[e.key] || BY_KEY[(e.key || "").toLowerCase()];
+    if (dir) {
       e.preventDefault();
-      tryMove(move[0], move[1]);
+      move(dir[0], dir[1]);
     }
   });
 
-  // ---- Input: tap / click (step one tile toward the tapped point) ---------
-  function stepToward(clientX, clientY) {
+  // ---- Input: tap / click (walk a full route to the tapped tile) ----------
+  function tileAt(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const tx = Math.floor((clientX - rect.left) / (rect.width / COLS));
-    const ty = Math.floor((clientY - rect.top) / (rect.height / ROWS));
-    const dx = tx - player.x;
-    const dy = ty - player.y;
-    if (dx === 0 && dy === 0) return;
-    // move along the dominant axis first — reads as walking toward the tap
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      if (!tryMoveStep(Math.sign(dx), 0)) tryMoveStep(0, Math.sign(dy));
-    } else {
-      if (!tryMoveStep(0, Math.sign(dy))) tryMoveStep(Math.sign(dx), 0);
-    }
+    return [
+      Math.floor((clientX - rect.left) / (rect.width / COLS)),
+      Math.floor((clientY - rect.top) / (rect.height / ROWS)),
+    ];
   }
-  function tryMoveStep(dx, dy) {
-    if (dx === 0 && dy === 0) return false;
-    const nx = player.x + dx, ny = player.y + dy;
-    if (!isWall(nx, ny)) { player.x = nx; player.y = ny; return true; }
-    return false;
-  }
-
-  canvas.addEventListener("click", (e) => stepToward(e.clientX, e.clientY));
+  canvas.addEventListener("click", (e) => {
+    const [tx, ty] = tileAt(e.clientX, e.clientY);
+    walkTo(tx, ty);
+  });
   canvas.addEventListener(
     "touchstart",
     (e) => {
       e.preventDefault();
       const t = e.changedTouches[0];
-      stepToward(t.clientX, t.clientY);
+      const [tx, ty] = tileAt(t.clientX, t.clientY);
+      walkTo(tx, ty);
     },
     { passive: false }
   );

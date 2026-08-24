@@ -11,8 +11,10 @@ radius that previews the fog-of-war coming next. It proves the whole pipeline:
 a tiled dungeon, a character, touch + keyboard controls, on a real phone.
 
 **Controls**
-- **Phone:** tap a tile to walk toward it.
-- **Keyboard:** arrow keys or WASD.
+- **Phone:** tap anywhere — the character finds a route and walks there,
+  around pillars, diagonals included.
+- **Keyboard:** arrows / WASD, plus 8-direction keys (vi-keys `y u b n` and the
+  numpad) for diagonal steps.
 
 ## Play it locally
 
