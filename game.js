@@ -41,6 +41,7 @@
     player.hp = 20; player.maxHp = 20; player.atkBonus = 0;
     player.weapon = null; player.armor = null; player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
+    identified.clear();
   }
   let monsters = [];
   let items = [];
@@ -86,6 +87,30 @@
     let roll = Math.random() * total;
     for (const k of GEAR_KEYS) { roll -= GEAR[k].weight; if (roll <= 0) return k; }
     return GEAR_KEYS[0];
+  }
+
+  // ---- Loot: potions & scrolls (identified by use) ------------------------
+  const CONSUM = {
+    heal:     { cat: "potion", name: "Potion of Healing",  effect: "heal",     glyph: "!", color: "#e0685a", weight: 5 },
+    strength: { cat: "potion", name: "Potion of Strength", effect: "strength", glyph: "!", color: "#f0a838", weight: 2 },
+    poison:   { cat: "potion", name: "Potion of Poison",   effect: "poison",   glyph: "!", color: "#7ec98a", weight: 2 },
+    mapping:  { cat: "scroll", name: "Scroll of Magic Mapping", effect: "map",      glyph: "?", color: "#cfe6b0", weight: 3 },
+    teleport: { cat: "scroll", name: "Scroll of Teleport",      effect: "teleport", glyph: "?", color: "#b491d6", weight: 2 },
+  };
+  const CONSUM_KEYS = Object.keys(CONSUM);
+  const identified = new Set();
+  const defOf = (key) => GEAR[key] || CONSUM[key];
+  function displayName(key) {
+    const d = defOf(key);
+    if (d.cat === "weapon" || d.cat === "armor" || identified.has(key)) return d.name;
+    return d.cat === "potion" ? "Unidentified Potion" : "Unidentified Scroll";
+  }
+  function weightedConsumKey() {
+    let total = 0;
+    for (const k of CONSUM_KEYS) total += CONSUM[k].weight;
+    let roll = Math.random() * total;
+    for (const k of CONSUM_KEYS) { roll -= CONSUM[k].weight; if (roll <= 0) return k; }
+    return CONSUM_KEYS[0];
   }
 
   // ---- Dungeon generation --------------------------------------------------
@@ -162,10 +187,13 @@
     for (let i = 0; i < count; i++) {
       const spot = freeFloorSpot(rooms);
       if (!spot) continue;
-      if (Math.random() < 0.4) {
+      const r = Math.random();
+      if (r < 0.34) {
         items.push({ x: spot.x, y: spot.y, key: "gold", amount: randInt(2, 12) + depth * 2 });
-      } else {
+      } else if (r < 0.67) {
         items.push({ x: spot.x, y: spot.y, key: weightedGearKey() });
+      } else {
+        items.push({ x: spot.x, y: spot.y, key: weightedConsumKey() });
       }
     }
   }
@@ -334,7 +362,7 @@
     if (player.inv.length >= 12) { log("Your pack is full."); return; }
     player.inv.push({ key: it.key });
     items = items.filter((x) => x !== it);
-    log("You pick up the " + GEAR[it.key].name + ".");
+    log("You pick up the " + displayName(it.key) + ".");
   }
 
   function descend() {
@@ -578,7 +606,14 @@
     for (const it of items) {
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
       const px = (it.x - camX) * tile, py = (it.y - camY) * tile;
-      const g = it.key === "gold" ? { glyph: "$", color: "#f0c14b" } : GEAR[it.key];
+      let g;
+      if (it.key === "gold") {
+        g = { glyph: "$", color: "#f0c14b" };
+      } else {
+        const d = defOf(it.key);
+        const known = d.cat === "weapon" || d.cat === "armor" || identified.has(it.key);
+        g = { glyph: d.glyph, color: known ? d.color : (d.cat === "potion" ? "#b9a2d6" : "#c9c0a0") };
+      }
       ctx.fillStyle = g.color;
       ctx.font = `700 ${Math.floor(tile * 0.72)}px ${bodyFont()}`;
       ctx.fillText(g.glyph, px + tile / 2, py + tile / 2 + tile * 0.04);
@@ -683,15 +718,25 @@
       return;
     }
     player.inv.forEach((it, idx) => {
-      const def = GEAR[it.key];
+      const def = defOf(it.key);
       const li = document.createElement("li");
-      const tag = def.cat === "weapon" ? "+" + def.atk + " atk" : "+" + def.def + " def";
-      li.innerHTML = '<span class="i-name">' + def.name + "</span><span class=\"i-tag\">" + tag + "</span>";
-      li.addEventListener("click", () => equip(idx));
+      let tag;
+      if (def.cat === "weapon") tag = "+" + def.atk + " atk";
+      else if (def.cat === "armor") tag = "+" + def.def + " def";
+      else tag = identified.has(it.key) ? "use" : "use · ?";
+      li.innerHTML = '<span class="i-name">' + displayName(it.key) + "</span><span class=\"i-tag\">" + tag + "</span>";
+      li.addEventListener("click", () => actItem(idx));
       ul.appendChild(li);
     });
   }
-  function equip(idx) {
+  function actItem(idx) {
+    const it = player.inv[idx];
+    if (!it) return;
+    const def = defOf(it.key);
+    if (def.cat === "weapon" || def.cat === "armor") equipItem(idx);
+    else useConsumable(idx);
+  }
+  function equipItem(idx) {
     const it = player.inv[idx];
     if (!it) return;
     const def = GEAR[it.key];
@@ -709,6 +754,43 @@
     worldTurn();               // equipping takes a turn
     if (dead) { toggleInv(false); return; }
     renderInv();
+  }
+  function useConsumable(idx) {
+    const it = player.inv[idx];
+    if (!it) return;
+    const def = CONSUM[it.key];
+    identified.add(it.key);      // using an item reveals what it is
+    player.inv.splice(idx, 1);
+    applyEffect(def.effect);
+    updateHUD();
+    if (dead) { toggleInv(false); return; }
+    worldTurn();
+    if (dead) { toggleInv(false); return; }
+    renderInv();
+  }
+  function applyEffect(effect) {
+    if (effect === "heal") {
+      const amt = 8 + player.level * 2;
+      player.hp = Math.min(player.maxHp, player.hp + amt);
+      log("You drink a Potion of Healing. (+" + amt + ")", "hit");
+    } else if (effect === "strength") {
+      player.atkBonus += 1;
+      log("Strength surges through your arms.", "hit");
+    } else if (effect === "poison") {
+      const amt = randInt(4, 8);
+      player.hp -= amt;
+      log("It was poison! (-" + amt + ")", "hurt");
+      if (player.hp <= 0) die();
+    } else if (effect === "map") {
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
+      log("The layout of this level floods into your mind.");
+    } else if (effect === "teleport") {
+      for (let t = 0; t < 400; t++) {
+        const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+        if (passable(x, y) && !monsterAt(x, y)) { player.x = x; player.y = y; computeFOV(); break; }
+      }
+      log("Reality lurches — you stand somewhere new.");
+    }
   }
 
   // ---- Main loop -----------------------------------------------------------
@@ -835,15 +917,21 @@
   window.cantori = {
     descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, restart,
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
-    give: (k) => { if (GEAR[k]) player.inv.push({ key: k }); },
-    peek: () => ({
-      depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
-      gold: player.gold, weapon: player.weapon, armor: player.armor,
-      inv: player.inv.map((i) => i.key), x: player.x, y: player.y, dead,
-      monsters: monsters.length,
-      mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp })),
-      items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
-    }),
+    give: (k) => { if (defOf(k)) player.inv.push({ key: k }); },
+    peek: () => {
+      let ex = 0;
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
+      return {
+        depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
+        atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
+        inv: player.inv.map((i) => i.key), identified: [...identified],
+        x: player.x, y: player.y, dead, explored: ex,
+        monsters: monsters.length,
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp })),
+        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
+      };
+    },
+    useIdx: (i) => actItem(i),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); } },
   };

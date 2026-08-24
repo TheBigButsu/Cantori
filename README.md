@@ -4,17 +4,19 @@ A permadeath roguelike dungeon crawler — in the spirit of Shattered Pixel
 Dungeon — built as a web game so it plays on a phone (iPhone included) with no
 App Store, and eventually offline.
 
-## Where we are: Milestone 2 — "Teeth in the Dark"
+## Where we are: Milestone 3 — "Spoils"
 
-The dungeon bites back. The world is turn-based — when you act, everything else
-gets a turn. Classic vermin (rat, bat, snake, spider) lurk in the rooms, wake
-when they sense you, and hunt you down. Walk into one to attack it; it hits
-back. You and every monster have hit points (yours shown up top). At 0 HP the
-run ends — **permadeath** — and you begin again at Depth 1. Monster numbers grow
-as you descend.
+Loot and growth. Levels are strewn with items — weapons, armor, gold, and
+mystery potions and scrolls. Walk over something to pick it up; open your **pack**
+(🎒) to equip gear or use consumables. Weapons raise your attack, armor blunts
+incoming blows. Potions and scrolls are **unidentified** until you use one — a
+healing draught or a mouthful of poison, you won't know until you drink it.
+Killing monsters grants XP; leveling up raises your max HP and attack. Gold is
+tallied for score.
 
-Built on the Depth 1 dungeon: procedural levels, fog of war, stairs, a camera
-that follows you, zoom, and a floor map.
+Consumables: healing / strength / poison potions; magic-mapping / teleport
+scrolls. Built on everything before it — turn-based combat, permadeath,
+procedural dungeons, fog of war, camera, zoom, and floor map.
 
 **Controls**
 - **Phone:** tap an explored tile — the character finds a route and walks there,
@@ -22,6 +24,8 @@ that follows you, zoom, and a floor map.
 - **Keyboard:** arrows / WASD, plus 8-direction keys (vi-keys `y u b n` and the
   numpad) for diagonal steps.
 - **Attack:** walk into a monster.
+- **Pack:** the `🎒` button or `I` — tap gear to equip it, tap a potion/scroll to
+  use it; `✕` / `🎒` / `Esc` to close.
 - **Descend:** step onto the `>` stairs.
 - **Zoom:** pinch, the on-screen `+` / `−` buttons, the mouse wheel, or `+` / `−`.
 - **Floor map:** the `▦` button or `M` — shows the whole explored level, with
@@ -58,7 +62,7 @@ Built one "depth" at a time, playable at the end of each:
 
 - **0 · First Light** — walk around a room _(done)_
 - **1 · The Descent** — random dungeons, corridors, fog of war, stairs down _(done)_
-- **2 · Teeth in the Dark** — monsters, combat, health, permadeath _(you are here)_
-- **3 · Spoils** — items, inventory, weapons, potions, scrolls
+- **2 · Teeth in the Dark** — monsters, combat, health, permadeath _(done)_
+- **3 · Spoils** — items, inventory, weapons, potions, scrolls _(you are here)_
 - **4 · The Long Way Down** — many monsters, scaling difficulty, a win
 - **5 · Made for the Pocket** — app icon, sound, refined touch, full offline play
