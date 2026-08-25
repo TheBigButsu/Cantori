@@ -638,8 +638,28 @@ window.CANTORI_DATA = {
       },
       "skillTree": [
         [
-          null,
-          null,
+          {
+            "name": "Rush",
+            "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
+            "levels": [
+              "+0 damage, 100 turn cooldown",
+              "+3 damage",
+              "+5 damage, 50 turn cooldown",
+              "can stun enemies 50% of the time"
+            ],
+            "req": []
+          },
+          {
+            "name": "Spin",
+            "desc": "Become a blender — strike every monster around you.",
+            "levels": [
+              "hit all adjacent foes, 80 turn cooldown",
+              "+1 damage",
+              "+1 damage, range 2 (hits within 2 tiles)",
+              "free action — doesn't advance the turn clock"
+            ],
+            "req": []
+          },
           null,
           null,
           null

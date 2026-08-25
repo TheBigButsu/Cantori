@@ -110,24 +110,30 @@
       padding:6px 7px;font-family:var(--mono);font-size:12px;width:100%;
     }
     .cfld input:focus,.cfld select:focus,.cfld textarea:focus{outline:none;border-color:var(--amber)}
-    /* Skill tree grid */
+    /* Skill tree grid — Diablo-style, cells are a skill or a blank */
     .stree{border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto;background:var(--panel2)}
-    .strow{display:grid;grid-template-columns:64px repeat(5,minmax(150px,1fr));gap:8px;margin-bottom:8px}
-    .stier{align-self:center;color:var(--amber);font-size:11px;font-weight:700;letter-spacing:.04em}
-    .scell{position:relative;border:1px solid var(--line);border-radius:8px;padding:7px;background:#0c0905;display:flex;flex-direction:column;gap:5px}
-    .scell.filled{border-color:var(--green)}
-    .scell .sname{background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:12px;font-weight:600}
+    .strow{display:grid;grid-template-columns:64px repeat(5,minmax(190px,1fr));gap:8px;margin-bottom:8px;align-items:start}
+    .stier{align-self:start;padding-top:8px;color:var(--amber);font-size:11px;font-weight:700;letter-spacing:.04em}
+    .scell{border:1px solid var(--line);border-radius:8px;background:#0c0905;display:flex;flex-direction:column;gap:5px}
+    .scell.filled{border-color:var(--green);padding:7px}
+    .scell.blank{border-style:dashed;min-height:48px;align-items:center;justify-content:center}
+    .sadd{background:none;border:0;color:var(--ink-dim);font-size:20px;cursor:pointer;width:100%;min-height:48px}
+    .sadd:hover{color:var(--green)}
+    .shead{display:flex;gap:5px;align-items:center}
+    .scell .sname{flex:1;background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:12px;font-weight:600}
     .scell .sname:focus{outline:none;border-color:var(--amber)}
     .scell .sdesc{background:#15110b;color:var(--ink-dim);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:10.5px;resize:vertical;line-height:1.4}
     .scell .sdesc:focus{outline:none;border-color:var(--amber)}
-    /* SPD-style hover tooltip */
-    .scell .stip{
-      position:absolute;left:50%;bottom:100%;transform:translateX(-50%);margin-bottom:6px;
-      min-width:180px;max-width:260px;z-index:20;display:none;pointer-events:none;
-      background:#0b0906;color:var(--ink);border:1px solid var(--amber);border-radius:8px;
-      padding:8px 10px;font-size:11px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.6);
-    }
-    .scell:hover .stip{display:block}
+    .slevels{display:flex;flex-direction:column;gap:3px}
+    .slvrow{display:flex;align-items:center;gap:5px}
+    .slvl{width:20px;color:var(--amber);font-size:10px;font-weight:700}
+    .slvrow input{flex:1;background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 5px;font-family:var(--mono);font-size:10.5px}
+    .slvrow input:focus{outline:none;border-color:var(--amber)}
+    .sdots{display:flex;gap:5px;justify-content:center;padding:2px 0}
+    .sdot{width:9px;height:9px;border-radius:50%;border:1px solid var(--ink-dim);background:transparent}
+    .sdot.on{background:var(--amber);border-color:var(--amber)}
+    .sprereq{border-top:1px solid var(--line);padding-top:6px}
+    .sprereq .chips .chip{font-size:10px;padding:3px 8px}
     .cols-note{color:var(--ink-dim);font-size:11px;margin:8px 0 0;line-height:1.5}
     .gh-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .dlg-body label{display:block;color:var(--ink-dim);font-size:11px;letter-spacing:.04em}

@@ -84,8 +84,9 @@
   let enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let activeClass = 0;
-  // Normalize a class: ensure stats/start/levelUp exist and pad the skill tree to a
-  // full 5×5 grid of {name, desc} cells (blank to start).
+  // Normalize a class: stats/start/levelUp exist, and the skill tree is a 5×5 grid
+  // whose cells are either a skill object or null (a Diablo-style blank space).
+  //   skill = { name, desc, levels: [up to 4 per-level notes], req: [[tier,slot], …] }
   function ensureClass(obj) {
     obj.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, obj.stats || {});
     obj.start = obj.start || {};
@@ -93,7 +94,15 @@
     if (!Array.isArray(obj.skillTree)) obj.skillTree = [];
     for (let t = 0; t < TIERS; t++) {
       if (!Array.isArray(obj.skillTree[t])) obj.skillTree[t] = [];
-      for (let s = 0; s < SLOTS; s++) if (!obj.skillTree[t][s]) obj.skillTree[t][s] = { name: "", desc: "" };
+      for (let s = 0; s < SLOTS; s++) {
+        const c = obj.skillTree[t][s];
+        if (c && c.name) {
+          c.desc = c.desc || "";
+          c.levels = Array.isArray(c.levels) ? c.levels.slice(0, 4) : [];
+          c.req = Array.isArray(c.req) ? c.req : [];
+          obj.skillTree[t][s] = c;
+        } else obj.skillTree[t][s] = null;   // blank space
+      }
       obj.skillTree[t].length = SLOTS;
     }
     obj.skillTree.length = TIERS;
@@ -407,29 +416,81 @@
     const bh = document.createElement("h3"); bh.className = "csec"; bh.textContent = "Blurb"; wrap.appendChild(bh);
     const bg = document.createElement("div"); bg.className = "cform"; const bf = classField(o, "shown in class select", "blurb", "textarea"); bf.style.gridColumn = "1 / -1"; bg.appendChild(bf); wrap.appendChild(bg);
 
-    // 5×5 skill tree
-    const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 options (hover a skill to read it)"; wrap.appendChild(th);
+    // 5×5 skill tree (Diablo-style: cells are a skill or a blank space)
+    const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 slots"; wrap.appendChild(th);
+    const tnote = document.createElement("p"); tnote.className = "hint";
+    tnote.textContent = "Leave slots blank to shape the tree. Each skill has an in-game description, up to 4 levels (write what each level does — the dots show how high it goes), and prerequisites (other skills that must be taken first). Arrows between them come later.";
+    wrap.appendChild(tnote);
+    const allSkills = [];   // gather named skills for the prereq picker
+    for (let t = 0; t < TIERS; t++) for (let s = 0; s < SLOTS; s++) { const c = o.skillTree[t][s]; if (c && c.name) allSkills.push({ t, s, name: c.name }); }
     const tree = document.createElement("div"); tree.className = "stree";
     for (let t = 0; t < TIERS; t++) {
       const rowEl = document.createElement("div"); rowEl.className = "strow";
       const tl = document.createElement("div"); tl.className = "stier"; tl.textContent = "Tier " + (t + 1); rowEl.appendChild(tl);
-      for (let s = 0; s < SLOTS; s++) {
-        const cell = o.skillTree[t][s];
-        const box = document.createElement("div"); box.className = "scell" + (cell.name ? " filled" : "");
-        const nm = document.createElement("input"); nm.className = "sname"; nm.type = "text"; nm.placeholder = "empty"; nm.value = cell.name || "";
-        const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "description"; dsc.value = cell.desc || "";
-        const tip = document.createElement("div"); tip.className = "stip";
-        const setTip = () => { tip.textContent = cell.name ? (cell.name + (cell.desc ? " — " + cell.desc : "")) : "(empty skill slot)"; };
-        setTip();
-        nm.oninput = () => { cell.name = nm.value; box.classList.toggle("filled", !!nm.value); setTip(); };
-        dsc.oninput = () => { cell.desc = dsc.value; setTip(); };
-        box.appendChild(nm); box.appendChild(dsc); box.appendChild(tip);
-        rowEl.appendChild(box);
-      }
+      for (let s = 0; s < SLOTS; s++) rowEl.appendChild(renderSkillCell(o, t, s, allSkills));
       tree.appendChild(rowEl);
     }
     wrap.appendChild(tree);
     return wrap;
+  }
+  function renderSkillCell(o, t, s, allSkills) {
+    const cell = o.skillTree[t][s];
+    const box = document.createElement("div"); box.className = "scell" + (cell ? " filled" : " blank");
+    if (!cell) {
+      const add = document.createElement("button"); add.className = "sadd"; add.textContent = "+";
+      add.title = "add a skill here";
+      add.onclick = () => { o.skillTree[t][s] = { name: "New Skill", desc: "", levels: ["", ""], req: [] }; render(); };
+      box.appendChild(add);
+      return box;
+    }
+    // header: name + remove
+    const head = document.createElement("div"); head.className = "shead";
+    const nm = document.createElement("input"); nm.className = "sname"; nm.type = "text"; nm.value = cell.name || ""; nm.placeholder = "name";
+    nm.oninput = () => { cell.name = nm.value; };
+    const rm = document.createElement("button"); rm.className = "bbtn"; rm.textContent = "✕"; rm.title = "clear slot";
+    rm.onclick = () => { o.skillTree[t][s] = null; render(); };
+    head.appendChild(nm); head.appendChild(rm); box.appendChild(head);
+    // description
+    const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "in-game description"; dsc.value = cell.desc || "";
+    dsc.oninput = () => { cell.desc = dsc.value; };
+    box.appendChild(dsc);
+    // 4 level rows + dots
+    const dots = document.createElement("div"); dots.className = "sdots";
+    const refreshDots = () => {
+      dots.innerHTML = "";
+      const maxLv = (cell.levels || []).filter((x) => x && x.trim()).length;
+      for (let i = 0; i < 4; i++) { const d = document.createElement("span"); d.className = "sdot" + (i < maxLv ? " on" : ""); dots.appendChild(d); }
+    };
+    const lvWrap = document.createElement("div"); lvWrap.className = "slevels";
+    for (let i = 0; i < 4; i++) {
+      const row = document.createElement("div"); row.className = "slvrow";
+      const lab = document.createElement("span"); lab.className = "slvl"; lab.textContent = "L" + (i + 1);
+      const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "what level " + (i + 1) + " does"; inp.value = (cell.levels && cell.levels[i]) || "";
+      inp.oninput = () => { cell.levels = cell.levels || []; cell.levels[i] = inp.value; while (cell.levels.length && !cell.levels[cell.levels.length - 1]) cell.levels.pop(); refreshDots(); };
+      row.appendChild(lab); row.appendChild(inp); lvWrap.appendChild(row);
+    }
+    box.appendChild(lvWrap);
+    box.appendChild(dots); refreshDots();
+    // prerequisites: chips of every OTHER named skill
+    const others = allSkills.filter((k) => !(k.t === t && k.s === s));
+    if (others.length) {
+      const pr = document.createElement("div"); pr.className = "sprereq";
+      const l = document.createElement("div"); l.className = "bmons-l"; l.textContent = "Requires:"; pr.appendChild(l);
+      const chips = document.createElement("div"); chips.className = "chips";
+      cell.req = cell.req || [];
+      const has = (k) => cell.req.some((r) => r[0] === k.t && r[1] === k.s);
+      for (const k of others) {
+        const chip = document.createElement("button"); chip.className = "chip" + (has(k) ? " on" : ""); chip.textContent = k.name;
+        chip.onclick = () => {
+          const idx = cell.req.findIndex((r) => r[0] === k.t && r[1] === k.s);
+          if (idx >= 0) cell.req.splice(idx, 1); else cell.req.push([k.t, k.s]);
+          chip.classList.toggle("on");
+        };
+        chips.appendChild(chip);
+      }
+      pr.appendChild(chips); box.appendChild(pr);
+    }
+    return box;
   }
 
   // ---- Enchants: table with proc rate + slot chips ---------------------------
@@ -549,7 +610,8 @@
       seenC[key] = 1;
       const c = clone(obj);
       // compress the skill grid: fully-blank cells → null (kept as scaffold, small on disk)
-      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => (cell && (cell.name || cell.desc)) ? { name: cell.name || "", desc: cell.desc || "" } : null));
+      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => (cell && cell.name)
+        ? { name: cell.name, desc: cell.desc || "", levels: (cell.levels || []).slice(0, 4), req: cell.req || [] } : null));
       out.classes[key] = c;
     }
     return { data: out, problems };
