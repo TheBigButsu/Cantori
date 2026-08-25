@@ -670,14 +670,25 @@
     ghMsg("Committing…", "");
     const api = "https://api.github.com/repos/" + c.owner + "/" + c.repo + "/contents/" + c.path;
     const headers = { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
-    try {
-      let sha = null;
-      const getRes = await fetch(api + "?ref=" + encodeURIComponent(c.branch), { headers });
-      if (getRes.ok) { sha = (await getRes.json()).sha; }
-      else if (getRes.status !== 404) { throw new Error("read " + getRes.status + " — " + (await getRes.text()).slice(0, 140)); }
-      const body = { message: "Edit " + c.path + " via Cantori editor", content: utf8ToBase64(dataFileText(data)), branch: c.branch };
+    const content = utf8ToBase64(dataFileText(data));
+    // Fetch the file's current blob SHA WITHOUT the HTTP cache — a cached GET
+    // returns a stale SHA and GitHub then rejects the PUT with a 409.
+    async function currentSha() {
+      const getRes = await fetch(api + "?ref=" + encodeURIComponent(c.branch) + "&_=" + Date.now(), { headers, cache: "no-store" });
+      if (getRes.ok) return (await getRes.json()).sha;
+      if (getRes.status === 404) return null;
+      throw new Error("read " + getRes.status + " — " + (await getRes.text()).slice(0, 140));
+    }
+    async function put(sha) {
+      const body = { message: "Edit " + c.path + " via Cantori editor", content: content, branch: c.branch };
       if (sha) body.sha = sha;
-      const putRes = await fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
+      return fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
+    }
+    try {
+      let putRes = await put(await currentSha());
+      // 409 = the SHA moved under us (another commit, or a cached SHA). Re-read
+      // the live SHA once and retry so a stale read doesn't block the save.
+      if (putRes.status === 409) { ghMsg("Refreshing…", ""); putRes = await put(await currentSha()); }
       if (!putRes.ok) { throw new Error("commit " + putRes.status + " — " + (await putRes.text()).slice(0, 180)); }
       ghMsg("Committed! GitHub Pages redeploys in ~1 min.", "ok");
       setStatus("Committed " + c.path + " to " + c.owner + "/" + c.repo + " (" + c.branch + ").", "ok");
