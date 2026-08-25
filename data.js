@@ -356,12 +356,16 @@ window.CANTORI_DATA = {
       "fire": {
         "name": "Flaming",
         "icon": "🔥",
-        "color": "#ff8f4a"
+        "color": "#ff8f4a",
+        "proc": 0.35,
+        "slots": ["weapon", "armor", "ring", "trinket", "necklace"]
       },
       "electric": {
         "name": "Charged",
         "icon": "⚡",
-        "color": "#9ad0ff"
+        "color": "#9ad0ff",
+        "proc": 0.3,
+        "slots": ["weapon", "armor", "ring", "trinket", "necklace"]
       }
     }
   },
@@ -410,7 +414,7 @@ window.CANTORI_DATA = {
       "cat": "tool",
       "name": "Torch",
       "effect": "burn",
-      "weight": 0,
+      "noDrop": true,
       "glyph": "|",
       "color": "#f6b845"
     }
@@ -638,15 +642,27 @@ window.CANTORI_DATA = {
       "skillTree": [
         [
           {
-            "name": "New Skill",
-            "desc": "",
+            "name": "Rush",
+            "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
             "levels": [
-              "",
-              ""
+              "+0 damage, 100 turn cooldown",
+              "+3 damage",
+              "+5 damage, 50 turn cooldown",
+              "can stun enemies 50% of the time"
             ],
             "req": []
           },
-          null,
+          {
+            "name": "Spin",
+            "desc": "Become a blender — strike every monster around you.",
+            "levels": [
+              "hit all adjacent foes, 80 turn cooldown",
+              "+1 damage",
+              "+1 damage, range 2 (hits within 2 tiles)",
+              "free action — doesn't advance the turn clock"
+            ],
+            "req": []
+          },
           null,
           null,
           null
