@@ -73,7 +73,16 @@
     .dlg-body{padding:14px 16px}
     .dlg-body p{margin:0 0 10px;color:var(--ink-dim)}
     .dlg-body textarea{width:100%;height:44vh;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11.5px}
-    .cols-note{color:var(--ink-dim);font-size:11px;margin:8px 0 0}
+    .cols-note{color:var(--ink-dim);font-size:11px;margin:8px 0 0;line-height:1.5}
+    .gh-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .dlg-body label{display:block;color:var(--ink-dim);font-size:11px;letter-spacing:.04em}
+    .dlg-body label input{
+      width:100%;margin-top:4px;background:#0c0905;color:var(--ink);border:1px solid var(--line);
+      border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12.5px;
+    }
+    .dlg-body label input:focus{outline:none;border-color:var(--amber)}
+    #ghMsg.ok{color:var(--green)} #ghMsg.err{color:var(--red)}
+    #ghState{color:var(--green)}
   </style>
 </head>
 <body>
@@ -83,6 +92,7 @@
     <span class="spacer"></span>
     <button class="tool primary" id="btnPlay">▶ Playtest</button>
     <button class="tool on" id="btnStop" style="display:none">■ Stop playtest</button>
+    <button class="tool" id="btnGh">☁ Save to GitHub</button>
     <button class="tool" id="btnCopy">⧉ Copy for Claude</button>
     <button class="tool" id="btnDownload">⤓ Download data.js</button>
     <button class="tool warn" id="btnRevert">↺ Revert to shipped</button>
@@ -100,6 +110,33 @@
       <div style="margin-top:10px;display:flex;gap:8px">
         <button class="tool primary" id="copyNow">Copy</button>
         <span id="copyMsg" style="color:var(--green);align-self:center"></span>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="ghDlg">
+    <div class="dlg-head"><b>Save to GitHub</b><button class="tool" id="ghClose">✕</button></div>
+    <div class="dlg-body">
+      <p id="ghState"></p>
+      <div class="gh-grid">
+        <label>Repo owner<input type="text" id="ghOwner"></label>
+        <label>Repo name<input type="text" id="ghRepo"></label>
+        <label>Branch<input type="text" id="ghBranch"></label>
+        <label>File path<input type="text" id="ghPath"></label>
+      </div>
+      <label style="display:block;margin-top:10px">GitHub token
+        <input type="password" id="ghToken" placeholder="ghp_… or github_pat_… (stored only in this browser)">
+      </label>
+      <p class="cols-note">
+        Make a <b>fine-grained token</b>: GitHub → Settings → Developer settings → Fine-grained tokens →
+        Generate. Repository access = <b>only this repo</b>; Permissions → <b>Contents: Read and write</b>.
+        The token is saved in this browser only (never committed) and you can revoke it anytime.
+      </p>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="tool primary" id="ghSave">💾 Commit data.js</button>
+        <button class="tool" id="ghSaveToken">Save token</button>
+        <button class="tool warn" id="ghForget">Forget token</button>
+        <span id="ghMsg" style="align-self:center;font-size:12px"></span>
       </div>
     </div>
   </dialog>

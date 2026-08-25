@@ -249,6 +249,69 @@
            "window.CANTORI_DATA = " + JSON.stringify(data, null, 2) + ";\n";
   }
 
+  // ---- Save straight to GitHub (commits data.js via the API) -----------------
+  const GH_CFG = "cantori_gh_cfg", GH_TOK = "cantori_gh_token";
+  const GH_DEFAULTS = { owner: "thebigbutsu", repo: "Cantori", branch: "claude/mobile-iphone-support-plan-kp1qqh", path: "data.js" };
+  function ghCfg() { try { return Object.assign({}, GH_DEFAULTS, JSON.parse(localStorage.getItem(GH_CFG) || "{}")); } catch (e) { return Object.assign({}, GH_DEFAULTS); } }
+  function ghToken() { try { return localStorage.getItem(GH_TOK) || ""; } catch (e) { return ""; } }
+  function utf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = ""; const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    return btoa(bin);
+  }
+  function ghMsg(m, k) { const e = $("ghMsg"); e.textContent = m; e.className = k || ""; }
+  function reflectGhButton() { $("btnGh").classList.toggle("on", !!ghToken()); }
+  function openGh() {
+    const c = ghCfg();
+    $("ghOwner").value = c.owner; $("ghRepo").value = c.repo; $("ghBranch").value = c.branch; $("ghPath").value = c.path;
+    $("ghToken").value = ghToken();
+    $("ghState").textContent = ghToken() ? "Token saved in this browser — you're connected." : "No token yet — paste one below to connect.";
+    ghMsg("", "");
+    $("ghDlg").showModal();
+  }
+  function ghSaveCfg() {
+    const c = { owner: $("ghOwner").value.trim(), repo: $("ghRepo").value.trim(), branch: $("ghBranch").value.trim(), path: $("ghPath").value.trim() };
+    try { localStorage.setItem(GH_CFG, JSON.stringify(c)); } catch (e) {}
+    return c;
+  }
+  function ghSaveToken() {
+    const t = $("ghToken").value.trim();
+    try { if (t) localStorage.setItem(GH_TOK, t); else localStorage.removeItem(GH_TOK); } catch (e) {}
+    $("ghState").textContent = t ? "Token saved in this browser — you're connected." : "No token.";
+    reflectGhButton(); ghMsg("Saved.", "ok");
+  }
+  function ghForget() {
+    try { localStorage.removeItem(GH_TOK); } catch (e) {}
+    $("ghToken").value = ""; $("ghState").textContent = "No token."; reflectGhButton(); ghMsg("Token forgotten.", "ok");
+  }
+  async function ghCommit() {
+    const { data, problems } = buildData();
+    if (problems.length) { ghMsg("Fix: " + problems[0], "err"); return; }
+    const c = ghSaveCfg();
+    const token = $("ghToken").value.trim();
+    if (token) { try { localStorage.setItem(GH_TOK, token); } catch (e) {} reflectGhButton(); }
+    if (!token) { ghMsg("Enter a token first.", "err"); return; }
+    if (!c.owner || !c.repo || !c.branch || !c.path) { ghMsg("Fill in owner / repo / branch / path.", "err"); return; }
+    ghMsg("Committing…", "");
+    const api = "https://api.github.com/repos/" + c.owner + "/" + c.repo + "/contents/" + c.path;
+    const headers = { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    try {
+      let sha = null;
+      const getRes = await fetch(api + "?ref=" + encodeURIComponent(c.branch), { headers });
+      if (getRes.ok) { sha = (await getRes.json()).sha; }
+      else if (getRes.status !== 404) { throw new Error("read " + getRes.status + " — " + (await getRes.text()).slice(0, 140)); }
+      const body = { message: "Edit " + c.path + " via Cantori editor", content: utf8ToBase64(dataFileText(data)), branch: c.branch };
+      if (sha) body.sha = sha;
+      const putRes = await fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
+      if (!putRes.ok) { throw new Error("commit " + putRes.status + " — " + (await putRes.text()).slice(0, 180)); }
+      ghMsg("Committed! GitHub Pages redeploys in ~1 min.", "ok");
+      setStatus("Committed " + c.path + " to " + c.owner + "/" + c.repo + " (" + c.branch + ").", "ok");
+    } catch (e) {
+      ghMsg("Failed: " + e.message, "err");
+    }
+  }
+
   // ---- Toolbar actions -------------------------------------------------------
   function setStatus(msg, kind) { const s = $("status"); s.textContent = msg; s.className = kind || ""; }
   function draftActive() { try { return !!localStorage.getItem(LSKEY); } catch (e) { return false; } }
@@ -337,8 +400,14 @@
     if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, () => { document.execCommand("copy"); done(); });
     else { document.execCommand("copy"); done(); }
   };
+  $("btnGh").onclick = openGh;
+  $("ghClose").onclick = () => $("ghDlg").close();
+  $("ghSave").onclick = ghCommit;
+  $("ghSaveToken").onclick = ghSaveToken;
+  $("ghForget").onclick = ghForget;
 
   render();
   refreshDraftButtons();
+  reflectGhButton();
   setStatus(draftActive() ? "Editing a saved draft (Playtest active)." : "Loaded shipped content.", "ok");
 })();

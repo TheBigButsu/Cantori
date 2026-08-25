@@ -76,8 +76,14 @@ classes and the loot config. Three ways to use your edits:
 - **▶ Playtest** — saves your changes to this browser and opens the game using
   them. The game shows a green **⚙ DRAFT** badge while a draft is active; tap it
   (or **■ Stop playtest**) to go back to the live content.
-- **⧉ Copy for Claude** — copies a ready-made `data.js`; paste it into the chat
-  and it gets committed for real.
+- **☁ Save to GitHub** — commits `data.js` straight to the repo (auto-deploys via
+  Pages, works on iPhone). One-time setup: make a GitHub **fine-grained token**
+  (Settings → Developer settings → Fine-grained tokens → Generate; give it access
+  to **only this repo**, Permissions → **Contents: Read and write**), paste it into
+  the dialog, and hit **Save token**. The token lives only in your browser; revoke
+  it anytime. After that, **💾 Commit data.js** publishes your edits directly.
+- **⧉ Copy for Claude** — copies a ready-made `data.js`; paste it into the chat, or
+  into GitHub's web file editor, to commit without a token.
 - **⤓ Download data.js** — saves the file directly.
 
 Your draft lives only in your browser until you export it — nothing is sent
