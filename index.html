@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css?v=13">
+  <link rel="stylesheet" href="./styles.css?v=14">
 </head>
 <body>
   <div id="app">
@@ -33,13 +33,16 @@
       <canvas id="game"></canvas>
       <canvas id="map" hidden style="position:absolute;left:0;top:0"></canvas>
       <div id="controls" style="position:absolute;right:14px;bottom:14px">
-        <button id="btnWait" type="button" aria-label="Wait a turn" title="Wait a turn (Z)">⏳</button>
+        <button id="btnChar" type="button" aria-label="Character" title="Character (C)">👤</button>
         <button id="btnBag" type="button" aria-label="Pack" title="Pack (I)">🎒</button>
+        <button id="btnExamine" type="button" aria-label="Examine" title="Examine (X)">🔍</button>
         <button id="btnMap" type="button" aria-label="Floor map" title="Floor map (M)">▦</button>
         <button id="btnOut" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
         <button id="btnIn" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
       </div>
     </div>
+
+    <footer id="hotbar"></footer>
 
     <footer id="hint">
       <span id="log">Explore · tap to move · reach the <b>&gt;</b> stairs · pinch to zoom · ▦ map</span>
@@ -62,6 +65,21 @@
     </div>
   </div>
 
+  <div id="char" hidden>
+    <div class="char-card">
+      <div class="char-head">
+        <span>CHARACTER</span>
+        <button id="charClose" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="char-tabs">
+        <button class="ctab on" data-tab="stats" type="button">Stats</button>
+        <button class="ctab" data-tab="skills" type="button">Skills</button>
+        <button class="ctab" data-tab="boons" type="button">Boons</button>
+      </div>
+      <div id="charBody"></div>
+    </div>
+  </div>
+
   <div id="gameover" hidden>
     <div class="go-card">
       <div class="go-title">YOU DIED</div>
@@ -78,7 +96,7 @@
     </div>
   </div>
 
-  <script src="./data.js?v=13"></script>
-  <script src="./game.js?v=13"></script>
+  <script src="./data.js?v=14"></script>
+  <script src="./game.js?v=14"></script>
 </body>
 </html>

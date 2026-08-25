@@ -124,13 +124,13 @@ Steps can reorder; save first is the main dependency.
 - **Full-room visibility** (SPD style): FOV is line-of-sight bound, not radius
   bound — the room you're in lights up fully; only walls block sight.
 
-## Next up: character screen, hotbar, examine, and the Warrior tree
+## Character screen, hotbar, examine, Warrior tree — DONE
 
-**Character screen** (SPD-inspired) with tabs: **Stats · Skill Tree · Boons**.
-A **hotbar** for skills/items, and an **examine ("magnifying glass")** tool to
-inspect any visible tile/monster.
+**Character screen** (👤) with tabs **Stats · Skills · Boons**; a **hotbar**
+(Wait + learned skills, with live cooldowns); an **examine** tool (🔍) to inspect
+any visible tile. Banked points are spent on the skill tree.
 
-**Warrior skills** (spend banked points):
+**Warrior skills** (implemented; spend banked points):
 - **Rush** — dash in a direction until you collide. Hit a monster → damage it;
   hit a wall → damage yourself. Cooldown 200 turns.
   - 1 pt: unlock, +0 damage · 2 pts: +3 damage · 3 pts: +5 damage and −50 cooldown

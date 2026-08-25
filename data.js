@@ -149,7 +149,23 @@ window.CANTORI_DATA = {
     warrior: { name: "Warrior", main: "STR", secondary: "VIT", unlock: "start",
                stats: { STR: 8, VIT: 7, DEX: 4, INT: 3, RES: 3, LCK: 4 },
                start: { weapon: "sword", armor: "leather" },
-               blurb: "Front-line brawler. Hits hard, endures more." },
+               blurb: "Front-line brawler. Hits hard, endures more.",
+               // Skills cost 1 banked point per rank. `ranks` are the values AT that
+               // rank (dmg = bonus damage over a normal hit; cd = cooldown in turns).
+               skills: {
+                 rush: {
+                   name: "Rush", icon: "➤",
+                   desc: "Dash in a direction until you collide — smash a monster, or ram yourself into a wall.",
+                   max: 3,
+                   ranks: [ { cd: 200, dmg: 0 }, { cd: 200, dmg: 3 }, { cd: 150, dmg: 5 } ],
+                 },
+                 spin: {
+                   name: "Spin", icon: "↻",
+                   desc: "Whirl and strike every monster around you.",
+                   max: 3,
+                   ranks: [ { cd: 100, dmg: 0, range: 1 }, { cd: 100, dmg: 1, range: 1 }, { cd: 100, dmg: 1, range: 2 } ],
+                 },
+               } },
     duelist: { name: "Duelist", main: "DEX", secondary: "LCK", unlock: "start",
                start: { weapon: "dagger", armor: "leather" },
                blurb: "Fast and precise — evasion and critical strikes." },

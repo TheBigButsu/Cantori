@@ -69,6 +69,9 @@
     player.maxHp = computeMaxHp();
     player.hp = player.maxHp;
     player.evasion = playerEvasion();
+    player.skills = {};
+    const cs = c.skills || {};
+    for (const k of Object.keys(cs)) player.skills[k] = { rank: 0, cd: 0 };
     if (c.start) {                             // starting kit, already equipped
       if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = c.start.weapon;
       if (c.start.armor && GEAR[c.start.armor]) player.armor = c.start.armor;
@@ -379,7 +382,7 @@
         return;
       }
       const watk = player.weapon ? GEAR[player.weapon].atk : 0;
-      const dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus;
+      const dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus + bonus;
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, "-" + dmg, "#ffe08a");
@@ -638,6 +641,7 @@
 
   function worldTurn() {
     turns++;
+    for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       const d = cheb(m.x, m.y, player.x, player.y);
@@ -655,6 +659,7 @@
       player.hp++; updateHUD(); floatText(player.x, player.y, "+1", "#8ed69a");
     }
     maybeReinforce();
+    updateHotbar();
   }
 
   // ---- Pathfinding (BFS, 8-direction, across explored tiles) --------------
@@ -701,6 +706,12 @@
 
   function walkTo(tx, ty) {
     if (dead) return;
+    if (examineMode) { describeTile(tx, ty); return; }
+    if (pendingSkill === "rush") {
+      const dir = [Math.sign(tx - player.x), Math.sign(ty - player.y)];
+      if (dir[0] || dir[1]) executeRush(dir); else { pendingSkill = null; updateHotbar(); }
+      return;
+    }
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
     if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
@@ -1033,7 +1044,7 @@
   }
   function toggleMap(force) {
     mapOpen = force === undefined ? !mapOpen : force;
-    if (mapOpen) toggleInv(false);
+    if (mapOpen) { toggleInv(false); toggleChar(false); toggleExamine(false); }
     mapCanvas.hidden = !mapOpen;
     document.getElementById("btnMap").classList.toggle("on", mapOpen);
   }
@@ -1042,7 +1053,7 @@
   let invOpen = false;
   function toggleInv(force) {
     invOpen = force === undefined ? !invOpen : force;
-    if (invOpen) { toggleMap(false); renderInv(); }
+    if (invOpen) { toggleMap(false); toggleChar(false); toggleExamine(false); renderInv(); }
     document.getElementById("inv").hidden = !invOpen;
     document.getElementById("btnBag").classList.toggle("on", invOpen);
   }
@@ -1149,6 +1160,186 @@
     }
   }
 
+  // ---- State: examine, skill targeting, character screen -------------------
+  let examineMode = false;
+  let pendingSkill = null;
+  let charOpen = false;
+  let charTab = "stats";
+
+  // ---- Skills --------------------------------------------------------------
+  function classSkills() { return (DATA.classes[player.cls] || {}).skills || {}; }
+  function skillDef(key) { return classSkills()[key]; }
+  function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
+
+  function learnSkill(key) {
+    const d = skillDef(key), st = player.skills[key];
+    if (!d || !st || st.rank >= d.max || player.statPoints <= 0) return;
+    player.statPoints--; st.rank++;
+    log((st.rank === 1 ? "Learned " : "Upgraded ") + d.name + " (rank " + st.rank + ").", "hit");
+    renderChar(); updateHotbar();
+  }
+  function useSkill(key) {
+    if (dead || mapOpen || invOpen || charOpen) return;
+    const st = player.skills[key], d = skillDef(key);
+    if (!st || st.rank < 1) return;
+    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
+    if (key === "rush") beginRush();
+    else if (key === "spin") executeSpin();
+  }
+  function beginRush() {
+    pendingSkill = pendingSkill === "rush" ? null : "rush";
+    log(pendingSkill ? "Rush — choose a direction (tap a nearby tile or press an arrow)." : "Rush cancelled.");
+    updateHotbar();
+  }
+  function executeRush(dir) {
+    pendingSkill = null;
+    const cur = skillCur("rush");
+    if (!cur) { updateHotbar(); return; }
+    let steps = 0;
+    while (steps <= 60) {
+      const nx = player.x + dir[0], ny = player.y + dir[1];
+      const mon = monsterAt(nx, ny);
+      if (mon) { bump(player, nx, ny); attack(player, mon, cur.dmg); break; }
+      if (isWall(nx, ny)) {
+        bump(player, nx, ny);
+        const self = randInt(2, 4);
+        player.hp -= self; flash(player); floatText(player.x, player.y, "-" + self, "#ff8f84");
+        updateHUD(); log("You slam into the wall! (-" + self + ")", "hurt");
+        if (player.hp <= 0) { player.skills.rush.cd = cur.cd; die(); updateHotbar(); return; }
+        break;
+      }
+      player.x = nx; player.y = ny; steps++; computeFOV(); pickUp();
+      if (map[player.y][player.x] === STAIRS) { player.skills.rush.cd = cur.cd; descend(); updateHotbar(); return; }
+    }
+    computeFOV();
+    player.skills.rush.cd = cur.cd;
+    worldTurn();
+  }
+  function executeSpin() {
+    const cur = skillCur("spin");
+    if (!cur) return;
+    const R = cur.range || 1;
+    let hit = 0;
+    for (const m of monsters.slice()) {
+      if (m.hp > 0 && !(m.x === player.x && m.y === player.y) && cheb(m.x, m.y, player.x, player.y) <= R) {
+        attack(player, m, cur.dmg); hit++;
+        if (dead) return;
+      }
+    }
+    log(hit ? ("You spin, striking " + hit + (hit === 1 ? " foe." : " foes.")) : "You spin, hitting nothing.", hit ? "hit" : "");
+    player.skills.spin.cd = cur.cd;
+    worldTurn();
+  }
+
+  // ---- Examine -------------------------------------------------------------
+  function toggleExamine(force) {
+    examineMode = force === undefined ? !examineMode : force;
+    if (examineMode) { pendingSkill = null; log("Examine — tap anything to inspect it."); updateHotbar(); }
+    document.getElementById("btnExamine").classList.toggle("on", examineMode);
+  }
+  function describeTile(x, y) {
+    if (!inBounds(x, y) || !explored[y][x]) { log("You can't make out anything there."); return; }
+    const m = monsters.find((mm) => mm.hp > 0 && mm.x === x && mm.y === y);
+    if (m && visible[y][x]) {
+      const tags = [];
+      if (m.boss) tags.push("BOSS");
+      if (m.ranged) tags.push("ranged");
+      if (m.charge) tags.push("charges");
+      if (m.evasion) tags.push("evasive");
+      log(monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp + (tags.length ? " (" + tags.join(", ") + ")" : ""));
+      return;
+    }
+    if (x === player.x && y === player.y) {
+      log("You — " + ((DATA.classes[player.cls] || {}).name || "Adventurer") + ", HP " + player.hp + "/" + player.maxHp);
+      return;
+    }
+    const it = items.find((i) => i.x === x && i.y === y);
+    if (it && visible[y][x]) { log(it.key === "gold" ? (it.amount + " gold") : displayName(it.key)); return; }
+    const t = map[y][x];
+    log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." : "Open ground.");
+  }
+
+  // ---- Character screen ----------------------------------------------------
+  function toggleChar(force) {
+    charOpen = force === undefined ? !charOpen : force;
+    if (charOpen) { toggleInv(false); toggleMap(false); toggleExamine(false); renderChar(); }
+    document.getElementById("char").hidden = !charOpen;
+    document.getElementById("btnChar").classList.toggle("on", charOpen);
+  }
+  function renderChar() {
+    const body = document.getElementById("charBody");
+    if (!body) return;
+    body.innerHTML = charTab === "stats" ? charStatsHTML() : charTab === "skills" ? charSkillsHTML() : charBoonsHTML();
+    if (charTab === "skills") {
+      for (const key of Object.keys(classSkills())) {
+        const btn = document.getElementById("upg-" + key);
+        if (btn) btn.addEventListener("click", () => learnSkill(key));
+      }
+    }
+  }
+  function charStatsHTML() {
+    const s = player.stats;
+    const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
+    const df = (player.armor ? GEAR[player.armor].def : 0) + vitResist();
+    const eff = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: Math.round(playerEvasion() * 100) + "% dodge", INT: "—", RES: "—", LCK: "—" };
+    const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) =>
+      `<div class="cstat"><span>${k}<small>${eff[k]}</small></span><b>${s[k]}</b></div>`).join("");
+    const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
+    return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
+      `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b></div>` +
+      `<div class="cstat-grid">${cells}</div>` +
+      `<div class="cline">${pts}</div>`;
+  }
+  function charSkillsHTML() {
+    const sk = classSkills();
+    let html = `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>`;
+    for (const key of Object.keys(sk)) {
+      const d = sk[key], st = player.skills[key];
+      const cur = st.rank > 0 ? d.ranks[st.rank - 1] : null;
+      const nextR = st.rank < d.max ? d.ranks[st.rank] : null;
+      const fmt = (r) => `+${r.dmg} dmg${r.range ? ", range " + r.range : ""}, ${r.cd}t cd`;
+      const nextTxt = nextR ? `Next (rank ${st.rank + 1}): ${fmt(nextR)}` : "Maxed.";
+      const canUp = st.rank < d.max && player.statPoints > 0;
+      const label = st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
+      html += `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
+        `<span class="srank">rank ${st.rank}/${d.max}</span></div>` +
+        `<div class="sdesc">${d.desc}</div>` +
+        `<div class="snext">${cur ? "Now: " + fmt(cur) + "<br>" : ""}${nextTxt}</div>` +
+        `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
+    }
+    return html;
+  }
+  function charBoonsHTML() {
+    const gods = DATA.gods || {};
+    let list = "";
+    for (const k of Object.keys(gods)) {
+      const g = gods[k];
+      list += `<span class="god"><b>${g.name}</b> — ${g.domain}${g.unlock === "sealed" ? " (sealed)" : ""}</span>`;
+    }
+    return `<div class="cboon">Boons are blessings you'll choose at the start of each biome — one of three from the gods you've unlocked. <em>Coming soon.</em>${list}</div>`;
+  }
+
+  // ---- Hotbar --------------------------------------------------------------
+  function makeSlot(icon, label, ready, cd, arming, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "slot" + (ready ? " ready" : " cool") + (arming ? " arming" : "");
+    b.innerHTML = `<span>${icon}</span><span class="lbl">${label}</span>` + (cd ? `<span class="cd">${cd}</span>` : "");
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function updateHotbar() {
+    const bar = document.getElementById("hotbar");
+    if (!bar) return;
+    bar.innerHTML = "";
+    bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn()));
+    for (const key of Object.keys(player.skills || {})) {
+      const st = player.skills[key], d = skillDef(key);
+      if (!st || st.rank < 1 || !d) continue;
+      bar.appendChild(makeSlot(d.icon, d.name, st.cd <= 0, st.cd > 0 ? st.cd : 0, pendingSkill === key, () => useSkill(key)));
+    }
+  }
+
   // ---- Main loop -----------------------------------------------------------
   const STEP_MS = 130;   // pace of auto-walk steps (kept just above the glide time)
   let lastT = 0, acc = 0;
@@ -1157,7 +1348,7 @@
     const dt = t - lastT;
     lastT = t;
 
-    if (walkPath.length && !mapOpen && !invOpen && !dead) {
+    if (walkPath.length && !mapOpen && !invOpen && !charOpen && !dead) {
       acc += dt;
       while (acc >= STEP_MS && walkPath.length) {
         if (anyMonsterVisible()) { walkPath = []; break; }
@@ -1191,15 +1382,25 @@
   window.addEventListener("keydown", (e) => {
     if (dead) { if (e.key === "Enter" || e.key === " ") restart(); return; }
     const key = (e.key || "").toLowerCase();
+    if (key === "c") { e.preventDefault(); toggleChar(); return; }
+    if (charOpen) { if (e.key === "Escape" || key === "c") toggleChar(false); return; }
     if (key === "i") { e.preventDefault(); toggleInv(); return; }
     if (invOpen) { if (e.key === "Escape") toggleInv(false); return; }
     if (key === "m") { e.preventDefault(); toggleMap(); return; }
     if (mapOpen) { if (e.key === "Escape") toggleMap(false); return; }
+    if (key === "x") { e.preventDefault(); toggleExamine(); return; }
+    if (e.key === "Escape" && (examineMode || pendingSkill)) { examineMode = false; pendingSkill = null; toggleExamine(false); updateHotbar(); return; }
     if (key === "z" || e.key === "." || e.code === "Numpad5") { e.preventDefault(); waitTurn(); return; }
+    if (key === "1") { e.preventDefault(); useSkill("rush"); return; }
+    if (key === "2") { e.preventDefault(); useSkill("spin"); return; }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(zoom * 1.2); return; }
     if (e.key === "-" || e.key === "_") { e.preventDefault(); setZoom(zoom / 1.2); return; }
     const dir = BY_CODE[e.code] || BY_KEY[e.key] || BY_KEY[key];
-    if (dir) { e.preventDefault(); walkPath = []; playerAct(dir[0], dir[1]); }
+    if (dir) {
+      e.preventDefault();
+      if (pendingSkill === "rush") { executeRush(dir); return; }
+      walkPath = []; playerAct(dir[0], dir[1]);
+    }
   });
 
   // ---- Buttons -------------------------------------------------------------
@@ -1207,14 +1408,27 @@
   document.getElementById("btnOut").addEventListener("click", () => setZoom(zoom / 1.2));
   document.getElementById("btnMap").addEventListener("click", () => toggleMap());
   document.getElementById("btnBag").addEventListener("click", () => toggleInv());
-  function waitTurn() { if (dead || mapOpen || invOpen) return; walkPath = []; worldTurn(); }
-  document.getElementById("btnWait").addEventListener("click", waitTurn);
+  document.getElementById("btnChar").addEventListener("click", () => toggleChar());
+  document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
+  function waitTurn() { if (dead || mapOpen || invOpen || charOpen) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
   const invOverlay = document.getElementById("inv");
   invOverlay.addEventListener("click", (e) => { if (e.target === invOverlay) toggleInv(false); });
   document.getElementById("invClose").addEventListener("click", () => toggleInv(false));
+
+  // character screen: tabs, close, tap-outside
+  document.getElementById("charClose").addEventListener("click", () => toggleChar(false));
+  const charOverlay = document.getElementById("char");
+  charOverlay.addEventListener("click", (e) => { if (e.target === charOverlay) toggleChar(false); });
+  for (const t of document.querySelectorAll(".ctab")) {
+    t.addEventListener("click", () => {
+      charTab = t.getAttribute("data-tab");
+      for (const o of document.querySelectorAll(".ctab")) o.classList.toggle("on", o === t);
+      renderChar();
+    });
+  }
 
   for (const id of ["gameover", "win"]) {
     const el = document.getElementById(id);
@@ -1238,7 +1452,7 @@
     return [Math.floor(camX + colF), Math.floor(camY + rowF)];
   }
   canvas.addEventListener("touchstart", (e) => {
-    if (mapOpen || invOpen || dead) return;
+    if (mapOpen || invOpen || charOpen || dead) return;
     if (e.touches.length === 2) {
       e.preventDefault();
       touchMode = "pinch";
@@ -1277,9 +1491,16 @@
 
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
-    descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, restart,
+    descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart,
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
     give: (k) => { if (defOf(k)) player.inv.push({ key: k }); },
+    grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
+    learn: (k) => learnSkill(k),
+    doSkill: (k) => useSkill(k),
+    rush: (dx, dy) => executeRush([dx, dy]),
+    spin: () => executeSpin(),
+    skills: () => JSON.parse(JSON.stringify(player.skills)),
+    examineAt: (x, y) => describeTile(x, y),
     peek: () => {
       let ex = 0;
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
@@ -1312,5 +1533,6 @@
   resetPlayer();
   generateLevel();
   updateHUD();
+  updateHotbar();
   requestAnimationFrame(frame);
 })();
