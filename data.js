@@ -691,14 +691,19 @@ window.CANTORI_DATA = {
         "weapon": "sword",
         "armor": "leather"
       },
+      "baseHp": 13,
       "baseMp": 5,
       "regenTurns": 600,
       "vitRegen": 2,
+      "mpRegenTurns": 600,
+      "intRegen": 2,
       "levelUp": {
         "hp": 5,
         "mp": 2,
         "accuracy": 2,
-        "evasion": 2
+        "evasion": 2,
+        "crit": 1,
+        "critDmg": 5
       },
       "blurb": "Front-line brawler. All around weapons master.",
       "skillTree": [

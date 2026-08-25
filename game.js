@@ -55,9 +55,14 @@
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
-  const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0);
+  const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseHp != null ? cls.baseHp : HP_BASE) + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0); };
   const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills
   const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + armorSubEva() + passiveMod("eva");     // DEX + level + armor weight + skills
+  // Critical hits: 5% chance to deal 200% damage by default, each grown by the
+  // class's per-level crit / critDmg gains (added, not multiplied).
+  const BASE_CRIT = 5, BASE_CRIT_DMG = 200;
+  const critChance = () => (BASE_CRIT + (player.lvlCrit || 0)) / 100;
+  const critMult = () => (BASE_CRIT_DMG + (player.lvlCritDmg || 0)) / 100;
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
   const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
@@ -69,7 +74,8 @@
     cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
-    regenAcc: 0,                                       // fractional HP regen carry-over
+    lvlCrit: 0, lvlCritDmg: 0,                         // per-level crit% and crit-damage% gains
+    regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
   };
   // Equipment slots: cat -> which player field(s) it fills.
   const EQUIP_SLOTS = { weapon: ["weapon"], armor: ["armor"], ring: ["ring1", "ring2"], trinket: ["trinket"], necklace: ["necklace"] };
@@ -86,7 +92,8 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0;   // reset per-level bonuses
-    player.regenAcc = 0;
+    player.lvlCrit = 0; player.lvlCritDmg = 0;
+    player.regenAcc = 0; player.mpRegenAcc = 0;
     player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
@@ -722,9 +729,11 @@
       }
       let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
       if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
+      const crit = Math.random() < critChance();       // 5%+ chance for 200%+ damage
+      if (crit) dmg = Math.round(dmg * critMult());
       target.hp -= dmg;
       flash(target);
-      floatText(target.x, target.y, (surprise ? "!" : "") + "-" + dmg, surprise ? "#ffd98a" : "#ffe08a");
+      floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
       const pre = surprise ? "Surprise! You strike the " : "You strike the ";
       if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
       if (target.hp <= 0) {
@@ -791,6 +800,8 @@
       player.lvlHp += lu.hp || 0;
       player.lvlAcc += lu.accuracy || 0;
       player.lvlEva += lu.evasion || 0;
+      player.lvlCrit += lu.crit || 0;
+      player.lvlCritDmg += lu.critDmg || 0;
       player.maxMp += lu.mp || 0; player.mp = Math.min(player.maxMp, player.mp + (lu.mp || 0));
       const nm = computeMaxHp();
       player.hp = Math.min(nm, player.hp + (nm - player.maxHp));   // heal by the max-HP gain
@@ -798,6 +809,7 @@
       const extra = [];
       if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
       if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
+      if (lu.crit) extra.push("+" + lu.crit + "% crit"); if (lu.critDmg) extra.push("+" + lu.critDmg + "% crit dmg");
       log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point" + (extra.length ? " · " + extra.join(", ") : ""), "hit");
       const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra, ["+1 point"]);
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
@@ -835,6 +847,11 @@
 
     const mon = monsterAt(nx, ny);
     if (mon) { attack(player, mon); worldTurn(1 / playerActSpeed()); return true; }   // weapon speed (+haste) → attack cost
+
+    if (!canStep(player.x, player.y, dx, dy)) {          // walking into a wall-mounted torch lifts it off
+      const torchThere = torches.find((t) => t.x === nx && t.y === ny);
+      if (torchThere) { takeTorch(torchThere); return true; }
+    }
 
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
@@ -912,16 +929,25 @@
   // fractionally each turn (maxHp / effective), so a partial tick carries over and
   // the interval per HP can be non-integer.
   function regenTick() {
-    if (player.hp >= player.maxHp) { player.regenAcc = 0; return; }
     const cls = DATA.classes[player.cls] || {};
-    const base = cls.regenTurns != null ? cls.regenTurns : 600;
-    const vitF = cls.vitRegen != null ? cls.vitRegen : 2;
-    const effTurns = Math.max(1, base - eff("VIT") * vitF);
-    player.regenAcc = (player.regenAcc || 0) + player.maxHp / effTurns;
-    let healed = 0;
-    while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
-    if (player.hp >= player.maxHp) player.regenAcc = 0;
-    if (healed) { updateHUD(); floatText(player.x, player.y, "+" + healed, "#8ed69a"); }
+    let changed = false, healed = 0;
+    // HP: heals to full over regenTurns, sped by Vitality.
+    if (player.hp < player.maxHp) {
+      const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - eff("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2));
+      player.regenAcc = (player.regenAcc || 0) + player.maxHp / effTurns;
+      while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
+      if (player.hp >= player.maxHp) player.regenAcc = 0;
+      if (healed) changed = true;
+    } else player.regenAcc = 0;
+    // MP: heals to full over mpRegenTurns, sped by Intelligence.
+    if (player.maxMp > 0 && player.mp < player.maxMp) {
+      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - eff("INT") * (cls.intRegen != null ? cls.intRegen : 2));
+      player.mpRegenAcc = (player.mpRegenAcc || 0) + player.maxMp / effMp;
+      while (player.mpRegenAcc >= 1 && player.mp < player.maxMp) { player.mpRegenAcc -= 1; player.mp++; changed = true; }
+      if (player.mp >= player.maxMp) player.mpRegenAcc = 0;
+    } else player.mpRegenAcc = 0;
+    if (healed) floatText(player.x, player.y, "+" + healed, "#8ed69a");
+    if (changed) updateHUD();
   }
 
   // Bresenham line of sight: true if no wall lies strictly between the tiles.
@@ -2020,7 +2046,7 @@
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = armorDef() + vitResist();
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: "—" };
+    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: Math.round(critChance() * 100) + "% crit" };
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
       const g = equipStat(k);
       const val = player.stats[k] + (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
@@ -2028,7 +2054,8 @@
     }).join("");
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
-      `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b></div>` +
+      `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
+      `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }

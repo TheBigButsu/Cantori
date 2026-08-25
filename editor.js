@@ -473,19 +473,30 @@
     form.appendChild(classField(o, "unlock", "unlock", "select", ["start", "town"]));
     form.appendChild(classField(o, "start weapon", "start.weapon", "select", [""].concat(gearWeapons)));
     form.appendChild(classField(o, "start armor", "start.armor", "select", [""].concat(gearArmor)));
-    form.appendChild(classField(o, "base MP", "baseMp", "num"));
-    form.appendChild(classField(o, "regen: turns to full HP", "regenTurns", "num"));
-    form.appendChild(classField(o, "VIT regen factor (×VIT)", "vitRegen", "num"));
     wrap.appendChild(form);
-    const rnote = document.createElement("p"); rnote.className = "hint";
-    rnote.textContent = "Regen: it takes “turns to full HP” turns to heal from empty to full, minus (VIT × factor) — so higher Vitality regenerates faster. Default 600 turns, factor 2. (HP itself = 13 + 1 per VIT.)";
-    wrap.appendChild(rnote);
 
-    // base stats
+    // base stats — the six stats plus base HP and MP
     const sh = document.createElement("h3"); sh.className = "csec"; sh.textContent = "Base stats"; wrap.appendChild(sh);
     const sg = document.createElement("div"); sg.className = "cform";
     for (const k of STAT_KEYS) sg.appendChild(classField(o, k, "stats." + k, "num"));
+    sg.appendChild(classField(o, "HP", "baseHp", "num"));
+    sg.appendChild(classField(o, "MP", "baseMp", "num"));
     wrap.appendChild(sg);
+    const snote = document.createElement("p"); snote.className = "hint";
+    snote.textContent = "Total HP = base HP + 1 per VIT (blank HP defaults to 13). MP is the base MP pool.";
+    wrap.appendChild(snote);
+
+    // regeneration
+    const rh = document.createElement("h3"); rh.className = "csec"; rh.textContent = "Regen"; wrap.appendChild(rh);
+    const rg = document.createElement("div"); rg.className = "cform";
+    rg.appendChild(classField(o, "base turns to full HP", "regenTurns", "num"));
+    rg.appendChild(classField(o, "VIT regen factor", "vitRegen", "num"));
+    rg.appendChild(classField(o, "base turns to full MP", "mpRegenTurns", "num"));
+    rg.appendChild(classField(o, "INT regen factor", "intRegen", "num"));
+    wrap.appendChild(rg);
+    const rnote = document.createElement("p"); rnote.className = "hint";
+    rnote.textContent = "It takes “base turns to full” turns to regen from empty to full, minus (stat × factor) — VIT speeds HP, INT speeds MP. Defaults 600 turns, factor 2.";
+    wrap.appendChild(rnote);
 
     // per-level bonuses
     const lh = document.createElement("h3"); lh.className = "csec"; lh.textContent = "Per-level bonuses (levelUp)"; wrap.appendChild(lh);
@@ -494,7 +505,12 @@
     lg.appendChild(classField(o, "MP", "levelUp.mp", "num"));
     lg.appendChild(classField(o, "accuracy", "levelUp.accuracy", "num"));
     lg.appendChild(classField(o, "evasion", "levelUp.evasion", "num"));
+    lg.appendChild(classField(o, "crit % (added)", "levelUp.crit", "num"));
+    lg.appendChild(classField(o, "crit dmg % (added)", "levelUp.critDmg", "num"));
     wrap.appendChild(lg);
+    const lnote = document.createElement("p"); lnote.className = "hint";
+    lnote.textContent = "Added each level. Base crit is 5% for 200% damage; crit % and crit dmg % add to those.";
+    wrap.appendChild(lnote);
 
     const bh = document.createElement("h3"); bh.className = "csec"; bh.textContent = "Blurb"; wrap.appendChild(bh);
     const bg = document.createElement("div"); bg.className = "cform"; const bf = classField(o, "shown in class select", "blurb", "textarea"); bf.style.gridColumn = "1 / -1"; bg.appendChild(bf); wrap.appendChild(bg);

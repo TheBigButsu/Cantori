@@ -206,6 +206,7 @@
           <tr><td>Your accuracy</td><td><code>base + DEX + weapon acc + level acc</code></td></tr>
           <tr><td>Your evasion</td><td><code>base + DEX + level eva + armor subtype</code> (light +2, medium 0, heavy −3)</td></tr>
           <tr><td>Damage dealt</td><td><code>roll(dmgMin..dmgMax) + STR bonus + bonuses − armor def − VIT resist</code>, minimum 1</td></tr>
+          <tr><td>Critical hit</td><td>Base <code>5%</code> chance for <code>200%</code> damage, each raised by the class's per-level <code>crit</code> / <code>critDmg</code> gains (added, not multiplied).</td></tr>
           <tr><td>Attack cost (time)</td><td><code>1 / (weapon speed × (1 + haste))</code> — lower is faster. Monsters bank <code>speed</code> energy per turn and act once per whole point.</td></tr>
           <tr><td>Weapon range</td><td><code>1</code> = melee (adjacent). <code>2+</code> = tap a monster within reach + line of sight to strike (spear 2, bow 5).</td></tr>
         </table>
@@ -220,8 +221,9 @@
         </table>
         <h4>Progression</h4>
         <table>
-          <tr><td>Max HP</td><td><code>13 + VIT</code> (1 VIT = 1 HP), plus the class <code>levelUp</code> hp gained per level.</td></tr>
+          <tr><td>Max HP</td><td><code>baseHp + VIT</code> (1 VIT = 1 HP; baseHp defaults to 13), plus the class <code>levelUp</code> hp gained per level.</td></tr>
           <tr><td>HP regen</td><td>Heals to full over the class's <code>regenTurns</code>, sped up by Vitality: <code>effective = regenTurns − VIT × vitRegen</code>. Per-turn heal = <code>maxHP / effective</code> (default 600 turns, factor 2).</td></tr>
+          <tr><td>MP regen</td><td>Same shape, sped up by Intelligence: <code>effective = mpRegenTurns − INT × intRegen</code>, per-turn = <code>maxMP / effective</code> (default 600, factor 2).</td></tr>
           <tr><td>Identify</td><td><code>need = (tier + plus) × (rand 1..10 + rarity rank)</code>; +1 progress each time you use the item (strike / get hit).</td></tr>
           <tr><td>XP to level</td><td><code>level × 8</code>. On level: main stat +2, secondary +1, +1 free point, plus the class <code>levelUp</code> set (hp/mp/acc/eva).</td></tr>
           <tr><td>Monster XP</td><td><code>ceil(minFloor / 2)</code> — floor 1–2 = 1, floor 3–4 = 2, floor 5 = 3. Bosses give a larger scaled reward.</td></tr>
@@ -281,7 +283,7 @@
     </div>
   </dialog>
 
-  <script src="./data.js?v=33"></script>
-  <script src="./editor.js?v=33"></script>
+  <script src="./data.js?v=34"></script>
+  <script src="./editor.js?v=34"></script>
 </body>
 </html>
