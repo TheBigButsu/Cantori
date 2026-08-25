@@ -91,7 +91,9 @@ editor.html / .js     the content editor (admin) — tables + JSON, playtest/exp
 styles.css            the shell (dark, torch-lit)
 data.js               ALL editable content — monsters, gear, consumables, biomes,
                       loot config, and the design-stage classes / stats / gods
-game.js               the engine — dungeon, fog, combat, loot, UI
+loot.js               loot roll engine (rarity/tier/affix/identify) — a module
+game.js               the engine — dungeon, fog, combat, UI (being split into
+                      modules like loot.js to keep each file small)
 DESIGN.md             the design spec (rogue-lite vision, stats, gods, town)
 assets/tiles/         pixel-art sprites (CC0, see ART-CREDITS.md)
 manifest.webmanifest  lets it install to a phone home screen
