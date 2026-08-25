@@ -97,6 +97,37 @@
     }
     .chip:hover{border-color:var(--amber)}
     .chip.on{background:var(--green);color:#0e1a10;border-color:var(--green);font-weight:700}
+    /* Classes editor */
+    .cpick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+    .ctab2{background:var(--panel2);border:1px solid var(--line);color:var(--ink-dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:12px;cursor:pointer}
+    .ctab2.on{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
+    .ctab2.add{color:var(--green);border-style:dashed}
+    .csec{margin:16px 0 6px;color:var(--amber);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+    .cform{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px}
+    .cfld{display:flex;flex-direction:column;gap:3px;color:var(--ink-dim);font-size:10px;letter-spacing:.04em}
+    .cfld input,.cfld select,.cfld textarea{
+      background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+      padding:6px 7px;font-family:var(--mono);font-size:12px;width:100%;
+    }
+    .cfld input:focus,.cfld select:focus,.cfld textarea:focus{outline:none;border-color:var(--amber)}
+    /* Skill tree grid */
+    .stree{border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto;background:var(--panel2)}
+    .strow{display:grid;grid-template-columns:64px repeat(5,minmax(150px,1fr));gap:8px;margin-bottom:8px}
+    .stier{align-self:center;color:var(--amber);font-size:11px;font-weight:700;letter-spacing:.04em}
+    .scell{position:relative;border:1px solid var(--line);border-radius:8px;padding:7px;background:#0c0905;display:flex;flex-direction:column;gap:5px}
+    .scell.filled{border-color:var(--green)}
+    .scell .sname{background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:12px;font-weight:600}
+    .scell .sname:focus{outline:none;border-color:var(--amber)}
+    .scell .sdesc{background:#15110b;color:var(--ink-dim);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:10.5px;resize:vertical;line-height:1.4}
+    .scell .sdesc:focus{outline:none;border-color:var(--amber)}
+    /* SPD-style hover tooltip */
+    .scell .stip{
+      position:absolute;left:50%;bottom:100%;transform:translateX(-50%);margin-bottom:6px;
+      min-width:180px;max-width:260px;z-index:20;display:none;pointer-events:none;
+      background:#0b0906;color:var(--ink);border:1px solid var(--amber);border-radius:8px;
+      padding:8px 10px;font-size:11px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.6);
+    }
+    .scell:hover .stip{display:block}
     .cols-note{color:var(--ink-dim);font-size:11px;margin:8px 0 0;line-height:1.5}
     .gh-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .dlg-body label{display:block;color:var(--ink-dim);font-size:11px;letter-spacing:.04em}

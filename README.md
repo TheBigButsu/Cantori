@@ -70,8 +70,11 @@ python3 -m http.server 8000
 
 Open **`editor.html`** (e.g. `…github.io/Cantori/editor.html`) to add, edit, or
 remove monsters, gear (weapons, armor, and the ring/trinket/necklace jewelry),
-consumables, and bosses through tables — plus raw-JSON panels for biomes,
-classes and the loot config. Three ways to use your edits:
+consumables, and bosses through tables; shape **biomes** as cards (with a
+click-to-toggle monster picker); and build **classes** with a form + a **5×5
+skill tree** (5 tiers × 5 options, blank to start, hover a skill to read it).
+Loot config and the design-reference tabs (stats, gods) stay as JSON. Three ways
+to use your edits:
 
 - **▶ Playtest** — saves your changes to this browser and opens the game using
   them. The game shows a green **⚙ DRAFT** badge while a draft is active; tap it

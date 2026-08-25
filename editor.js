@@ -21,8 +21,10 @@
   catch (e) { source = clone(SHIPPED); }
 
   const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses"];
-  const JSON_COLLS = ["classes", "loot", "stats", "gods"];
-  const TABS = TABLE_COLLS.concat(["biomes"]).concat(JSON_COLLS);   // biomes = a card editor of its own
+  const JSON_COLLS = ["loot", "stats", "gods"];
+  const TABS = TABLE_COLLS.concat(["biomes", "classes"]).concat(JSON_COLLS);   // biomes & classes = custom editors
+  const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
+  const TIERS = 5, SLOTS = 5;   // skill tree: 5 tiers × 5 options
 
   // Column specs for the table editors. type: key|text|num|bool|color|select.
   const SPECS = {
@@ -74,6 +76,30 @@
   const jsonText = {}, jsonOk = {};
   for (const c of JSON_COLLS) { jsonText[c] = JSON.stringify(source[c] != null ? source[c] : {}, null, 2); jsonOk[c] = true; }
   let biomeRows = clone(source.biomes || []);   // biomes are an ordered array of cards
+  let classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+  let activeClass = 0;
+  // Normalize a class: ensure stats/start/levelUp exist and pad the skill tree to a
+  // full 5×5 grid of {name, desc} cells (blank to start).
+  function ensureClass(obj) {
+    obj.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, obj.stats || {});
+    obj.start = obj.start || {};
+    obj.levelUp = obj.levelUp || {};
+    if (!Array.isArray(obj.skillTree)) obj.skillTree = [];
+    for (let t = 0; t < TIERS; t++) {
+      if (!Array.isArray(obj.skillTree[t])) obj.skillTree[t] = [];
+      for (let s = 0; s < SLOTS; s++) if (!obj.skillTree[t][s]) obj.skillTree[t][s] = { name: "", desc: "" };
+      obj.skillTree[t].length = SLOTS;
+    }
+    obj.skillTree.length = TIERS;
+  }
+  classRows.forEach((r) => ensureClass(r.obj));
+  function getPath(o, path) { return path.split(".").reduce((x, k) => (x == null ? undefined : x[k]), o); }
+  function setPath(o, path, val) {
+    const ks = path.split("."); let x = o;
+    for (let i = 0; i < ks.length - 1; i++) { if (x[ks[i]] == null) x[ks[i]] = {}; x = x[ks[i]]; }
+    const last = ks[ks.length - 1];
+    if (val === undefined) delete x[last]; else x[last] = val;
+  }
 
   let activeTab = "monsters";
 
@@ -111,6 +137,7 @@
     main.innerHTML = "";
     if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
     else if (activeTab === "biomes") main.appendChild(renderBiomes());
+    else if (activeTab === "classes") main.appendChild(renderClasses());
     else main.appendChild(renderJson(activeTab));
     setStatus("");
   }
@@ -288,6 +315,116 @@
     return wrap;
   }
 
+  // ---- Classes: a form + a 5×5 skill-tree grid with hover tooltips -----------
+  function classField(o, label, path, type, opts) {
+    const wrap = document.createElement("label"); wrap.className = "cfld";
+    const span = document.createElement("span"); span.textContent = label; wrap.appendChild(span);
+    let inp;
+    if (type === "select") {
+      inp = document.createElement("select");
+      for (const op of opts) { const e = document.createElement("option"); e.value = op; e.textContent = op || "(none)"; inp.appendChild(e); }
+      const cur = getPath(o, path); inp.value = cur != null ? cur : (opts[0] || "");
+      inp.onchange = () => setPath(o, path, inp.value === "" ? undefined : inp.value);
+    } else if (type === "num") {
+      inp = document.createElement("input"); inp.type = "number"; const cur = getPath(o, path); inp.value = cur != null ? cur : "";
+      inp.oninput = () => setPath(o, path, inp.value === "" ? undefined : Number(inp.value));
+    } else if (type === "textarea") {
+      inp = document.createElement("textarea"); inp.rows = 2; inp.value = getPath(o, path) || "";
+      inp.oninput = () => setPath(o, path, inp.value === "" ? undefined : inp.value);
+    } else {
+      inp = document.createElement("input"); inp.type = "text"; inp.value = getPath(o, path) || "";
+      inp.oninput = () => setPath(o, path, inp.value === "" ? undefined : inp.value);
+    }
+    wrap.appendChild(inp);
+    return wrap;
+  }
+  function renderClasses() {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "classes"; bar.appendChild(h); wrap.appendChild(bar);
+
+    const picker = document.createElement("div"); picker.className = "cpick";
+    classRows.forEach((r, i) => {
+      const btn = document.createElement("button"); btn.className = "ctab2" + (i === activeClass ? " on" : ""); btn.textContent = r.key || "?";
+      btn.onclick = () => { activeClass = i; render(); };
+      picker.appendChild(btn);
+    });
+    const addC = document.createElement("button"); addC.className = "ctab2 add"; addC.textContent = "+ Add class";
+    addC.onclick = () => {
+      const key = uniqueKeyArr(classRows.map((r) => r.key), "new_class");
+      const obj = { name: "New Class", main: "STR", secondary: "VIT", unlock: "town", baseMp: 0, blurb: "" };
+      ensureClass(obj); classRows.push({ key, obj }); activeClass = classRows.length - 1; render();
+    };
+    picker.appendChild(addC); wrap.appendChild(picker);
+    if (!classRows.length) return wrap;
+
+    const cr = classRows[activeClass]; const o = cr.obj;
+    const gearWeapons = rows.gear.filter((r) => r.obj.cat === "weapon").map((r) => r.key);
+    const gearArmor = rows.gear.filter((r) => r.obj.cat === "armor").map((r) => r.key);
+
+    const del = document.createElement("div"); del.style.margin = "0 0 10px";
+    const delBtn = document.createElement("button"); delBtn.className = "del"; delBtn.textContent = "✕ delete this class";
+    delBtn.onclick = () => { classRows.splice(activeClass, 1); activeClass = Math.max(0, activeClass - 1); render(); };
+    del.appendChild(delBtn); wrap.appendChild(del);
+
+    // key + core fields
+    const form = document.createElement("div"); form.className = "cform";
+    const keyWrap = document.createElement("label"); keyWrap.className = "cfld";
+    const ks = document.createElement("span"); ks.textContent = "key"; keyWrap.appendChild(ks);
+    const ki = document.createElement("input"); ki.type = "text"; ki.value = cr.key; ki.oninput = () => { cr.key = ki.value.trim(); }; keyWrap.appendChild(ki);
+    form.appendChild(keyWrap);
+    form.appendChild(classField(o, "name", "name", "text"));
+    form.appendChild(classField(o, "main stat", "main", "select", STAT_KEYS));
+    form.appendChild(classField(o, "secondary stat", "secondary", "select", STAT_KEYS));
+    form.appendChild(classField(o, "unlock", "unlock", "select", ["start", "town"]));
+    form.appendChild(classField(o, "start weapon", "start.weapon", "select", [""].concat(gearWeapons)));
+    form.appendChild(classField(o, "start armor", "start.armor", "select", [""].concat(gearArmor)));
+    form.appendChild(classField(o, "base MP", "baseMp", "num"));
+    wrap.appendChild(form);
+
+    // base stats
+    const sh = document.createElement("h3"); sh.className = "csec"; sh.textContent = "Base stats"; wrap.appendChild(sh);
+    const sg = document.createElement("div"); sg.className = "cform";
+    for (const k of STAT_KEYS) sg.appendChild(classField(o, k, "stats." + k, "num"));
+    wrap.appendChild(sg);
+
+    // per-level bonuses
+    const lh = document.createElement("h3"); lh.className = "csec"; lh.textContent = "Per-level bonuses (levelUp)"; wrap.appendChild(lh);
+    const lg = document.createElement("div"); lg.className = "cform";
+    lg.appendChild(classField(o, "HP", "levelUp.hp", "num"));
+    lg.appendChild(classField(o, "MP", "levelUp.mp", "num"));
+    lg.appendChild(classField(o, "accuracy", "levelUp.accuracy", "num"));
+    lg.appendChild(classField(o, "evasion", "levelUp.evasion", "num"));
+    wrap.appendChild(lg);
+
+    const bh = document.createElement("h3"); bh.className = "csec"; bh.textContent = "Blurb"; wrap.appendChild(bh);
+    const bg = document.createElement("div"); bg.className = "cform"; const bf = classField(o, "shown in class select", "blurb", "textarea"); bf.style.gridColumn = "1 / -1"; bg.appendChild(bf); wrap.appendChild(bg);
+
+    // 5×5 skill tree
+    const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 options (hover a skill to read it)"; wrap.appendChild(th);
+    const tree = document.createElement("div"); tree.className = "stree";
+    for (let t = 0; t < TIERS; t++) {
+      const rowEl = document.createElement("div"); rowEl.className = "strow";
+      const tl = document.createElement("div"); tl.className = "stier"; tl.textContent = "Tier " + (t + 1); rowEl.appendChild(tl);
+      for (let s = 0; s < SLOTS; s++) {
+        const cell = o.skillTree[t][s];
+        const box = document.createElement("div"); box.className = "scell" + (cell.name ? " filled" : "");
+        const nm = document.createElement("input"); nm.className = "sname"; nm.type = "text"; nm.placeholder = "empty"; nm.value = cell.name || "";
+        const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "description"; dsc.value = cell.desc || "";
+        const tip = document.createElement("div"); tip.className = "stip";
+        const setTip = () => { tip.textContent = cell.name ? (cell.name + (cell.desc ? " — " + cell.desc : "")) : "(empty skill slot)"; };
+        setTip();
+        nm.oninput = () => { cell.name = nm.value; box.classList.toggle("filled", !!nm.value); setTip(); };
+        dsc.oninput = () => { cell.desc = dsc.value; setTip(); };
+        box.appendChild(nm); box.appendChild(dsc); box.appendChild(tip);
+        rowEl.appendChild(box);
+      }
+      tree.appendChild(rowEl);
+    }
+    wrap.appendChild(tree);
+    return wrap;
+  }
+
   function renderJson(coll) {
     const wrap = document.createElement("div");
     const bar = document.createElement("div"); bar.className = "collbar";
@@ -334,6 +471,18 @@
     }
     out.biomes = clone(biomeRows);                    // biomes come from the card editor
     biomeRows.forEach((b, i) => { if (!b.key) problems.push("biome " + (i + 1) + " has an empty key"); });
+
+    out.classes = {};                                 // classes come from the form + skill grid
+    const seenC = {};
+    for (const { key, obj } of classRows) {
+      if (!key) { problems.push("a class has an empty key"); continue; }
+      if (seenC[key]) problems.push("classes: duplicate key “" + key + "”");
+      seenC[key] = 1;
+      const c = clone(obj);
+      // compress the skill grid: fully-blank cells → null (kept as scaffold, small on disk)
+      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => (cell && (cell.name || cell.desc)) ? { name: cell.name || "", desc: cell.desc || "" } : null));
+      out.classes[key] = c;
+    }
     return { data: out, problems };
   }
 
@@ -448,13 +597,16 @@
     for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
     for (const c of JSON_COLLS) { jsonText[c] = JSON.stringify(source[c] != null ? source[c] : {}, null, 2); jsonOk[c] = true; }
     biomeRows = clone(source.biomes || []);
+    classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+    classRows.forEach((r) => ensureClass(r.obj)); activeClass = 0;
     render();
     setStatus("Reverted to shipped content.", "ok");
   }
 
   // ---- Helpers ---------------------------------------------------------------
-  function uniqueKey(coll, base) {
-    const taken = {}; for (const r of rows[coll]) taken[r.key] = 1;
+  function uniqueKey(coll, base) { return uniqueKeyArr(rows[coll].map((r) => r.key), base); }
+  function uniqueKeyArr(keys, base) {
+    const taken = {}; for (const k of keys) taken[k] = 1;
     if (!taken[base]) return base;
     let i = 2; while (taken[base + i]) i++; return base + i;
   }
