@@ -303,22 +303,6 @@ window.CANTORI_DATA = {
       "LCK"
     ],
     "purpleSecondStatChance": 0.75,
-    "enchants": {
-      "fire": {
-        "name": "Flaming",
-        "icon": "🔥",
-        "color": "#ff8f4a",
-        "proc": 0.35,
-        "slots": ["weapon", "armor", "ring", "trinket", "necklace"]
-      },
-      "electric": {
-        "name": "Charged",
-        "icon": "⚡",
-        "color": "#9ad0ff",
-        "proc": 0.3,
-        "slots": ["weapon", "armor", "ring", "trinket", "necklace"]
-      }
-    },
     "categoryWeights": {
       "weapon": 40,
       "armor": 30,
@@ -367,7 +351,19 @@ window.CANTORI_DATA = {
           75
         ]
       }
-    ]
+    ],
+    "enchants": {
+      "fire": {
+        "name": "Flaming",
+        "icon": "🔥",
+        "color": "#ff8f4a"
+      },
+      "electric": {
+        "name": "Charged",
+        "icon": "⚡",
+        "color": "#9ad0ff"
+      }
+    }
   },
   "consumables": {
     "heal": {
@@ -414,7 +410,7 @@ window.CANTORI_DATA = {
       "cat": "tool",
       "name": "Torch",
       "effect": "burn",
-      "noDrop": true,
+      "weight": 0,
       "glyph": "|",
       "color": "#f6b845"
     }
@@ -423,8 +419,8 @@ window.CANTORI_DATA = {
     "piper": {
       "name": "The Pied Piper",
       "hp": 30,
-      "atkMin": 3,
-      "atkMax": 5
+      "atkMin": 6,
+      "atkMax": 10
     },
     "golem": {
       "name": "Stone Golem",
@@ -462,7 +458,10 @@ window.CANTORI_DATA = {
         "wolf",
         "bee",
         "bear",
-        "harpy"
+        "harpy",
+        "bat",
+        "snake",
+        "spider"
       ],
       "boss": "piper",
       "spawnInitial": [
@@ -590,7 +589,7 @@ window.CANTORI_DATA = {
         "accuracy": 2,
         "evasion": 2
       },
-      "blurb": "Front-line brawler. Hits hard, endures more.",
+      "blurb": "Front-line brawler. All around weapons master.",
       "skills": {
         "rush": {
           "name": "Rush",
@@ -639,27 +638,15 @@ window.CANTORI_DATA = {
       "skillTree": [
         [
           {
-            "name": "Rush",
-            "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
+            "name": "New Skill",
+            "desc": "",
             "levels": [
-              "+0 damage, 100 turn cooldown",
-              "+3 damage",
-              "+5 damage, 50 turn cooldown",
-              "can stun enemies 50% of the time"
+              "",
+              ""
             ],
             "req": []
           },
-          {
-            "name": "Spin",
-            "desc": "Become a blender — strike every monster around you.",
-            "levels": [
-              "hit all adjacent foes, 80 turn cooldown",
-              "+1 damage",
-              "+1 damage, range 2 (hits within 2 tiles)",
-              "free action — doesn't advance the turn clock"
-            ],
-            "req": []
-          },
+          null,
           null,
           null,
           null
