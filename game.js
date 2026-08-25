@@ -27,10 +27,12 @@
   const WALL = 0;
   const FLOOR = 1;
   const STAIRS = 2;
+  const DOOR = 3;              // hall entrance; passable, but a *closed* door blocks sight
 
   let map = [];
   let visible = [];
   let explored = [];
+  let opened = [];             // per-tile: has this door been opened (walked through)?
   let depth = 1;
   let dead = false;
 
@@ -89,7 +91,11 @@
 
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
   const isWall = (x, y) => !inBounds(x, y) || map[y][x] === WALL;
+  const isDoor = (x, y) => inBounds(x, y) && map[y][x] === DOOR;
   const passable = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
+  // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
+  // room stays hidden until you reach its doorway, enabling surprise ambushes.
+  const blocksSight = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (map[y][x] === DOOR && !opened[y][x]);
 
   function blankGrid(fill) {
     const g = [];
@@ -157,10 +163,32 @@
     for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) if (map[y][x] === WALL) map[y][x] = FLOOR;
   }
 
+  const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
+
+  // A doorway is a 1-tile-wide gap a corridor punched through a room's wall ring.
+  // Turn those choke points into doors so each hall entrance reads as a threshold
+  // (and, closed, blocks sight into the room).
+  function placeDoors(rooms) {
+    for (const r of rooms) {
+      const ring = [];
+      for (let x = r.x; x < r.x + r.w; x++) { ring.push([x, r.y - 1]); ring.push([x, r.y + r.h]); }
+      for (let y = r.y; y < r.y + r.h; y++) { ring.push([r.x - 1, y]); ring.push([r.x + r.w, y]); }
+      for (const [x, y] of ring) {
+        if (!inBounds(x, y) || map[y][x] !== FLOOR) continue;
+        const horiz = isWall(x - 1, y) && isWall(x + 1, y);   // corridor pierces a top/bottom wall
+        const vert = isWall(x, y - 1) && isWall(x, y + 1);    // corridor pierces a side wall
+        if (horiz === vert) continue;                          // not a clean 1-wide choke
+        if (isDoor(x - 1, y) || isDoor(x + 1, y) || isDoor(x, y - 1) || isDoor(x, y + 1)) continue; // no clusters
+        map[y][x] = DOOR;
+      }
+    }
+  }
+
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
     visible = blankGrid(false);
+    opened = blankGrid(false);
     walkPath = [];
     monsters = [];
     items = [];
@@ -187,6 +215,8 @@
     biomeIndex = biomeOf(depth);
     biome = DATA.biomes[biomeIndex];
 
+    placeDoors(rooms);
+
     const start = roomCenter(rooms[0]);
     player.x = start.x;
     player.y = start.y;
@@ -206,6 +236,7 @@
     setDepthLabel();
     floaters = [];
     snapPlayer();
+    updateHUD();       // vitals + enemy counter reflect the new floor at once
   }
 
   // ---- Monster & boss factories -------------------------------------------
@@ -334,9 +365,9 @@
           explored[my][mx] = true;
         }
         if (blocked) {
-          if (isWall(mx, my)) { newStart = rSlope; continue; }
+          if (blocksSight(mx, my)) { newStart = rSlope; continue; }
           else { blocked = false; start = newStart; }
-        } else if (isWall(mx, my) && i < FOV_RADIUS) {
+        } else if (blocksSight(mx, my) && i < FOV_RADIUS) {
           blocked = true;
           castLight(cx, cy, i + 1, start, lSlope, xx, xy, yx, yy);
           newStart = rSlope;
@@ -368,6 +399,24 @@
     updateHP();
     const lv = document.getElementById("lv");
     if (lv) lv.textContent = "Lv " + player.level;
+
+    // bottom-left vitals: HP is live; MP and Food (hunger) are placeholders at full
+    const setBar = (fillId, numId, cur, max) => {
+      const f = document.getElementById(fillId), n = document.getElementById(numId);
+      if (f) f.style.width = Math.max(0, Math.min(100, (cur / Math.max(1, max)) * 100)) + "%";
+      if (n) n.textContent = Math.max(0, cur) + "/" + max;
+    };
+    setBar("vHp", "vHpNum", player.hp, player.maxHp);
+    setBar("vMp", "vMpNum", player.mp != null ? player.mp : 100, player.maxMp != null ? player.maxMp : 100);
+    setBar("vHg", "vHgNum", player.food != null ? player.food : 100, 100);
+
+    // enemy counter (SPD-style): how many foes you can currently see
+    const en = document.getElementById("enemies");
+    if (en) {
+      const n = visible.length ? monsters.filter((m) => m.hp > 0 && visible[m.y] && visible[m.y][m.x]).length : 0;
+      en.textContent = "☠ " + n;
+      en.classList.toggle("active", n > 0);
+    }
   }
   function setDepthLabel() {
     const el = document.getElementById("depthLabel");
@@ -483,6 +532,7 @@
 
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
+      if (map[ny][nx] === DOOR && !opened[ny][nx]) { opened[ny][nx] = true; log("You open the " + doorWord() + "."); }
       computeFOV();
       pickUp();
       if (map[ny][nx] === STAIRS) { descend(); return true; }  // fresh level, no world turn
@@ -557,7 +607,7 @@
       if (e2 > -dy) { err -= dy; x += sx; }
       if (e2 < dx) { err += dx; y += sy; }
       if (x === x1 && y === y1) return true;
-      if (isWall(x, y)) return false;
+      if (blocksSight(x, y)) return false;
     }
     return false;
   }
@@ -670,6 +720,7 @@
     }
     maybeReinforce();
     updateHotbar();
+    updateHUD();      // refresh vitals + enemy-in-sight counter every turn
   }
 
   // ---- Pathfinding (BFS, 8-direction, across explored tiles) --------------
@@ -716,7 +767,7 @@
 
   function walkTo(tx, ty) {
     if (dead) return;
-    if (examineMode) { describeTile(tx, ty); return; }
+    if (examineMode) { describeTile(tx, ty); toggleExamine(false); updateHotbar(); return; }
     if (pendingSkill === "rush") {
       const dir = [Math.sign(tx - player.x), Math.sign(ty - player.y)];
       if (dir[0] || dir[1]) executeRush(dir); else { pendingSkill = null; updateHotbar(); }
@@ -837,6 +888,40 @@
     ctx.strokeStyle = "#a9791f";
     ctx.stroke();
   }
+  // Doors are drawn procedurally (no sprite dependency). Forest biomes render a
+  // leafy bush that thins once pushed through; other biomes get a plank/stone
+  // panel with a seam that splits open.
+  function drawDoor(px, py, closed, b) {
+    const cx = px + tile / 2, cy = py + tile / 2;
+    if (biome && biome.door === "bush") {
+      const blobs = closed
+        ? [[0.30, 0.42, 0.30], [0.66, 0.40, 0.30], [0.48, 0.66, 0.34], [0.48, 0.30, 0.26]]
+        : [[0.24, 0.30, 0.18], [0.78, 0.32, 0.17], [0.22, 0.76, 0.17], [0.80, 0.74, 0.18]];
+      for (const [fx, fy, fr] of blobs) {
+        ctx.beginPath();
+        ctx.arc(px + fx * tile, py + fy * tile, tile * fr, 0, Math.PI * 2);
+        ctx.fillStyle = shade(fy < 0.5 ? "#3f7a3a" : "#2f5f30", b);
+        ctx.fill();
+      }
+      return;
+    }
+    if (closed) {
+      const m = tile * 0.14;
+      ctx.fillStyle = shade("#6b4a28", b);
+      ctx.fillRect(px + m, py + m * 0.4, tile - 2 * m, tile - m * 0.8);
+      ctx.strokeStyle = shade("#3c2814", b);
+      ctx.lineWidth = Math.max(1, tile * 0.05);
+      ctx.beginPath(); ctx.moveTo(cx, py + m * 0.4); ctx.lineTo(cx, py + tile - m * 0.4); ctx.stroke();
+      ctx.fillStyle = shade("#d8b04a", b);
+      ctx.beginPath(); ctx.arc(cx - tile * 0.1, cy, tile * 0.05, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // opened: two thin jambs at the sides, passage clear
+      const w = tile * 0.12;
+      ctx.fillStyle = shade("#5a3d22", b);
+      ctx.fillRect(px, py, w, tile);
+      ctx.fillRect(px + tile - w, py, w, tile);
+    }
+  }
   function spriteForItem(key) {
     const d = defOf(key);
     if (d.cat === "weapon" || d.cat === "armor") return SPRITES[key];
@@ -923,6 +1008,7 @@
             ctx.fillRect(px, py, tile, tile);
           }
           if (t === STAIRS) drawImg(SPRITES[biome.exitSprite || "stairs"], px, py);
+          else if (t === DOOR) drawDoor(px, py, !opened[my][mx], b);
         }
         dim(px, py, 1 - b);                                   // torch falloff / memory
         if (!vis) { ctx.fillStyle = "rgba(70,90,130,0.10)"; ctx.fillRect(px, py, tile, tile); }
@@ -1038,6 +1124,7 @@
         mctx.fillStyle = t === WALL ? "#4b3d27" : "#221b12";
         mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap);
         if (t === STAIRS) { mctx.fillStyle = "#f6b845"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
+        else if (t === DOOR) { mctx.fillStyle = "#8a6a3a"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -1218,7 +1305,9 @@
         if (player.hp <= 0) { player.skills.rush.cd = cur.cd; die(); updateHotbar(); return; }
         break;
       }
-      player.x = nx; player.y = ny; steps++; computeFOV(); pickUp();
+      player.x = nx; player.y = ny; steps++;
+      if (map[ny][nx] === DOOR) opened[ny][nx] = true;   // barge through
+      computeFOV(); pickUp();
       if (map[player.y][player.x] === STAIRS) { player.skills.rush.cd = cur.cd; descend(); updateHotbar(); return; }
     }
     computeFOV();
@@ -1268,7 +1357,9 @@
     const it = items.find((i) => i.x === x && i.y === y);
     if (it && visible[y][x]) { log(it.key === "gold" ? (it.amount + " gold") : displayName(it.key)); return; }
     const t = map[y][x];
-    log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." : "Open ground.");
+    log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
+        t === DOOR ? (opened[y][x] ? "An open " + doorWord() + "." : "A closed " + doorWord() + " — sight can't pass until you reach it.") :
+        "Open ground.");
   }
 
   // ---- Character screen ----------------------------------------------------
@@ -1416,8 +1507,6 @@
   });
 
   // ---- Buttons -------------------------------------------------------------
-  document.getElementById("btnIn").addEventListener("click", () => setZoom(zoom * 1.2));
-  document.getElementById("btnOut").addEventListener("click", () => setZoom(zoom / 1.2));
   document.getElementById("btnMap").addEventListener("click", () => toggleMap());
   document.getElementById("btnBag").addEventListener("click", () => toggleInv());
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());

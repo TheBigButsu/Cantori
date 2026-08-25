@@ -69,11 +69,56 @@ body{
   text-transform:uppercase;
   color:var(--amber);
 }
+#hud .enemies{
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.04em;
+  color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;
+}
+#hud .enemies.active{color:#e0685a}
 #hud .depth{
   color:var(--ink-dim);
   font-size:11px;
   letter-spacing:.12em;
   text-transform:uppercase;
+}
+
+/* Bottom-left vitals: HP / MP / Food bars (framed over the game space) */
+#vitals{
+  z-index:6;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  pointer-events:none;
+}
+.vbar{display:flex;align-items:center;gap:7px}
+.vlabel{
+  width:20px;
+  font-size:9px;font-weight:700;letter-spacing:.06em;
+  color:var(--ink-dim);text-transform:uppercase;
+}
+.vtrack{
+  position:relative;
+  width:96px;height:9px;
+  border-radius:5px;
+  background:rgba(6,4,2,.72);
+  border:1px solid var(--line);
+  overflow:hidden;
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+}
+.vfill{
+  position:absolute;left:0;top:0;bottom:0;
+  width:100%;
+  border-radius:4px;
+  transition:width .18s ease-out;
+}
+.vbar.hp .vfill{background:linear-gradient(90deg,#c8402f,#e0685a)}
+.vbar.mp .vfill{background:linear-gradient(90deg,#3a63b0,#5a8fd6)}
+.vbar.hg .vfill{background:linear-gradient(90deg,#a97f2a,#f0c14b)}
+.vnum{
+  font-size:9.5px;font-variant-numeric:tabular-nums;
+  color:var(--ink-dim);letter-spacing:.02em;
 }
 
 #stage{

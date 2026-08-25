@@ -16,15 +16,15 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css?v=15">
+  <link rel="stylesheet" href="./styles.css?v=16">
 </head>
 <body>
   <div id="app">
     <header id="hud">
       <span class="mark">CANTORI</span>
       <span class="stats">
-        <span class="hp" id="hp">♥ 20/20</span>
         <span class="lv" id="lv">Lv 1</span>
+        <span class="enemies" id="enemies" title="Enemies in sight">☠ 0</span>
         <span class="depth" id="depthLabel">Depth&nbsp;1</span>
       </span>
     </header>
@@ -37,8 +37,12 @@
         <button id="btnBag" type="button" aria-label="Pack" title="Pack (I)">🎒</button>
         <button id="btnExamine" type="button" aria-label="Examine" title="Examine (X)">🔍</button>
         <button id="btnMap" type="button" aria-label="Floor map" title="Floor map (M)">▦</button>
-        <button id="btnOut" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
-        <button id="btnIn" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      </div>
+
+      <div id="vitals" style="position:absolute;left:14px;bottom:14px">
+        <div class="vbar hp"><span class="vlabel">HP</span><span class="vtrack"><span class="vfill" id="vHp"></span></span><span class="vnum" id="vHpNum">20/20</span></div>
+        <div class="vbar mp"><span class="vlabel">MP</span><span class="vtrack"><span class="vfill" id="vMp"></span></span><span class="vnum" id="vMpNum">100/100</span></div>
+        <div class="vbar hg"><span class="vlabel">FD</span><span class="vtrack"><span class="vfill" id="vHg"></span></span><span class="vnum" id="vHgNum">100/100</span></div>
       </div>
     </div>
 
@@ -96,7 +100,7 @@
     </div>
   </div>
 
-  <script src="./data.js?v=15"></script>
-  <script src="./game.js?v=15"></script>
+  <script src="./data.js?v=16"></script>
+  <script src="./game.js?v=16"></script>
 </body>
 </html>

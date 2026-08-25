@@ -149,10 +149,26 @@ any visible tile. Banked points are spent on the skill tree.
 
 **Warrior skills** (implemented; spend banked points):
 - **Rush** — dash in a direction until you collide. Hit a monster → damage it;
-  hit a wall → damage yourself. Cooldown 200 turns.
+  hit a wall → damage yourself. Cooldown 100 turns.
   - 1 pt: unlock, +0 damage · 2 pts: +3 damage · 3 pts: +5 damage and −50 cooldown
-- **Spin** — strike all adjacent monsters. Cooldown 100 turns.
+- **Spin** — strike all adjacent monsters. Cooldown 80 turns.
   - 1 pt: unlock, +0 damage · 2 pts: +1 damage · 3 pts: +1 damage and +1 range
     (hits everything within 2 tiles)
+
+## Doors & the HUD frame — DONE
+
+- **Doors at hall entrances.** Every 1-tile-wide gap a corridor punches through a
+  room's wall becomes a **door** (`data.js` → `biomes` → `door`: the Forest uses
+  **bushes**, other biomes a plank/stone panel — drawn procedurally, no new art).
+  A **closed** door blocks line of sight both ways, so a room stays dark until you
+  reach its threshold; stepping onto a door **opens it** (permanently). This is the
+  structural half of the surprise system: approach through a closed door and the
+  foes inside are still `unaware` → your opening blow is a guaranteed ambush hit.
+- **HUD frame.** Zoom buttons are gone (pinch / scroll-wheel still zoom); the right
+  rail is 👤 Character · 🎒 Pack · 🔍 Examine · ▦ Map. The top bar shows **Lv**, an
+  **enemies-in-sight counter** (☠ N, SPD-style), and the biome/depth. HP/MP/Food
+  live in a **bottom-left vitals stack** so the notch can crop the top bar harmlessly.
+  MP and Food are placeholders pinned at 100 until spells and hunger land.
+- **Examine auto-closes** after one inspection — tap 🔍, tap a tile, done.
 
 _Also still open: selecting among multiple classes at run start._

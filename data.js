@@ -112,20 +112,22 @@ window.CANTORI_DATA = {
        exitStyle:    "wall" carves the exit as a gap in the border (a path);
                      otherwise it's stairs in a room
        exitSprite:   sprite drawn on the exit tile (default "stairs")
+       door:         how hall entrances are drawn — "bush" for the forest,
+                     "door" (wooden/stone panel) elsewhere
      ========================================================================== */
   biomes: [
     { key: "forest", name: "Forest",      floor: "forest_floor", wall: "forest_wall",
       monsters: ["rat", "wolf", "bee", "bear", "harpy"], boss: "piper",
       spawnInitial: [3, 5, 5, 5], spawnEvery: 14, spawnCap: 16,   // per floor 1..4 (floor 5 is the boss)
-      exitStyle: "wall", exitSprite: "exit_forest" },
+      exitStyle: "wall", exitSprite: "exit_forest", door: "bush" },
     { key: "cave",   name: "Cave",        floor: "floor",        wall: "wall",
-      monsters: ["rat", "bat", "snake", "spider"],       boss: "golem" },
+      monsters: ["rat", "bat", "snake", "spider"],       boss: "golem", door: "door" },
     { key: "tomb",   name: "Tomb",        floor: "tomb_floor",   wall: "tomb_wall",
-      monsters: ["ghoul", "wraith", "phantom"],          boss: "cultist", bossCount: 3 },
+      monsters: ["ghoul", "wraith", "phantom"],          boss: "cultist", bossCount: 3, door: "door" },
     { key: "arcane", name: "Arcane Tomb", floor: "arcane_floor", wall: "arcane_wall",
-      monsters: ["wraith", "phantom", "imp"],            boss: "mummy" },
+      monsters: ["wraith", "phantom", "imp"],            boss: "mummy", door: "door" },
     { key: "space",  name: "The Beyond",  floor: "space_floor",  wall: "space_wall",
-      monsters: ["ufetubus", "imp", "orange_demon"],     boss: "demigod", final: true },
+      monsters: ["ufetubus", "imp", "orange_demon"],     boss: "demigod", final: true, door: "door" },
   ],
 
   /* ==========================================================================
@@ -160,13 +162,13 @@ window.CANTORI_DATA = {
                    name: "Rush", icon: "➤",
                    desc: "Dash in a direction until you collide — smash a monster, or ram yourself into a wall.",
                    max: 3,
-                   ranks: [ { cd: 200, dmg: 0 }, { cd: 200, dmg: 3 }, { cd: 150, dmg: 5 } ],
+                   ranks: [ { cd: 100, dmg: 0 }, { cd: 100, dmg: 3 }, { cd: 50, dmg: 5 } ],
                  },
                  spin: {
                    name: "Spin", icon: "↻",
                    desc: "Whirl and strike every monster around you.",
                    max: 3,
-                   ranks: [ { cd: 100, dmg: 0, range: 1 }, { cd: 100, dmg: 1, range: 1 }, { cd: 100, dmg: 1, range: 2 } ],
+                   ranks: [ { cd: 80, dmg: 0, range: 1 }, { cd: 80, dmg: 1, range: 1 }, { cd: 80, dmg: 1, range: 2 } ],
                  },
                } },
     duelist: { name: "Duelist", main: "DEX", secondary: "LCK", unlock: "start",
