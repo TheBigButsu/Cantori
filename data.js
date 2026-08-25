@@ -59,30 +59,33 @@ window.CANTORI_DATA = {
   },
 
   /* ==========================================================================
-     GEAR — weapons & armor
-       cat:    "weapon" or "armor"
-       atk:    weapon damage bonus     |   def: armor damage reduction
-       tier:   quality tier (1–3). Drives the loot system: a rolled affix's
-               magnitude equals the item's tier (tier 1 = +1 stat, tier 3 = +3).
-       weight: how often it drops (relative)
-       req:    stat needed to equip — Diablo-style gating. [DESIGN — not yet
-               enforced; here so it's easy to plan the numbers.]
+     GEAR — weapons, armor & jewelry
+       cat:     "weapon" | "armor" | "ring" | "trinket" | "necklace"
+       tier:    quality tier (1–3). Two jobs: (1) a rolled affix's magnitude = tier
+                (tier 1 = +1 stat … tier 3 = +3); (2) it groups the item for drops.
+       WEAPONS also carry: dmgMin/dmgMax (damage range), speed (attacks per turn —
+                >1 is fast, <1 is slow), accuracy (added to your hit chance).
+       ARMOR carries: def (damage reduction).
+       rarity:  drop chance of THIS type within its (tier + category) group, as a %.
+                Items with NO rarity are the DEFAULT(s): they split whatever % is
+                left. e.g. tier-1 weapons dagger(none), dirk(30), hammer(10) →
+                dirk 30%, hammer 10%, dagger 60%. Raise hammer to 20 → dagger 50%.
+       req:     stat needed to equip — Diablo-style gating. req.STR also scales
+                weapon damage: STR bonus = floor((STR - req.STR) / 4).
      ========================================================================== */
   gear: {
-    // req.STR gates damage scaling: STR damage bonus = floor((STR - req.STR)/4).
-    // Heavier weapons need more STR before they scale.
-    dagger:  { cat: "weapon", name: "Dagger", atk: 1, tier: 1, weight: 5, req: { STR: 0 }, glyph: "/", color: "#cfc3a0" },
-    sword:   { cat: "weapon", name: "Sword",  atk: 3, tier: 2, weight: 2, req: { STR: 4 }, glyph: "/", color: "#d8e0ec" },
-    mace:    { cat: "weapon", name: "Mace",   atk: 5, tier: 3, weight: 1, req: { STR: 8 }, glyph: "/", color: "#c8a878" },
-    leather: { cat: "armor",  name: "Leather Armor", def: 1, tier: 1, weight: 4, req: { STR: 0 }, glyph: "[", color: "#b98a5a" },
-    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, tier: 2, weight: 2, req: { STR: 4 }, glyph: "[", color: "#b9c0c8" },
-    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, tier: 3, weight: 1, req: { STR: 8 }, glyph: "[", color: "#dfe6f0" },
-    // Jewelry — equip in ring (x2) / trinket / necklace slots. No base atk/def;
-    // their value comes from rolled affixes (green+), so a plain white one is trash.
-    ring_copper: { cat: "ring",     name: "Copper Ring",   tier: 1, weight: 3, glyph: "o", color: "#c58a4a" },
-    ring_silver: { cat: "ring",     name: "Silver Ring",   tier: 2, weight: 2, glyph: "o", color: "#cfd4dc" },
-    charm_bone:  { cat: "trinket",  name: "Bone Charm",    tier: 1, weight: 2, glyph: "*", color: "#d8cfb0" },
-    amulet_jade: { cat: "necklace", name: "Jade Amulet",   tier: 2, weight: 2, glyph: "\"", color: "#7ec9a0" },
+    dagger:  { cat: "weapon", name: "Dagger", dmgMin: 1, dmgMax: 3,  speed: 1.5, accuracy: 2,  tier: 1, req: { STR: 0 }, glyph: "/", color: "#cfc3a0" },
+    sword:   { cat: "weapon", name: "Sword",  dmgMin: 3, dmgMax: 6,  speed: 1,   accuracy: 0,  tier: 2, req: { STR: 4 }, glyph: "/", color: "#d8e0ec" },
+    mace:    { cat: "weapon", name: "Mace",   dmgMin: 5, dmgMax: 10, speed: 0.7, accuracy: -1, tier: 3, req: { STR: 8 }, glyph: "/", color: "#c8a878" },
+    leather: { cat: "armor",  name: "Leather Armor", def: 1, tier: 1, req: { STR: 0 }, glyph: "[", color: "#b98a5a" },
+    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, tier: 2, req: { STR: 4 }, glyph: "[", color: "#b9c0c8" },
+    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, tier: 3, req: { STR: 8 }, glyph: "[", color: "#dfe6f0" },
+    // Jewelry — ring (x2) / trinket / necklace slots. No base damage/def; their
+    // value is rolled affixes (green+), so a plain white one is trash.
+    ring_copper: { cat: "ring",     name: "Copper Ring", tier: 1, glyph: "o", color: "#c58a4a" },
+    ring_silver: { cat: "ring",     name: "Silver Ring", tier: 2, glyph: "o", color: "#cfd4dc" },
+    charm_bone:  { cat: "trinket",  name: "Bone Charm",  tier: 1, glyph: "*", color: "#d8cfb0" },
+    amulet_jade: { cat: "necklace", name: "Jade Amulet", tier: 2, glyph: "\"", color: "#7ec9a0" },
   },
 
   /* ==========================================================================
@@ -112,6 +115,19 @@ window.CANTORI_DATA = {
       fire:     { name: "Flaming",   icon: "🔥", color: "#ff8f4a" },
       electric: { name: "Charged",   icon: "⚡", color: "#9ad0ff" },
     },
+    // When a gear item drops: first pick a CATEGORY (these relative weights), then
+    // a TIER by floor (tierBands below), then a TYPE within that tier+category
+    // using each item's `rarity` (defaults split the remainder).
+    categoryWeights: { weapon: 40, armor: 30, ring: 12, trinket: 9, necklace: 9 },
+    // Tier chance by depth. The first band whose `upToFloor` >= the current floor
+    // wins; `weights` are for tiers [1, 2, 3]. (25 floors = 5 biomes of 5.)
+    tierBands: [
+      { upToFloor: 5,  weights: [100, 0, 0] },    // Forest — all tier 1
+      { upToFloor: 10, weights: [70, 30, 0] },    // Cave
+      { upToFloor: 15, weights: [30, 55, 15] },   // Tomb
+      { upToFloor: 20, weights: [10, 45, 45] },   // Arcane Tomb
+      { upToFloor: 25, weights: [0, 25, 75] },    // The Beyond — mostly tier 3
+    ],
   },
 
   /* ==========================================================================

@@ -80,6 +80,30 @@ gear bonus in green; rare drops glow in their rarity color on the floor.
 _Open follow-ups: gold/unique authored items; biasing stat rolls toward a weapon's
 identity (STR/DEX) instead of uniform; scaling enchant/plus numbers as content grows._
 
+## Weapons: damage range, speed, accuracy — DONE
+
+Weapons carry **dmgMin/dmgMax** (a damage range instead of a flat bonus),
+**accuracy** (added to your hit chance), and **speed** (attacks per turn). Speed
+runs a real **energy turn system**: an attack costs `1 / speed` time, and each
+monster banks energy at its own `speed` and acts once per whole point — so a fast
+dagger (speed 1.5) lets you land extra hits before the enemy swings, and a slow
+mace (speed 0.7) gives the enemy free swings. Monsters can carry a `speed` too
+(default 1). +X still raises dmgMin/dmgMax; accuracy/speed are fixed per type.
+
+## Gear drops: category → tier → type — DONE
+
+A gear drop resolves in three steps (config in `data.js` → `loot`):
+1. **Category** — weighted by `categoryWeights` (weapon/armor/ring/trinket/necklace).
+2. **Tier** — by floor, via `tierBands` (each band gives weights for tiers 1/2/3;
+   deeper floors roll higher tiers).
+3. **Type within (tier, category)** — each item's `rarity` is its % share of that
+   group; items with **no** `rarity` are the **defaults** that split the remainder.
+   (e.g. tier-1 weapons dagger·—, dirk·30, hammer·10 → 60 / 30 / 10.)
+
+If a category has nothing at the chosen tier, it falls back to the nearest tier it
+does have. The colour rarity (white/green/blue/purple) + affixes + plus then roll
+on the chosen item as before.
+
 ## Equipment slots — DONE
 
 Six slots feed the effective stats: **Weapon · Armor · Ring · Ring · Trinket ·

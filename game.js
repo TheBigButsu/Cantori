@@ -55,7 +55,7 @@
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
   const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT;        // VIT → health
-  const playerAcc = () => ACC_BASE + eff("DEX");                       // DEX → accuracy
+  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy();    // DEX + weapon → accuracy
   const playerEva = () => EVA_BASE + eff("DEX");                       // DEX → evasion
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
@@ -142,14 +142,6 @@
   const GEAR_KEYS = Object.keys(GEAR);
   const itemAt = (x, y) => items.find((it) => it.x === x && it.y === y) || null;
 
-  function weightedGearKey() {
-    let total = 0;
-    for (const k of GEAR_KEYS) total += GEAR[k].weight;
-    let roll = Math.random() * total;
-    for (const k of GEAR_KEYS) { roll -= GEAR[k].weight; if (roll <= 0) return k; }
-    return GEAR_KEYS[0];
-  }
-
   // ---- Loot system: rarity + affixes ---------------------------------------
   const LOOT = DATA.loot;
   const RARITY = {};                       // key -> {name,chance,color}
@@ -184,12 +176,10 @@
     return { key, rarity, plus, stats, enchants };
   }
   const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [] });
-  // Wrap a loot key as the right payload: a rolled gear instance, or a plain
-  // consumable/tool reference.
-  function makeLootItem(key, floor) { return GEAR[key] ? rollItem(key, floor) : { key }; }
 
   // Effective numbers for an instance (base + plus).
-  const gAtk = (inst) => (GEAR[inst.key].atk || 0) + (inst.plus || 0);
+  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (inst.plus || 0);
+  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + (inst.plus || 0);
   const gDef = (inst) => (GEAR[inst.key].def || 0) + (inst.plus || 0);
   const gStatBonus = (inst, statKey) => {
     let n = 0;
@@ -203,15 +193,75 @@
     return n;
   }
   const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
-  const weaponAtk = () => (player.weapon ? gAtk(player.weapon) : 0);
   const armorDef = () => (player.armor ? gDef(player.armor) : 0);
-  // The "power" an item's enchant procs at: weapon damage, armor defense, or (for
-  // jewelry) its tier + plus.
+  // Weapon combat numbers (unarmed falls back to the base 2–3 fists).
+  const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin);
+  const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax);
+  const weaponAccuracy = () => (player.weapon ? (GEAR[player.weapon.key].accuracy || 0) : 0);
+  const weaponSpeed = () => (player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1);
+  // The "power" an item's enchant procs at: weapon top-end damage, armor defense,
+  // or (for jewelry) its tier + plus.
   function itemPower(inst) {
     const cat = GEAR[inst.key].cat;
-    if (cat === "weapon") return gAtk(inst);
+    if (cat === "weapon") return gDmgMax(inst);
     if (cat === "armor") return gDef(inst);
     return (GEAR[inst.key].tier || 1) + (inst.plus || 0);
+  }
+
+  // ---- Gear drop pipeline: category -> tier (by floor) -> type (within tier) ---
+  function pickCategory() {
+    const cw = LOOT.categoryWeights || { weapon: 1 };
+    const keys = Object.keys(cw);
+    let total = 0; for (const k of keys) total += cw[k];
+    let roll = Math.random() * total;
+    for (const k of keys) { roll -= cw[k]; if (roll <= 0) return k; }
+    return keys[0];
+  }
+  function pickTier(floor) {
+    const bands = LOOT.tierBands || [{ upToFloor: 99, weights: [1, 1, 1] }];
+    const band = bands.find((b) => floor <= b.upToFloor) || bands[bands.length - 1];
+    const w = band.weights || [1, 1, 1];
+    let total = 0; for (const x of w) total += x;
+    if (total <= 0) return 1;
+    let roll = Math.random() * total;
+    for (let i = 0; i < w.length; i++) { roll -= w[i]; if (roll <= 0) return i + 1; }
+    return 1;
+  }
+  // Within a (category, tier) group: items with an explicit `rarity` use it as a %;
+  // the rest are defaults that split whatever % is left.
+  function pickTypeInTierCat(cat, tier) {
+    const items = GEAR_KEYS.filter((k) => GEAR[k].cat === cat && (GEAR[k].tier || 1) === tier);
+    if (!items.length) return null;
+    const explicitSum = items.reduce((a, k) => a + (GEAR[k].rarity != null ? Math.max(0, GEAR[k].rarity) : 0), 0);
+    const defaults = items.filter((k) => GEAR[k].rarity == null);
+    const rem = Math.max(0, 100 - explicitSum);
+    const w = {};
+    for (const k of items) w[k] = GEAR[k].rarity != null ? Math.max(0, GEAR[k].rarity) : (defaults.length ? rem / defaults.length : 0);
+    let total = 0; for (const k of items) total += w[k];
+    if (total <= 0) { for (const k of items) w[k] = 1; total = items.length; }   // all-zero → even
+    let roll = Math.random() * total;
+    for (const k of items) { roll -= w[k]; if (roll <= 0) return k; }
+    return items[items.length - 1];
+  }
+  // Fallback when a category has nothing at the requested tier: pick from the
+  // nearest tier that exists (so a deep ring drop uses the highest ring available).
+  function pickAnyInCat(cat, tier) {
+    const items = GEAR_KEYS.filter((k) => GEAR[k].cat === cat);
+    if (!items.length) return null;
+    let best = [], bestDist = Infinity;
+    for (const k of items) {
+      const dt = Math.abs((GEAR[k].tier || 1) - tier);
+      if (dt < bestDist) { bestDist = dt; best = [k]; }
+      else if (dt === bestDist) best.push(k);
+    }
+    return best[randInt(0, best.length - 1)];
+  }
+  // Full gear drop for a floor → a rolled instance (rarity colour + affixes + plus).
+  function rollGearDrop(floor) {
+    const cat = pickCategory();
+    const tier = pickTier(floor);
+    const key = pickTypeInTierCat(cat, tier) || pickAnyInCat(cat, tier) || GEAR_KEYS[0];
+    return rollItem(key, floor);
   }
 
   // Display: colored name, +X prefix, and an affix summary line.
@@ -223,6 +273,11 @@
   function itemAffixText(inst) {
     if (!isGear(inst)) return "";
     const parts = [];
+    const g = GEAR[inst.key];
+    if (g.cat === "weapon") {
+      if (g.speed != null && g.speed !== 1) parts.push("spd " + g.speed);
+      if (g.accuracy) parts.push("acc " + (g.accuracy > 0 ? "+" : "") + g.accuracy);
+    }
     for (const s of inst.stats || []) parts.push("+" + (s.val + (inst.plus || 0)) + " " + s.stat);
     for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
     return parts.join(", ");
@@ -308,11 +363,13 @@
     }
     return null;
   }
-  function vaultLootKey() {
+  // A choice item for a thorn vault: usually a full gear drop, sometimes a
+  // permanent Strength potion, else another consumable.
+  function rollVaultLoot(floor) {
     const r = Math.random();
-    if (r < 0.45) return weightedGearKey();
-    if (r < 0.70) return "strength";       // permanent stat gain — worth the sting
-    return weightedConsumKey();
+    if (r < 0.55) return rollGearDrop(floor);
+    if (r < 0.75) return { key: "strength" };   // permanent stat gain — worth the sting
+    return { key: weightedConsumKey() };
   }
 
   // Seal a small side room behind brambles and hide a choice item inside. Returns a
@@ -332,7 +389,7 @@
       const r = rooms[pick];
       for (const [x, y] of roomDoors(r)) map[y][x] = THORN;   // wall it in with brambles
       const spot = freeFloorInRoom(r);
-      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, makeLootItem(vaultLootKey(), depth)));
+      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, rollVaultLoot(depth)));
       restricted.add(pick);
     }
     return restricted;
@@ -467,7 +524,7 @@
       if (r < 0.34) {
         items.push({ x: spot.x, y: spot.y, key: "gold", amount: randInt(2, 12) + depth * 2 });
       } else if (r < 0.67) {
-        items.push(Object.assign({ x: spot.x, y: spot.y }, rollItem(weightedGearKey(), depth)));
+        items.push(Object.assign({ x: spot.x, y: spot.y }, rollGearDrop(depth)));
       } else {
         items.push({ x: spot.x, y: spot.y, key: weightedConsumKey() });
       }
@@ -647,8 +704,7 @@
         log("The " + monName(target) + " evades your blow.");
         return;
       }
-      const watk = weaponAtk();
-      let dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus + bonus;
+      let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus;
       if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
       target.hp -= dmg;
       flash(target);
@@ -735,7 +791,7 @@
     const nx = player.x + dx, ny = player.y + dy;
 
     const mon = monsterAt(nx, ny);
-    if (mon) { attack(player, mon); worldTurn(); return true; }
+    if (mon) { attack(player, mon); worldTurn(1 / weaponSpeed()); return true; }   // weapon speed → attack cost
 
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
@@ -903,28 +959,42 @@
     if (every > 0 && turns % every === 0 && monsters.length < cap) spawnOne();
   }
 
-  function worldTurn() {
+  // One monster action (its burn tick, stun, and AI move/attack). Returns after
+  // acting; the caller checks `dead`.
+  function monsterAct(m) {
+    if (m.hp <= 0) return;
+    if (m.burn && m.burn.rounds > 0) {          // fire DOT ticks at the start of its action
+      m.hp -= m.burn.dmg; flash(m); floatText(m.x, m.y, "🔥-" + m.burn.dmg, "#ff8f4a");
+      m.burn.rounds--;
+      if (m.hp <= 0) { killMonster(m, "burns away"); return; }
+    }
+    if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
+    if (canSee(m)) m.aware = true;              // once it spots you, no more free ambush
+    const d = cheb(m.x, m.y, player.x, player.y);
+    if (d === 1) { attack(m, player); return; }
+    if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { attack(m, player); return; }
+    if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
+    if (canSee(m)) stepMonsterToward(m);        // seen you → close in directly
+    else patrolStep(m);
+  }
+
+  // Advance the world by `cost` time units (a normal action = 1). Each monster
+  // banks energy at its own speed and acts once per whole point — so against a
+  // fast weapon (cost < 1) monsters act less often, and a slow one (cost > 1)
+  // lets them act more than once. Housekeeping (cooldowns, regen, spawns) ticks
+  // once per player action regardless.
+  function worldTurn(cost) {
+    cost = cost == null ? 1 : cost;
     turns++;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
-      if (m.burn && m.burn.rounds > 0) {        // fire DOT ticks at the start of its turn
-        m.hp -= m.burn.dmg; flash(m); floatText(m.x, m.y, "🔥-" + m.burn.dmg, "#ff8f4a");
-        m.burn.rounds--;
-        if (m.hp <= 0) { killMonster(m, "burns away"); continue; }
+      m.energy = (m.energy || 0) + (m.speed || 1) * cost;
+      while (m.energy >= 1 && m.hp > 0 && !dead) {
+        m.energy -= 1;
+        monsterAct(m);
       }
-      if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); continue; }  // stunned: skip turn
-      if (canSee(m)) m.aware = true;            // once it spots you, no more free ambush
-      const d = cheb(m.x, m.y, player.x, player.y);
-      if (d === 1) { attack(m, player); if (dead) return; continue; }
-      if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) {
-        attack(m, player); if (dead) return; continue;
-      }
-      if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) {
-        doCharge(m); if (dead) return; continue;
-      }
-      if (canSee(m)) stepMonsterToward(m);       // seen you → close in directly
-      else patrolStep(m);
+      if (dead) return;
     }
     if (turns % REGEN_EVERY === 0 && player.hp < player.maxHp) {
       player.hp++; updateHUD(); floatText(player.x, player.y, "+1", "#8ed69a");
@@ -1237,6 +1307,24 @@
       ctx.closePath(); ctx.fill();
     }
   }
+  // Fallback for gear with no sprite file: draw its glyph char (so editor-added
+  // weapons/armor still show up on the floor).
+  function drawGlyph(px, py, ch, color) {
+    ctx.fillStyle = color || "#e6e0d2";
+    ctx.font = "700 " + Math.round(tile * 0.7) + "px " + bodyFont();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(ch || "?", px + tile / 2, py + tile / 2);
+  }
+  // Draw a floor item's icon, falling back to a jewel shape or glyph when there's
+  // no sprite for its key.
+  function drawItemIcon(px, py, it) {
+    if (drawImg(spriteForItem(it.key), px, py)) return;
+    const g = GEAR[it.key];
+    const cat = g ? g.cat : "trinket";
+    const col = rarityColor(it.rarity);
+    if (cat === "ring" || cat === "necklace" || cat === "trinket") drawJewel(px, py, cat, col);
+    else drawGlyph(px, py, g ? g.glyph : "?", col);
+  }
   // Draw a sprite preserving its aspect, bottom-anchored in the tile (bosses
   // can be taller than one tile and scale > 1).
   function drawSpriteFit(img, px, py, scale) {
@@ -1356,8 +1444,7 @@
           ctx.fillStyle = g;
           ctx.fillRect(px - tile * 0.1, py - tile * 0.1, tile * 1.2, tile * 1.2);
         }
-        const spr = spriteForItem(it.key);
-        if (!drawImg(spr, px, py)) drawJewel(px, py, GEAR[it.key] ? GEAR[it.key].cat : "trinket", rarityColor(it.rarity));
+        drawItemIcon(px, py, it);
       }
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
     }
@@ -1485,8 +1572,8 @@
     document.getElementById("btnBag").classList.toggle("on", invOpen);
   }
   function playerAtk() {
-    const b = strBonus() + player.atkBonus + weaponAtk();
-    return (player.atkMin + b) + "–" + (player.atkMax + b);
+    const b = strBonus() + player.atkBonus;
+    return (weaponDmgMin() + b) + "–" + (weaponDmgMax() + b);
   }
   // A colored, affix-annotated label for an equipped/carried gear instance.
   function equipLabel(inst) {
@@ -1523,7 +1610,7 @@
       const li = document.createElement("li");
       let tag, nameHtml;
       if (isGear(it)) {
-        tag = def.cat === "weapon" ? "atk " + gAtk(it) : def.cat === "armor" ? "def " + gDef(it) : def.cat;
+        tag = def.cat === "weapon" ? "dmg " + gDmgMin(it) + "–" + gDmgMax(it) : def.cat === "armor" ? "def " + gDef(it) : def.cat;
         const aff = itemAffixText(it);
         nameHtml = `<span class="i-name" style="color:${rarityColor(it.rarity)}">${itemName(it)}</span>` +
                    (aff ? `<br><span style="font-size:10px;opacity:.7">${aff}</span>` : "");
@@ -1977,6 +2064,7 @@
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
     rollItem: (k, f) => rollItem(k, f != null ? f : depth),
+    rollGear: (f) => rollGearDrop(f != null ? f : depth),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
@@ -1993,7 +2081,7 @@
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
-        weaponAtk: weaponAtk(), armorDef: armorDef(),
+        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: armorDef(),
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,

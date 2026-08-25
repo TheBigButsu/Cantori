@@ -30,6 +30,7 @@
       { f: "__key", label: "key", type: "key" },
       { f: "name", type: "text", cls: "name" },
       { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
+      { f: "speed", type: "num", step: "0.1" },
       { f: "acc", type: "num" }, { f: "eva", type: "num" },
       { f: "range", type: "num" }, { f: "minFloor", type: "num" },
       { f: "charge", type: "bool" }, { f: "ranged", type: "bool" },
@@ -39,8 +40,10 @@
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
       { f: "name", type: "text", cls: "name" },
-      { f: "atk", type: "num" }, { f: "def", type: "num" },
-      { f: "tier", type: "num" }, { f: "weight", type: "num" },
+      { f: "dmgMin", label: "dmg min", type: "num" }, { f: "dmgMax", label: "dmg max", type: "num" },
+      { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "def", type: "num" },
+      { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
@@ -60,7 +63,7 @@
   // Blank templates when adding a row.
   const TEMPLATES = {
     monsters: { name: "New Monster", hp: 5, atkMin: 1, atkMax: 2, glyph: "?", color: "#c0c0c0" },
-    gear: { cat: "weapon", name: "New Gear", atk: 1, tier: 1, weight: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
+    gear: { cat: "weapon", name: "New Gear", dmgMin: 1, dmgMax: 3, speed: 1, accuracy: 0, tier: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
     consumables: { cat: "potion", name: "New Item", effect: "heal", weight: 1, glyph: "!", color: "#cccccc" },
     bosses: { name: "New Boss", hp: 40, atkMin: 4, atkMax: 6 },
   };
@@ -305,8 +308,8 @@
   }
   function tableHint(coll) {
     return ({
-      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
-      gear: "cat sets the equip slot. Weapons use atk, armor uses def, jewelry (ring/trinket/necklace) uses neither — their value comes from rolled affixes. tier drives affix size. Sprites come from assets/tiles/<key>.png (jewelry/tools draw a placeholder).",
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
+      gear: "cat sets the equip slot. WEAPONS use dmg min/max, speed (>1 fast, <1 slow), and acc; ARMOR uses def; JEWELRY uses neither (value = rolled affixes). tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; leave it EMPTY to be a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites come from assets/tiles/<key>.png; keys with no sprite draw their glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. weight 0 = never drops as loot (e.g. torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
     })[coll] || "";
