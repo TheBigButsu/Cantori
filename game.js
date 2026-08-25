@@ -33,7 +33,6 @@
   let map = [];
   let visible = [];
   let explored = [];
-  let opened = [];             // per-tile: has this door been opened (walked through)?
   let torches = [];            // decorative wall-mounted torches {x, y}
   let depth = 1;
   let dead = false;
@@ -54,9 +53,10 @@
   const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
-  const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT;        // VIT → health
-  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy();    // DEX + weapon → accuracy
-  const playerEva = () => EVA_BASE + eff("DEX");                       // DEX → evasion
+  // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
+  const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0);
+  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0);  // DEX + weapon + level
+  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0);                      // DEX + level
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
   const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
@@ -67,6 +67,7 @@
     inv: [], gold: 0, xp: 0, level: 1,
     cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
     statPoints: 0,
+    mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
   };
   // Equipment slots: cat -> which player field(s) it fills.
   const EQUIP_SLOTS = { weapon: ["weapon"], armor: ["armor"], ring: ["ring1", "ring2"], trinket: ["trinket"], necklace: ["necklace"] };
@@ -82,6 +83,8 @@
     player.ring1 = null; player.ring2 = null; player.trinket = null; player.necklace = null;
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
+    player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0;   // reset per-level bonuses
+    player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
     player.skills = {};
     const cs = c.skills || {};
@@ -103,9 +106,12 @@
   const isDoor = (x, y) => inBounds(x, y) && map[y][x] === DOOR;
   const isThorn = (x, y) => inBounds(x, y) && map[y][x] === THORN;
   const passable = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
+  // A door is open only while you stand on it, then swings/grows shut behind you —
+  // an open/close mechanism (the forest bushes "come back").
+  const doorOpen = (x, y) => player.x === x && player.y === y;
   // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
   // room stays hidden until you reach its doorway, enabling surprise ambushes.
-  const blocksSight = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (map[y][x] === DOOR && !opened[y][x]);
+  const blocksSight = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (map[y][x] === DOOR && !doorOpen(x, y));
 
   function blankGrid(fill) {
     const g = [];
@@ -417,23 +423,30 @@
     return restricted;
   }
 
-  // Mount a few decorative torches on room walls — never inside a thorn vault.
-  function placeTorches(rooms, restricted) {
-    let budget = randInt(4, 8);
-    for (let i = 0; i < rooms.length && budget > 0; i++) {
+  // Mount exactly `count` torches on room walls (never inside a thorn vault) — a
+  // strict 1:1 with the thorns on the level, so there's always fuel for every bramble.
+  function placeTorches(rooms, restricted, count) {
+    const spots = [];
+    for (let i = 0; i < rooms.length; i++) {
       if (restricted.has(i)) continue;
-      const spots = roomRing(rooms[i]).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
-      if (!spots.length) continue;
-      const [tx, ty] = spots[randInt(0, spots.length - 1)];
-      if (!torches.some((t) => t.x === tx && t.y === ty)) { torches.push({ x: tx, y: ty }); budget--; }
+      for (const [x, y] of roomRing(rooms[i])) if (inBounds(x, y) && map[y][x] === WALL) spots.push([x, y]);
+    }
+    for (let i = spots.length - 1; i > 0; i--) { const j = randInt(0, i); const t = spots[i]; spots[i] = spots[j]; spots[j] = t; }
+    const seen = new Set();
+    for (const [x, y] of spots) {
+      if (torches.length >= count) break;
+      const k = y * MAP_W + x;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      torches.push({ x, y });
     }
   }
+  const countThorns = () => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; };
 
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
     visible = blankGrid(false);
-    opened = blankGrid(false);
     torches = [];
     walkPath = [];
     monsters = [];
@@ -482,7 +495,7 @@
       spawnMonsters(rooms);
     }
     spawnItems(rooms);
-    placeTorches(rooms, restricted);
+    placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     computeFOV();
     setDepthLabel();
     floaters = [];
@@ -790,10 +803,18 @@
       player.stats[cls.main] += 2;             // main +2
       player.stats[cls.secondary] += 1;        // secondary +1
       player.statPoints += 1;                  // free point (spend in the tree)
+      const lu = cls.levelUp || {};            // flat per-level set (hp/mp/accuracy/evasion)
+      player.lvlHp += lu.hp || 0;
+      player.lvlAcc += lu.accuracy || 0;
+      player.lvlEva += lu.evasion || 0;
+      player.maxMp += lu.mp || 0; player.mp = Math.min(player.maxMp, player.mp + (lu.mp || 0));
       const nm = computeMaxHp();
-      player.hp = Math.min(nm, player.hp + (nm - player.maxHp) + 2);
+      player.hp = Math.min(nm, player.hp + (nm - player.maxHp));   // heal by the max-HP gain
       player.maxHp = nm;
-      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point", "hit");
+      const extra = [];
+      if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
+      if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
+      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point" + (extra.length ? " · " + extra.join(", ") : ""), "hit");
       threshold = player.level * 8;
     }
     updateHUD();
@@ -817,7 +838,6 @@
 
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
-      if (map[ny][nx] === DOOR && !opened[ny][nx]) { opened[ny][nx] = true; log("You open the " + doorWord() + "."); }
       if (map[ny][nx] === THORN) {
         const d = randInt(5, 10);
         player.hp -= d; flash(player); floatText(player.x, player.y, "-" + d, "#ff8f84");
@@ -1456,7 +1476,7 @@
             ctx.fillRect(px, py, tile, tile);
           }
           if (t === STAIRS) drawImg(SPRITES[biome.exitSprite || "stairs"], px, py);
-          else if (t === DOOR) drawDoor(px, py, !opened[my][mx], b);
+          else if (t === DOOR) drawDoor(px, py, !doorOpen(mx, my), b);
           else if (t === THORN) drawThorn(px, py, b);
         }
         dim(px, py, 1 - b);                                   // torch falloff / memory
@@ -1809,7 +1829,6 @@
         break;
       }
       player.x = nx; player.y = ny; steps++;
-      if (map[ny][nx] === DOOR) opened[ny][nx] = true;   // barge through
       if (map[ny][nx] === THORN) {                       // dashing through brambles stings too
         const td = randInt(5, 10);
         player.hp -= td; flash(player); floatText(player.x, player.y, "-" + td, "#ff8f84");
@@ -1872,7 +1891,7 @@
     if (torch) { log("A wall torch — tap it to take it; fire clears thorns."); return; }
     const t = map[y][x];
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
-        t === DOOR ? (opened[y][x] ? "An open " + doorWord() + "." : "A closed " + doorWord() + " — sight can't pass until you reach it.") :
+        t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
         t === THORN ? "A wall of thorns — you can force through, but it'll draw blood. Something waits beyond." :
         "Open ground.");
   }
@@ -2140,7 +2159,8 @@
       let ex = 0;
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
       return {
-        depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
+        depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
+        acc: playerAcc(), eva: playerEva(), lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
@@ -2160,6 +2180,9 @@
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
     pan: (dxPx, dyPx) => panBy(dxPx, dyPx),
+    addXp: (n) => gainXP(n || 0),
+    doorOpenAt: (x, y) => doorOpen(x, y),
+    visibleAt: (x, y) => (inBounds(x, y) && visible[y] ? !!visible[y][x] : false),
     spawnAt: (type, x, y, hp, level) => {   // dev: drop a monster with custom HP next to you
       if (!VERMIN[type] || !inBounds(x, y)) return false;
       const m = makeMonster(type, x, y);

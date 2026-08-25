@@ -209,11 +209,16 @@ window.CANTORI_DATA = {
      starting proposals — rename, rebalance, or add freely.
        start.weapon / start.armor: a gear key from `gear` above (or null)
        unlock: "start" = available from the beginning; otherwise unlocked in town
+       baseMp: starting max MP (mana pool; spells later spend it)
+       levelUp: flat bonuses gained on EVERY level (on top of the +2 main / +1
+                secondary / +1 free point) — hp, mp, accuracy, evasion
      ========================================================================== */
   classes: {
     warrior: { name: "Warrior", main: "STR", secondary: "VIT", unlock: "start",
                stats: { STR: 8, VIT: 7, DEX: 4, INT: 3, RES: 3, LCK: 4 },
                start: { weapon: "sword", armor: "leather" },
+               baseMp: 5,
+               levelUp: { hp: 5, mp: 2, accuracy: 2, evasion: 2 },
                blurb: "Front-line brawler. Hits hard, endures more.",
                // Skills cost 1 banked point per rank. `ranks` are the values AT that
                // rank (dmg = bonus damage over a normal hit; cd = cooldown in turns).

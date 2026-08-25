@@ -80,6 +80,21 @@ gear bonus in green; rare drops glow in their rarity color on the floor.
 _Open follow-ups: gold/unique authored items; biasing stat rolls toward a weapon's
 identity (STR/DEX) instead of uniform; scaling enchant/plus numbers as content grows._
 
+## Level-up flat bonuses — DONE
+
+On top of the +2 main / +1 secondary / +1 free point, each class has a **levelUp**
+set of flat per-level gains (`data.js` → `classes` → `levelUp`, so it's editable).
+Warrior: **+5 HP, +2 MP, +2 accuracy, +2 evasion** per level. MP is now a real pool
+(class `baseMp`, shown in the vitals bar) waiting on spells to spend it.
+
+## Doors open & close — DONE
+
+Doors (the forest **bushes** included) are now an open/close mechanism: a door is
+open **only while you stand on it**, and closes behind you — so it keeps blocking
+sight, and the bushes "come back" for repeat ambush setups. Thorns, once burned,
+stay gone, and each level places **exactly one torch per thorn** (a strict 1:1) so
+there's always fuel to clear every bramble.
+
 ## Identification — DONE
 
 Gear is **unidentified on pickup** — you see the base type (e.g. "Sword") and its
