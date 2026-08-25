@@ -21,8 +21,8 @@
   catch (e) { source = clone(SHIPPED); }
 
   const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses"];
-  const JSON_COLLS = ["biomes", "classes", "loot", "stats", "gods"];
-  const TABS = TABLE_COLLS.concat(JSON_COLLS);
+  const JSON_COLLS = ["classes", "loot", "stats", "gods"];
+  const TABS = TABLE_COLLS.concat(["biomes"]).concat(JSON_COLLS);   // biomes = a card editor of its own
 
   // Column specs for the table editors. type: key|text|num|bool|color|select.
   const SPECS = {
@@ -73,6 +73,7 @@
   for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   const jsonText = {}, jsonOk = {};
   for (const c of JSON_COLLS) { jsonText[c] = JSON.stringify(source[c] != null ? source[c] : {}, null, 2); jsonOk[c] = true; }
+  let biomeRows = clone(source.biomes || []);   // biomes are an ordered array of cards
 
   let activeTab = "monsters";
 
@@ -109,6 +110,7 @@
     const main = $("main");
     main.innerHTML = "";
     if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
+    else if (activeTab === "biomes") main.appendChild(renderBiomes());
     else main.appendChild(renderJson(activeTab));
     setStatus("");
   }
@@ -196,6 +198,96 @@
     return inp;
   }
 
+  // ---- Biomes: a card editor (ordered array with a monster-picker) -----------
+  function biomeField(b, label, f, type, opts) {
+    const wrap = document.createElement("label"); wrap.className = "bfield";
+    const span = document.createElement("span"); span.textContent = label; wrap.appendChild(span);
+    let inp;
+    if (type === "select") {
+      inp = document.createElement("select");
+      for (const o of opts) { const op = document.createElement("option"); op.value = o; op.textContent = o || "(none)"; inp.appendChild(op); }
+      inp.value = b[f] != null ? b[f] : (opts[0] || "");
+      inp.onchange = () => { if (inp.value === "") delete b[f]; else b[f] = inp.value; };
+    } else if (type === "bool") {
+      inp = document.createElement("input"); inp.type = "checkbox"; inp.checked = !!b[f];
+      inp.onchange = () => { if (inp.checked) b[f] = true; else delete b[f]; };
+    } else if (type === "num") {
+      inp = document.createElement("input"); inp.type = "number"; inp.value = b[f] != null ? b[f] : "";
+      inp.oninput = () => { if (inp.value === "") delete b[f]; else b[f] = Number(inp.value); };
+    } else if (type === "spawn") {
+      inp = document.createElement("input"); inp.type = "text";
+      inp.value = Array.isArray(b[f]) ? b[f].join(",") : (b[f] != null ? String(b[f]) : "");
+      inp.placeholder = "5  or  3,5,5,5";
+      inp.oninput = () => {
+        const v = inp.value.trim();
+        if (v === "") delete b[f];
+        else if (v.indexOf(",") >= 0) b[f] = v.split(",").map((s) => Number(s.trim()) || 0);
+        else b[f] = Number(v);
+      };
+    } else {
+      inp = document.createElement("input"); inp.type = "text"; inp.value = b[f] != null ? b[f] : "";
+      inp.oninput = () => { if (inp.value === "") delete b[f]; else b[f] = inp.value; };
+    }
+    wrap.appendChild(inp);
+    return wrap;
+  }
+  function renderBiomes() {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "biomes — " + biomeRows.length + " in depth order"; bar.appendChild(h);
+    wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear). spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
+    wrap.appendChild(note);
+    const bossKeys = rows.bosses.map((r) => r.key);
+    const monKeys = rows.monsters.map((r) => r.key);
+    biomeRows.forEach((b, i) => {
+      const card = document.createElement("div"); card.className = "bcard";
+      const head = document.createElement("div"); head.className = "bhead";
+      const title = document.createElement("b"); title.textContent = "Biome " + (i + 1) + " · " + (b.key || "?"); head.appendChild(title);
+      const ctrls = document.createElement("span");
+      const mk = (lab, tip, fn, dis) => { const bt = document.createElement("button"); bt.className = "bbtn"; bt.textContent = lab; bt.title = tip; bt.disabled = !!dis; bt.onclick = fn; return bt; };
+      ctrls.appendChild(mk("↑", "move up", () => { const t = biomeRows[i - 1]; biomeRows[i - 1] = biomeRows[i]; biomeRows[i] = t; render(); }, i === 0));
+      ctrls.appendChild(mk("↓", "move down", () => { const t = biomeRows[i + 1]; biomeRows[i + 1] = biomeRows[i]; biomeRows[i] = t; render(); }, i === biomeRows.length - 1));
+      ctrls.appendChild(mk("✕", "remove", () => { biomeRows.splice(i, 1); render(); }));
+      head.appendChild(ctrls); card.appendChild(head);
+
+      const grid = document.createElement("div"); grid.className = "bgrid";
+      grid.appendChild(biomeField(b, "key", "key", "text"));
+      grid.appendChild(biomeField(b, "name", "name", "text"));
+      grid.appendChild(biomeField(b, "floor sprite", "floor", "text"));
+      grid.appendChild(biomeField(b, "wall sprite", "wall", "text"));
+      grid.appendChild(biomeField(b, "boss", "boss", "select", [""].concat(bossKeys)));
+      grid.appendChild(biomeField(b, "bossCount", "bossCount", "num"));
+      grid.appendChild(biomeField(b, "door style", "door", "select", ["door", "bush"]));
+      grid.appendChild(biomeField(b, "exitStyle", "exitStyle", "select", ["", "wall"]));
+      grid.appendChild(biomeField(b, "exitSprite", "exitSprite", "text"));
+      grid.appendChild(biomeField(b, "spawnEvery", "spawnEvery", "num"));
+      grid.appendChild(biomeField(b, "spawnCap", "spawnCap", "num"));
+      grid.appendChild(biomeField(b, "spawnInitial", "spawnInitial", "spawn"));
+      grid.appendChild(biomeField(b, "final biome?", "final", "bool"));
+      card.appendChild(grid);
+
+      const ml = document.createElement("div"); ml.className = "bmons";
+      const lbl = document.createElement("div"); lbl.className = "bmons-l"; lbl.textContent = "Monsters here:"; ml.appendChild(lbl);
+      const chips = document.createElement("div"); chips.className = "chips";
+      if (!Array.isArray(b.monsters)) b.monsters = [];
+      for (const k of monKeys) {
+        const on = b.monsters.indexOf(k) >= 0;
+        const chip = document.createElement("button"); chip.className = "chip" + (on ? " on" : ""); chip.textContent = k;
+        chip.onclick = () => { const idx = b.monsters.indexOf(k); if (idx >= 0) b.monsters.splice(idx, 1); else b.monsters.push(k); chip.classList.toggle("on"); };
+        chips.appendChild(chip);
+      }
+      ml.appendChild(chips); card.appendChild(ml);
+      wrap.appendChild(card);
+    });
+    const add = document.createElement("div"); add.className = "addrow";
+    const btn = document.createElement("button"); btn.textContent = "+ Add biome";
+    btn.onclick = () => { biomeRows.push({ key: "new_biome", name: "New Biome", floor: "floor", wall: "wall", monsters: [], boss: bossKeys[0] || "", door: "door" }); render(); };
+    add.appendChild(btn); wrap.appendChild(add);
+    return wrap;
+  }
+
   function renderJson(coll) {
     const wrap = document.createElement("div");
     const bar = document.createElement("div"); bar.className = "collbar";
@@ -240,6 +332,8 @@
       try { out[coll] = JSON.parse(jsonText[coll]); }
       catch (e) { problems.push(coll + " JSON: " + e.message); }
     }
+    out.biomes = clone(biomeRows);                    // biomes come from the card editor
+    biomeRows.forEach((b, i) => { if (!b.key) problems.push("biome " + (i + 1) + " has an empty key"); });
     return { data: out, problems };
   }
 
@@ -353,6 +447,7 @@
     source = clone(SHIPPED);
     for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
     for (const c of JSON_COLLS) { jsonText[c] = JSON.stringify(source[c] != null ? source[c] : {}, null, 2); jsonOk[c] = true; }
+    biomeRows = clone(source.biomes || []);
     render();
     setStatus("Reverted to shipped content.", "ok");
   }
