@@ -25,33 +25,37 @@ window.CANTORI_DATA = {
   /* ==========================================================================
      MONSTERS   (fields: hp, atkMin/atkMax = damage range,
      glyph/color = fallback if the sprite is missing)
+       minFloor = ON/OFF switch *and* the earliest floor within its biome (1..5)
+                  it may appear. EMPTY minFloor = the monster is OFF (never spawns);
+                  a number turns it on. (A monster also has to be listed in a
+                  biome's `monsters` to appear there — see the Biomes section.)
+       acc / eva = accuracy & evasion (hit chance = acc / (acc + defender eva);
+                   omitted -> default acc 12, eva 4). Surprise attacks always hit.
+       charge  = rushes in a straight line (line of sight), +1 damage per tile
+       ranged  = attacks from afar up to `range` tiles (line of sight)
      ========================================================================== */
   monsters: {
     // Cave / early vermin
-    rat:    { name: "Rat",    hp: 3, atkMin: 1, atkMax: 2, glyph: "r", color: "#c9b48f" },
-    bat:    { name: "Bat",    hp: 2, atkMin: 1, atkMax: 2, glyph: "b", color: "#b491d6" },
-    snake:  { name: "Snake",  hp: 4, atkMin: 2, atkMax: 3, glyph: "s", color: "#7ec98a" },
-    spider: { name: "Spider", hp: 3, atkMin: 1, atkMax: 3, glyph: "x", color: "#d68f8f" },
+    rat:    { name: "Rat",    hp: 3, atkMin: 1, atkMax: 2, minFloor: 1, glyph: "r", color: "#c9b48f" },
+    bat:    { name: "Bat",    hp: 2, atkMin: 1, atkMax: 2, minFloor: 1, glyph: "b", color: "#b491d6" },
+    snake:  { name: "Snake",  hp: 4, atkMin: 2, atkMax: 3, minFloor: 1, glyph: "s", color: "#7ec98a" },
+    spider: { name: "Spider", hp: 3, atkMin: 1, atkMax: 3, minFloor: 1, glyph: "x", color: "#d68f8f" },
     // Forest
-    //   acc / eva = accuracy & evasion values (hit chance = acc / (acc + defender eva);
-    //     omitted -> default acc 12, eva 4). Surprise attacks always hit.
-    //   charge  = rushes in a straight line (line of sight), +1 damage per tile crossed
-    //   ranged  = attacks from afar up to `range` tiles (line of sight)
-    //   minFloor = earliest floor *within the biome* (1..5) it may appear
-    wolf:   { name: "Wolf",   hp: 7,  atkMin: 2, atkMax: 4, acc: 11, eva: 3,  glyph: "W", color: "#9aa0a8" },
-    bee:    { name: "Bee",    hp: 2,  atkMin: 2, atkMax: 3, acc: 10, eva: 16, glyph: "e", color: "#e6c34a" },
-    bear:   { name: "Bear",   hp: 12, atkMin: 3, atkMax: 5, acc: 14, eva: 1, charge: true, minFloor: 3, glyph: "B", color: "#8a6a44" },
-    harpy:  { name: "Harpy",  hp: 5,  atkMin: 2, atkMax: 4, acc: 13, eva: 8, ranged: true, range: 4, minFloor: 4, glyph: "H", color: "#6b6f7a" },
+    wolf:   { name: "Wolf",   hp: 7,  atkMin: 2, atkMax: 4, acc: 11, eva: 3,  minFloor: 1, glyph: "W", color: "#9aa0a8" },
+    bee:    { name: "Bee",    hp: 2,  atkMin: 2, atkMax: 3, acc: 10, eva: 16, minFloor: 1, glyph: "e", color: "#e6c34a" },
+    bear:   { name: "Bear",   hp: 12, atkMin: 3, atkMax: 5, acc: 14, eva: 1,  charge: true, minFloor: 3, glyph: "B", color: "#8a6a44" },
+    harpy:  { name: "Harpy",  hp: 5,  atkMin: 2, atkMax: 4, acc: 13, eva: 8,  ranged: true, range: 4, minFloor: 4, glyph: "H", color: "#6b6f7a" },
+    // Disabled (no minFloor) — spare monsters kept for reuse; add a minFloor to turn on.
     jackal: { name: "Jackal", hp: 3, atkMin: 1, atkMax: 2, glyph: "j", color: "#b79a6b" },
     hornet: { name: "Hornet", hp: 2, atkMin: 2, atkMax: 3, glyph: "h", color: "#e0a13c" },
     // Tomb
-    ghoul:   { name: "Ghoul",   hp: 7, atkMin: 3, atkMax: 5, glyph: "G", color: "#9fb07a" },
-    wraith:  { name: "Wraith",  hp: 6, atkMin: 3, atkMax: 4, glyph: "W", color: "#8fa0c0" },
-    phantom: { name: "Phantom", hp: 5, atkMin: 2, atkMax: 4, glyph: "P", color: "#7ee0d0" },
+    ghoul:   { name: "Ghoul",   hp: 7, atkMin: 3, atkMax: 5, minFloor: 1, glyph: "G", color: "#9fb07a" },
+    wraith:  { name: "Wraith",  hp: 6, atkMin: 3, atkMax: 4, minFloor: 1, glyph: "W", color: "#8fa0c0" },
+    phantom: { name: "Phantom", hp: 5, atkMin: 2, atkMax: 4, minFloor: 1, glyph: "P", color: "#7ee0d0" },
     // Arcane / Beyond
-    imp:          { name: "Imp",          hp: 5,  atkMin: 3, atkMax: 5, glyph: "i", color: "#c0c0e0" },
-    ufetubus:     { name: "Ufetubus",     hp: 4,  atkMin: 2, atkMax: 4, glyph: "u", color: "#6fb0d0" },
-    orange_demon: { name: "Orange Demon", hp: 10, atkMin: 4, atkMax: 7, glyph: "d", color: "#e07030" },
+    imp:          { name: "Imp",          hp: 5,  atkMin: 3, atkMax: 5, minFloor: 1, glyph: "i", color: "#c0c0e0" },
+    ufetubus:     { name: "Ufetubus",     hp: 4,  atkMin: 2, atkMax: 4, minFloor: 1, glyph: "u", color: "#6fb0d0" },
+    orange_demon: { name: "Orange Demon", hp: 10, atkMin: 4, atkMax: 7, minFloor: 1, glyph: "d", color: "#e07030" },
   },
 
   /* ==========================================================================

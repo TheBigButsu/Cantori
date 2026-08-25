@@ -305,7 +305,7 @@
   }
   function tableHint(coll) {
     return ({
-      monsters: "Blank optional cells (acc, eva, range, minFloor, charge, ranged) are left off — the engine uses defaults. A monster's sprite comes from assets/tiles/<key>.png.",
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
       gear: "cat sets the equip slot. Weapons use atk, armor uses def, jewelry (ring/trinket/necklace) uses neither — their value comes from rolled affixes. tier drives affix size. Sprites come from assets/tiles/<key>.png (jewelry/tools draw a placeholder).",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. weight 0 = never drops as loot (e.g. torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",

@@ -881,7 +881,9 @@
 
   function eligiblePool() {
     const f = floorInBiome(depth);
-    return biome.monsters.filter((k) => (VERMIN[k].minFloor || 1) <= f);
+    // minFloor doubles as the on/off switch: no minFloor = disabled; a number =
+    // enabled, and the earliest biome-floor (1..5) it may appear on.
+    return biome.monsters.filter((k) => VERMIN[k].minFloor != null && VERMIN[k].minFloor <= f);
   }
   function spawnOne() {
     const pool = eligiblePool();
