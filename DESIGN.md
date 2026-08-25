@@ -172,11 +172,15 @@ any visible tile. Banked points are spent on the skill tree.
 - **Examine auto-closes** after one inspection — tap 🔍, tap a tile, done.
 - **Berry bushes & thorn vaults.** Forest doorways are berry bushes (red fruit
   dotted through the leaves). A separate hazard tile — **thorns** — seals off the
-  occasional side room: it's passable but bites for 2–4 HP each step through, and
-  monsters refuse to enter, so a thorn vault is a player-only risk/reward pocket
-  with a **choice item hidden inside** (biased toward gear or a Strength potion).
-  Auto-travel never routes through thorns; you push in deliberately, tile by tile.
-- **Torches.** A handful of wall-mounted torches light each floor (a flame plus a
-  soft glow pool), placed only in ordinary rooms — never inside a thorn vault.
+  occasional side room: it's passable but bites for **5–10 HP** each step through,
+  and monsters refuse to enter, so a thorn vault is a player-only risk/reward
+  pocket with a **choice item hidden inside** (biased toward gear or a Strength
+  potion). Auto-travel never routes through thorns; you push in deliberately.
+- **Torches & fire.** Wall-mounted torches light each floor (a flame plus a soft
+  glow pool), placed only in ordinary rooms — never inside a thorn vault. **Tap a
+  torch to take it** into your pack; then **tap an adjacent thorn (or use the torch
+  from the pack) to burn the brambles away** — fire clears thorns with no HP cost,
+  consuming the torch. So a vault is: bleed through for 5–10 a step, or spend a
+  torch you picked up elsewhere to open it clean.
 
 _Also still open: selecting among multiple classes at run start._

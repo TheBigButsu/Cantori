@@ -134,7 +134,7 @@
   const defOf = (key) => GEAR[key] || CONSUM[key];
   function displayName(key) {
     const d = defOf(key);
-    if (d.cat === "weapon" || d.cat === "armor" || identified.has(key)) return d.name;
+    if (d.cat === "weapon" || d.cat === "armor" || d.cat === "tool" || identified.has(key)) return d.name;
     return d.cat === "potion" ? "Unidentified Potion" : "Unidentified Scroll";
   }
   function weightedConsumKey() {
@@ -605,7 +605,7 @@
       player.x = nx; player.y = ny;
       if (map[ny][nx] === DOOR && !opened[ny][nx]) { opened[ny][nx] = true; log("You open the " + doorWord() + "."); }
       if (map[ny][nx] === THORN) {
-        const d = randInt(2, 4);
+        const d = randInt(5, 10);
         player.hp -= d; flash(player); floatText(player.x, player.y, "-" + d, "#ff8f84");
         log("The thorns tear at you! (-" + d + ")", "hurt");
         if (player.hp <= 0) { updateHUD(); computeFOV(); die(); return true; }
@@ -852,12 +852,29 @@
     }
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
+    const adjacent = cheb(player.x, player.y, tx, ty) === 1;
+    // tap an adjacent wall torch to take it off the wall
+    const torchHere = torches.find((t) => t.x === tx && t.y === ty);
+    if (torchHere && adjacent) { takeTorch(torchHere); return; }
+    // tap an adjacent thorn while carrying a torch → burn it clear instead of bleeding through
+    if (adjacent && isThorn(tx, ty)) {
+      const ti = player.inv.findIndex((i) => i.key === "torch");
+      if (ti >= 0) { useConsumable(ti); return; }
+    }
     if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
     const path = findPath(player.x, player.y, tx, ty);
     if (path.length) { walkPath = path; return; }
     // no route (e.g. blocked by thorns): if the tap is an adjacent tile, step in
     // manually — this is how you deliberately push through brambles to the loot
-    if (cheb(player.x, player.y, tx, ty) === 1) stepToward(tx, ty);
+    if (adjacent) stepToward(tx, ty);
+  }
+  function takeTorch(t) {
+    if (player.inv.length >= 12) { log("Your pack is full."); return; }
+    torches = torches.filter((x) => x !== t);
+    player.inv.push({ key: "torch" });
+    log("You lift the torch from its bracket.");
+    updateHUD();
+    worldTurn();
   }
 
   // ---- Canvas, camera, zoom ------------------------------------------------
@@ -1336,6 +1353,7 @@
       let tag;
       if (def.cat === "weapon") tag = "+" + def.atk + " atk";
       else if (def.cat === "armor") tag = "+" + def.def + " def";
+      else if (def.cat === "tool") tag = "burn thorns";
       else tag = identified.has(it.key) ? "use" : "use · ?";
       li.innerHTML = '<span class="i-name">' + displayName(it.key) + "</span><span class=\"i-tag\">" + tag + "</span>";
       li.addEventListener("click", () => actItem(idx));
@@ -1372,6 +1390,16 @@
     const it = player.inv[idx];
     if (!it) return;
     const def = CONSUM[it.key];
+    if (def.effect === "burn") {                 // a torch: only spent if there are thorns to burn
+      if (!adjacentThorns().length) { log("No thorns within reach to burn."); return; }
+      player.inv.splice(idx, 1);
+      burnThorns();
+      updateHUD();
+      worldTurn();
+      if (dead) { toggleInv(false); return; }
+      renderInv();
+      return;
+    }
     identified.add(it.key);      // using an item reveals what it is
     player.inv.splice(idx, 1);
     applyEffect(def.effect);
@@ -1380,6 +1408,18 @@
     worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
+  }
+  function adjacentThorns() {
+    const out = [];
+    for (const [dx, dy] of DIRS8) { const x = player.x + dx, y = player.y + dy; if (isThorn(x, y)) out.push([x, y]); }
+    return out;
+  }
+  function burnThorns() {
+    const cells = adjacentThorns();
+    for (const [x, y] of cells) { map[y][x] = FLOOR; floatText(x, y, "🔥", "#f6b845"); }
+    computeFOV();
+    log(cells.length === 1 ? "The torch sets the thorns ablaze — they burn away."
+                           : "Fire races through the brambles — " + cells.length + " thorns burn away.", "hit");
   }
   function applyEffect(effect) {
     if (effect === "heal") {
@@ -1457,7 +1497,7 @@
       player.x = nx; player.y = ny; steps++;
       if (map[ny][nx] === DOOR) opened[ny][nx] = true;   // barge through
       if (map[ny][nx] === THORN) {                       // dashing through brambles stings too
-        const td = randInt(2, 4);
+        const td = randInt(5, 10);
         player.hp -= td; flash(player); floatText(player.x, player.y, "-" + td, "#ff8f84");
         if (player.hp <= 0) { player.skills.rush.cd = cur.cd; updateHUD(); computeFOV(); die(); updateHotbar(); return; }
       }
@@ -1511,7 +1551,7 @@
     const it = items.find((i) => i.x === x && i.y === y);
     if (it && visible[y][x]) { log(it.key === "gold" ? (it.amount + " gold") : displayName(it.key)); return; }
     const torch = torches.find((tr) => tr.x === x && tr.y === y);
-    if (torch) { log("A wall torch — its light holds back the dark."); return; }
+    if (torch) { log("A wall torch — tap it to take it; fire clears thorns."); return; }
     const t = map[y][x];
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
         t === DOOR ? (opened[y][x] ? "An open " + doorWord() + "." : "A closed " + doorWord() + " — sight can't pass until you reach it.") :

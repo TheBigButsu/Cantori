@@ -74,10 +74,12 @@ window.CANTORI_DATA = {
   },
 
   /* ==========================================================================
-     CONSUMABLES — potions & scrolls (unidentified until used)
-       cat:    "potion" or "scroll"
-       effect: what it does (engine handles: heal, strength, poison, map, teleport)
-       weight: how often it drops (relative)
+     CONSUMABLES — potions, scrolls & tools (unidentified until used)
+       cat:    "potion", "scroll", or "tool" (tools show their name, never drop)
+       effect: what it does (engine handles: heal, strength, poison, map,
+               teleport, burn)
+       weight: how often it drops (relative). weight 0 = never in the drop pool
+               (torches are taken off the wall, not found as loot)
      ========================================================================== */
   consumables: {
     heal:     { cat: "potion", name: "Potion of Healing",  effect: "heal",     weight: 5, glyph: "!", color: "#e0685a" },
@@ -85,6 +87,7 @@ window.CANTORI_DATA = {
     poison:   { cat: "potion", name: "Potion of Poison",   effect: "poison",   weight: 2, glyph: "!", color: "#7ec98a" },
     mapping:  { cat: "scroll", name: "Scroll of Magic Mapping", effect: "map",      weight: 3, glyph: "?", color: "#cfe6b0" },
     teleport: { cat: "scroll", name: "Scroll of Teleport",      effect: "teleport", weight: 2, glyph: "?", color: "#b491d6" },
+    torch:    { cat: "tool",   name: "Torch", effect: "burn", weight: 0, glyph: "|", color: "#f6b845" },
   },
 
   /* ==========================================================================
