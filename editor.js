@@ -22,8 +22,9 @@
 
   const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses"];
   const JSON_COLLS = ["loot", "stats", "gods"];
-  const TABS = TABLE_COLLS.concat(["biomes", "classes"]).concat(JSON_COLLS);   // biomes & classes = custom editors
+  const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS);
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
+  const GEAR_CATS = ["weapon", "armor", "ring", "trinket", "necklace"];
   const TIERS = 5, SLOTS = 5;   // skill tree: 5 tiers × 5 options
 
   // Column specs for the table editors. type: key|text|num|bool|color|select.
@@ -53,7 +54,7 @@
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["potion", "scroll", "tool"] },
       { f: "name", type: "text", cls: "name" },
-      { f: "effect", type: "text" }, { f: "weight", type: "num" },
+      { f: "effect", type: "text" }, { f: "noDrop", label: "no drop", type: "bool" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     bosses: [
@@ -66,7 +67,7 @@
   const TEMPLATES = {
     monsters: { name: "New Monster", hp: 5, atkMin: 1, atkMax: 2, glyph: "?", color: "#c0c0c0" },
     gear: { cat: "weapon", name: "New Gear", dmgMin: 1, dmgMax: 3, speed: 1, accuracy: 0, tier: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
-    consumables: { cat: "potion", name: "New Item", effect: "heal", weight: 1, glyph: "!", color: "#cccccc" },
+    consumables: { cat: "potion", name: "New Item", effect: "heal", glyph: "!", color: "#cccccc" },
     bosses: { name: "New Boss", hp: 40, atkMin: 4, atkMax: 6 },
   };
 
@@ -74,8 +75,13 @@
   const rows = {};
   for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   const jsonText = {}, jsonOk = {};
-  for (const c of JSON_COLLS) { jsonText[c] = JSON.stringify(source[c] != null ? source[c] : {}, null, 2); jsonOk[c] = true; }
+  for (const c of JSON_COLLS) {
+    let src = source[c] != null ? source[c] : {};
+    if (c === "loot") { src = Object.assign({}, src); delete src.enchants; }   // enchants get their own tab
+    jsonText[c] = JSON.stringify(src, null, 2); jsonOk[c] = true;
+  }
   let biomeRows = clone(source.biomes || []);   // biomes are an ordered array of cards
+  let enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let activeClass = 0;
   // Normalize a class: ensure stats/start/levelUp exist and pad the skill tree to a
@@ -138,6 +144,7 @@
     if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
     else if (activeTab === "biomes") main.appendChild(renderBiomes());
     else if (activeTab === "classes") main.appendChild(renderClasses());
+    else if (activeTab === "enchants") main.appendChild(renderEnchants());
     else main.appendChild(renderJson(activeTab));
     setStatus("");
   }
@@ -425,6 +432,59 @@
     return wrap;
   }
 
+  // ---- Enchants: table with proc rate + slot chips ---------------------------
+  function renderEnchants() {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "enchants — " + enchantRows.length; bar.appendChild(h); wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires on a given hit. Slots = which item types it can appear on (click to toggle). Engine effects (fire = burst + burn, electric = burst + stun) are wired in code; these fields tune the odds and where they roll.";
+    wrap.appendChild(note);
+    enchantRows.forEach((r, i) => {
+      const o = r.obj;
+      const card = document.createElement("div"); card.className = "bcard";
+      const head = document.createElement("div"); head.className = "bhead";
+      const t = document.createElement("b"); t.textContent = (o.icon || "") + " " + (r.key || "?"); head.appendChild(t);
+      const del = document.createElement("button"); del.className = "bbtn"; del.textContent = "✕"; del.title = "remove";
+      del.onclick = () => { enchantRows.splice(i, 1); render(); };
+      head.appendChild(del); card.appendChild(head);
+      const grid = document.createElement("div"); grid.className = "bgrid";
+      const fld = (label, f, type, opts) => {
+        const w = document.createElement("label"); w.className = "bfield";
+        const s = document.createElement("span"); s.textContent = label; w.appendChild(s);
+        let inp;
+        if (type === "color") { inp = document.createElement("input"); inp.type = "color"; inp.value = normHex(o[f]) || "#cccccc"; inp.oninput = () => { o[f] = inp.value; }; }
+        else if (type === "num") { inp = document.createElement("input"); inp.type = "number"; inp.step = "0.05"; inp.value = o[f] != null ? o[f] : ""; inp.oninput = () => { if (inp.value === "") delete o[f]; else o[f] = Number(inp.value); }; }
+        else if (f === "__key") { inp = document.createElement("input"); inp.type = "text"; inp.value = r.key; inp.oninput = () => { r.key = inp.value.trim(); }; }
+        else { inp = document.createElement("input"); inp.type = "text"; inp.value = o[f] != null ? o[f] : ""; inp.oninput = () => { if (inp.value === "") delete o[f]; else o[f] = inp.value; }; }
+        w.appendChild(inp); return w;
+      };
+      grid.appendChild(fld("key", "__key", "text"));
+      grid.appendChild(fld("name", "name", "text"));
+      grid.appendChild(fld("icon", "icon", "text"));
+      grid.appendChild(fld("color", "color", "color"));
+      grid.appendChild(fld("proc rate (0–1)", "proc", "num"));
+      card.appendChild(grid);
+      const ml = document.createElement("div"); ml.className = "bmons";
+      const lbl = document.createElement("div"); lbl.className = "bmons-l"; lbl.textContent = "Can appear on:"; ml.appendChild(lbl);
+      const chips = document.createElement("div"); chips.className = "chips";
+      if (!Array.isArray(o.slots)) o.slots = GEAR_CATS.slice();
+      for (const cat of GEAR_CATS) {
+        const on = o.slots.indexOf(cat) >= 0;
+        const chip = document.createElement("button"); chip.className = "chip" + (on ? " on" : ""); chip.textContent = cat;
+        chip.onclick = () => { const idx = o.slots.indexOf(cat); if (idx >= 0) o.slots.splice(idx, 1); else o.slots.push(cat); chip.classList.toggle("on"); };
+        chips.appendChild(chip);
+      }
+      ml.appendChild(chips); card.appendChild(ml);
+      wrap.appendChild(card);
+    });
+    const add = document.createElement("div"); add.className = "addrow";
+    const btn = document.createElement("button"); btn.textContent = "+ Add enchant";
+    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, slots: GEAR_CATS.slice() } }); render(); };
+    add.appendChild(btn); wrap.appendChild(add);
+    return wrap;
+  }
+
   function renderJson(coll) {
     const wrap = document.createElement("div");
     const bar = document.createElement("div"); bar.className = "collbar";
@@ -469,6 +529,15 @@
       try { out[coll] = JSON.parse(jsonText[coll]); }
       catch (e) { problems.push(coll + " JSON: " + e.message); }
     }
+    // enchants come from their own tab, merged back into loot
+    out.loot = out.loot || {};
+    const eo = {}; const seenE = {};
+    for (const { key, obj } of enchantRows) {
+      if (!key) { problems.push("an enchant has an empty key"); continue; }
+      if (seenE[key]) problems.push("enchants: duplicate key “" + key + "”");
+      seenE[key] = 1; eo[key] = obj;
+    }
+    out.loot.enchants = eo;
     out.biomes = clone(biomeRows);                    // biomes come from the card editor
     biomeRows.forEach((b, i) => { if (!b.key) problems.push("biome " + (i + 1) + " has an empty key"); });
 
@@ -595,7 +664,8 @@
     if (!confirm("Discard all edits and reload the shipped content?")) return;
     source = clone(SHIPPED);
     for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
-    for (const c of JSON_COLLS) { jsonText[c] = JSON.stringify(source[c] != null ? source[c] : {}, null, 2); jsonOk[c] = true; }
+    for (const c of JSON_COLLS) { let s = source[c] != null ? source[c] : {}; if (c === "loot") { s = Object.assign({}, s); delete s.enchants; } jsonText[c] = JSON.stringify(s, null, 2); jsonOk[c] = true; }
+    enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
     biomeRows = clone(source.biomes || []);
     classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
     classRows.forEach((r) => ensureClass(r.obj)); activeClass = 0;
@@ -620,7 +690,7 @@
     return ({
       monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
       gear: "cat sets the equip slot. WEAPONS use dmg min/max, speed (>1 fast, <1 slow), and acc; ARMOR uses def; JEWELRY uses neither (value = rolled affixes). tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; leave it EMPTY to be a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites come from assets/tiles/<key>.png; keys with no sprite draw their glyph.",
-      consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. weight 0 = never drops as loot (e.g. torch).",
+      consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
     })[coll] || "";
   }
@@ -628,7 +698,7 @@
     return ({
       biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitStyle/exitSprite, door (\"bush\"/\"door\"), final.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
-      loot: "Rarity table, stat pool, and enchant definitions for the loot system.",
+      loot: "Rarity table, stat pool, category weights, and tier-by-floor bands. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",
       gods: "Design reference for the boon gods (boons not yet wired in).",
     })[coll] || "Raw JSON for this section.";

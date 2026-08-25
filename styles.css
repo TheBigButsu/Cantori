@@ -83,6 +83,32 @@ body{
   letter-spacing:.12em;
   text-transform:uppercase;
 }
+/* Level-up (and other) banner: a big centered flash over the board */
+#banner{
+  position:absolute;inset:0;z-index:12;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:none;
+}
+#banner[hidden]{display:none}
+#banner .banner-in{text-align:center;max-width:88%;animation:bannerPop 1.9s ease-out forwards}
+#banner .banner-t{
+  font-size:38px;font-weight:800;letter-spacing:.18em;
+  color:#f6d060;text-shadow:0 0 18px rgba(246,184,69,.65),0 2px 8px rgba(0,0,0,.7);
+}
+#banner .banner-s{
+  margin-top:8px;font-size:14px;letter-spacing:.06em;color:#ffe9b0;
+  text-shadow:0 2px 6px rgba(0,0,0,.8);
+}
+@keyframes bannerPop{
+  0%{opacity:0;transform:scale(.6)}
+  14%{opacity:1;transform:scale(1.06)}
+  26%{transform:scale(1)}
+  72%{opacity:1;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.04)}
+}
+@media (prefers-reduced-motion: reduce){ #banner .banner-in{animation:bannerFade 1.9s linear forwards} }
+@keyframes bannerFade{0%{opacity:0}12%{opacity:1}75%{opacity:1}100%{opacity:0}}
+
 #draftBadge{
   margin-left:8px;
   background:rgba(126,201,138,.15);

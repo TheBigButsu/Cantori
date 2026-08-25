@@ -242,11 +242,8 @@
     return d.cat === "potion" ? "Unidentified Potion" : "Unidentified Scroll";
   }
   function weightedConsumKey() {
-    let total = 0;
-    for (const k of CONSUM_KEYS) total += CONSUM[k].weight;
-    let roll = Math.random() * total;
-    for (const k of CONSUM_KEYS) { roll -= CONSUM[k].weight; if (roll <= 0) return k; }
-    return CONSUM_KEYS[0];
+    const pool = CONSUM_KEYS.filter((k) => !CONSUM[k].noDrop);   // torch etc. never drop as loot
+    return pool.length ? pool[randInt(0, pool.length - 1)] : CONSUM_KEYS[0];
   }
 
   // ---- Dungeon generation --------------------------------------------------
@@ -632,6 +629,9 @@
     if (!enchants || !enchants.length || target.hp <= 0) return;
     for (const e of enchants) {
       if (target.hp <= 0) break;
+      const def = LOOT.enchants[e] || {};
+      const proc = def.proc != null ? def.proc : 1;     // chance the enchant fires this hit
+      if (Math.random() >= proc) continue;
       if (e === "fire") {
         const burst = Math.ceil(power / 2);
         target.hp -= burst; flash(target);
@@ -665,6 +665,7 @@
       flash(target);
       floatText(target.x, target.y, (surprise ? "!" : "") + "-" + dmg, surprise ? "#ffd98a" : "#ffe08a");
       const pre = surprise ? "Surprise! You strike the " : "You strike the ";
+      if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
       if (target.hp <= 0) {
         killMonster(target, "dies");
       } else {
@@ -689,10 +690,12 @@
       const verb = bonus > 0 ? " charges you!" : attacker.ranged ? " strikes from afar." : " hits you.";
       log("The " + monName(attacker) + verb + " (-" + dmg + ")", "hurt");
       if (player.hp <= 0) { die(); return; }
-      // enchanted worn gear (armor, rings, trinket, necklace) lashes back at the attacker
+      // taking a hit is how you learn your worn defensive gear, and how its
+      // enchants (armor, rings, trinket, necklace) lash back at the attacker
       for (const it of wornItems()) {
-        if (attacker.hp <= 0) break;
-        if (GEAR[it.key].cat !== "weapon" && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it));
+        if (GEAR[it.key].cat === "weapon") continue;
+        gainIdentify(it, 1);
+        if (attacker.hp > 0 && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it));
       }
     }
   }
@@ -735,9 +738,25 @@
       if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
       if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
       log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point" + (extra.length ? " · " + extra.join(", ") : ""), "hit");
+      const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra, ["+1 point"]);
+      showBanner("LEVEL " + player.level, gains.join("  ·  "));
+      flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
       threshold = player.level * 8;
     }
     updateHUD();
+  }
+  // A big centered flash over the board (level ups, milestones).
+  let bannerTimer = null;
+  function showBanner(title, sub) {
+    const el = document.getElementById("banner");
+    if (!el) return;
+    document.getElementById("bannerT").textContent = title;
+    document.getElementById("bannerS").textContent = sub || "";
+    el.hidden = true;                                   // restart the CSS animation
+    void el.offsetWidth;
+    el.hidden = false;
+    if (bannerTimer) clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => { el.hidden = true; }, 1900);
   }
 
   // ---- Movement / a player action -----------------------------------------
@@ -940,17 +959,15 @@
     else patrolStep(m);
   }
 
-  // Accrue identify-progress on equipped, still-mysterious gear; reveal it once the
-  // accumulated use reaches its idNeed threshold.
-  function tickIdentify() {
-    for (const it of wornItems()) {
-      if (it.identified) continue;
-      it.idXp = (it.idXp || 0) + 1;
-      if (it.idXp >= (it.idNeed || 1)) {
-        it.identified = true;
-        const aff = itemAffixText(it);
-        log("You've learned your " + itemName(it) + (aff && aff !== "unidentified" ? " — " + aff : "") + ".", "hit");
-      }
+  // Accrue identify-progress on one equipped item through *use* (a weapon when you
+  // strike, worn gear when you're hit) — not from idly walking. Reveal once reached.
+  function gainIdentify(it, amount) {
+    if (!it || it.identified) return;
+    it.idXp = (it.idXp || 0) + (amount || 1);
+    if (it.idXp >= (it.idNeed || 1)) {
+      it.identified = true;
+      const aff = itemAffixText(it);
+      log("You've learned your " + itemName(it) + (aff && aff !== "unidentified" ? " — " + aff : "") + ".", "hit");
     }
   }
 
@@ -964,7 +981,6 @@
     turns++;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     panX = 0; panY = 0;                        // any action recenters the camera on you
-    tickIdentify();
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
@@ -1311,9 +1327,9 @@
     if (drawImg(spriteForItem(it.key), px, py)) return;
     const g = GEAR[it.key];
     const cat = g ? g.cat : "trinket";
-    const col = rarityColor(it.rarity);
+    const col = isGear(it) ? itemColor(it) : rarityColor(it.rarity);   // neutral while unidentified
     if (cat === "ring" || cat === "necklace" || cat === "trinket") drawJewel(px, py, cat, col);
-    else drawGlyph(px, py, g ? g.glyph : "?", col);
+    else drawGlyph(px, py, g ? (g.glyph || "?") : "?", g && g.color ? g.color : col);
   }
   // Draw a sprite preserving its aspect, bottom-anchored in the tile (bosses
   // can be taller than one tile and scale > 1).
@@ -1426,14 +1442,8 @@
       const px = SX(it.x), py = SY(it.y);
       if (it.key === "gold") drawCoin(px, py);
       else {
-        if (isGear(it) && it.rarity && it.rarity !== "white") {   // rarity glow marks worthwhile loot
-          const cx = px + tile / 2, cy = py + tile / 2;
-          const g = ctx.createRadialGradient(cx, cy, tile * 0.08, cx, cy, tile * 0.55);
-          g.addColorStop(0, rarityColor(it.rarity) + "cc");
-          g.addColorStop(1, rarityColor(it.rarity) + "00");
-          ctx.fillStyle = g;
-          ctx.fillRect(px - tile * 0.1, py - tile * 0.1, tile * 1.2, tile * 1.2);
-        }
+        // no rarity glow on the ground — gear is unidentified until you use it, so a
+        // dropped item shouldn't telegraph how good it is
         drawItemIcon(px, py, it);
       }
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);

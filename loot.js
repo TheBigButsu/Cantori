@@ -28,9 +28,10 @@ window.CantoriLoot = function (deps) {
     const rarity = rollRarity();
     const plus = randInt(0, maxPlusForFloor(floor));
     const stats = [], enchants = [];
-    const ekeys = Object.keys(LOOT.enchants);
+    // enchants eligible for this item's category (respecting each enchant's `slots`)
+    const ekeys = Object.keys(LOOT.enchants).filter((k) => { const s = LOOT.enchants[k].slots; return !s || s.indexOf(base.cat) >= 0; });
     const addStat = () => stats.push({ stat: LOOT.statPool[randInt(0, LOOT.statPool.length - 1)], val: tier });
-    const addEnchant = () => enchants.push(ekeys[randInt(0, ekeys.length - 1)]);
+    const addEnchant = () => { if (ekeys.length) enchants.push(ekeys[randInt(0, ekeys.length - 1)]); };
     if (rarity === "green") { addStat(); }
     else if (rarity === "blue") { addStat(); addEnchant(); }
     else if (rarity === "purple") {

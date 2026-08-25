@@ -7,8 +7,7 @@
 
    HOW TO EDIT (the basics):
      • Each entry is  key: { field: value, ... }
-     • Numbers change balance (hp, atk, def, weight…). Bigger `weight` = drops
-       more often.
+     • Numbers change balance (hp, atk, def, dmgMin/dmgMax…).
      • Text in "quotes" is a name shown to the player.
      • Keep the commas and braces { } as they are; add a new entry by copying a
        line and changing the values.
@@ -93,8 +92,12 @@ window.CANTORI_DATA = {
        rarities:  chance table + the display color for each tier. Gold is not in
                   the random table — golds are hand-authored uniques.
        stat pool: which stats a random affix can roll (magnitude = item tier).
-       enchants:  on-hit procs. Weapons fire them on your strike; enchanted armor
-                  fires them back at whoever hits you (its "power" is armor def).
+       enchants:  on-hit procs. Weapons fire them on your strike; worn armor/
+                  jewelry fires them back at whoever hits you (its "power" is armor
+                  def, or tier+plus for jewelry).
+         proc:  chance (0–1) the enchant fires on a given hit.
+         slots: which item categories this enchant can roll on (weapon/armor/
+                ring/trinket/necklace). Omit = any.
          fire:     a burst = ceil(power/2), then a burn for ceil(burst/2) per turn
                    over 3 turns.
          electric: a burst = power, with a stun chance = (burst * 10%) / target level.
@@ -112,8 +115,8 @@ window.CANTORI_DATA = {
     statPool: ["STR", "INT", "VIT", "DEX", "RES", "LCK"],
     purpleSecondStatChance: 0.75,       // purple's extra roll: 75% stat, else enchant
     enchants: {
-      fire:     { name: "Flaming",   icon: "🔥", color: "#ff8f4a" },
-      electric: { name: "Charged",   icon: "⚡", color: "#9ad0ff" },
+      fire:     { name: "Flaming", icon: "🔥", color: "#ff8f4a", proc: 0.35, slots: ["weapon", "armor", "ring", "trinket", "necklace"] },
+      electric: { name: "Charged", icon: "⚡", color: "#9ad0ff", proc: 0.30, slots: ["weapon", "armor", "ring", "trinket", "necklace"] },
     },
     // When a gear item drops: first pick a CATEGORY (these relative weights), then
     // a TIER by floor (tierBands below), then a TYPE within that tier+category
@@ -135,16 +138,15 @@ window.CANTORI_DATA = {
        cat:    "potion", "scroll", or "tool" (tools show their name, never drop)
        effect: what it does (engine handles: heal, strength, poison, map,
                teleport, burn)
-       weight: how often it drops (relative). weight 0 = never in the drop pool
-               (torches are taken off the wall, not found as loot)
+       noDrop: true = never found as loot (e.g. the torch, taken off walls)
      ========================================================================== */
   consumables: {
-    heal:     { cat: "potion", name: "Potion of Healing",  effect: "heal",     weight: 5, glyph: "!", color: "#e0685a" },
-    strength: { cat: "potion", name: "Potion of Strength", effect: "strength", weight: 2, glyph: "!", color: "#f0a838" },
-    poison:   { cat: "potion", name: "Potion of Poison",   effect: "poison",   weight: 2, glyph: "!", color: "#7ec98a" },
-    mapping:  { cat: "scroll", name: "Scroll of Magic Mapping", effect: "map",      weight: 3, glyph: "?", color: "#cfe6b0" },
-    teleport: { cat: "scroll", name: "Scroll of Teleport",      effect: "teleport", weight: 2, glyph: "?", color: "#b491d6" },
-    torch:    { cat: "tool",   name: "Torch", effect: "burn", weight: 0, glyph: "|", color: "#f6b845" },
+    heal:     { cat: "potion", name: "Potion of Healing",  effect: "heal",     glyph: "!", color: "#e0685a" },
+    strength: { cat: "potion", name: "Potion of Strength", effect: "strength", glyph: "!", color: "#f0a838" },
+    poison:   { cat: "potion", name: "Potion of Poison",   effect: "poison",   glyph: "!", color: "#7ec98a" },
+    mapping:  { cat: "scroll", name: "Scroll of Magic Mapping", effect: "map",      glyph: "?", color: "#cfe6b0" },
+    teleport: { cat: "scroll", name: "Scroll of Teleport",      effect: "teleport", glyph: "?", color: "#b491d6" },
+    torch:    { cat: "tool",   name: "Torch", effect: "burn", noDrop: true, glyph: "|", color: "#f6b845" },
   },
 
   /* ==========================================================================
