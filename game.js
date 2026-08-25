@@ -63,17 +63,24 @@
 
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
-    atkBonus: 0, weapon: null, armor: null, inv: [], gold: 0, xp: 0, level: 1,
+    atkBonus: 0, weapon: null, armor: null, ring1: null, ring2: null, trinket: null, necklace: null,
+    inv: [], gold: 0, xp: 0, level: 1,
     cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
     statPoints: 0,
   };
+  // Equipment slots: cat -> which player field(s) it fills.
+  const EQUIP_SLOTS = { weapon: ["weapon"], armor: ["armor"], ring: ["ring1", "ring2"], trinket: ["trinket"], necklace: ["necklace"] };
+  const ALL_SLOTS = ["weapon", "armor", "ring1", "ring2", "trinket", "necklace"];
+  const wornItems = () => ALL_SLOTS.map((s) => player[s]).filter(Boolean);
   function applyClass(key) {
     const c = DATA.classes[key] || DATA.classes.warrior;
     player.cls = key;
     player.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, c.stats || {});
     player.statPoints = 0; player.atkBonus = 0;
     player.atkMin = UNARMED_MIN; player.atkMax = UNARMED_MAX;
-    player.weapon = null; player.armor = null; player.inv = []; player.gold = 0;
+    player.weapon = null; player.armor = null;
+    player.ring1 = null; player.ring2 = null; player.trinket = null; player.necklace = null;
+    player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     identified.clear();
     player.skills = {};
@@ -107,7 +114,23 @@
   }
 
   // ---- Content data (edit game content in data.js) ------------------------
-  const DATA = window.CANTORI_DATA;
+  // The admin editor (editor.html) can stash a draft in localStorage to playtest
+  // changes before they're committed; use it if present and structurally sane.
+  let usingDraft = false;
+  const DATA = (() => {
+    try {
+      const raw = localStorage.getItem("cantori_data_override");
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && d.monsters && d.gear && d.biomes && d.consumables) {
+          if (window.console) console.log("Cantori: using editor draft from localStorage.");
+          usingDraft = true;
+          return d;
+        }
+      }
+    } catch (e) { /* fall back to the shipped data */ }
+    return window.CANTORI_DATA;
+  })();
   const VERMIN = DATA.monsters;
   const VERMIN_KEYS = Object.keys(VERMIN);
   const monsterAt = (x, y) => monsters.find((m) => m.hp > 0 && m.x === x && m.y === y) || null;
@@ -173,16 +196,23 @@
     for (const s of inst.stats || []) if (s.stat === statKey) n += s.val + (inst.plus || 0);
     return n;
   };
-  // Sum a stat bonus across equipped weapon + armor.
+  // Sum a stat bonus across every equipped item (weapon, armor, rings, trinket, necklace).
   function equipStat(statKey) {
     let n = 0;
-    if (player.weapon) n += gStatBonus(player.weapon, statKey);
-    if (player.armor) n += gStatBonus(player.armor, statKey);
+    for (const it of wornItems()) n += gStatBonus(it, statKey);
     return n;
   }
   const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
   const weaponAtk = () => (player.weapon ? gAtk(player.weapon) : 0);
   const armorDef = () => (player.armor ? gDef(player.armor) : 0);
+  // The "power" an item's enchant procs at: weapon damage, armor defense, or (for
+  // jewelry) its tier + plus.
+  function itemPower(inst) {
+    const cat = GEAR[inst.key].cat;
+    if (cat === "weapon") return gAtk(inst);
+    if (cat === "armor") return gDef(inst);
+    return (GEAR[inst.key].tier || 1) + (inst.plus || 0);
+  }
 
   // Display: colored name, +X prefix, and an affix summary line.
   function itemName(inst) {
@@ -629,7 +659,7 @@
       } else {
         log(pre + monName(target) + ". (-" + dmg + ")", "hit");
         // weapon enchants proc on a connecting hit (power = weapon damage)
-        if (player.weapon) procEnchants(player.weapon.enchants, target, weaponAtk());
+        if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon));
       }
     } else {
       bump(attacker, player.x, player.y);
@@ -648,8 +678,11 @@
       const verb = bonus > 0 ? " charges you!" : attacker.ranged ? " strikes from afar." : " hits you.";
       log("The " + monName(attacker) + verb + " (-" + dmg + ")", "hurt");
       if (player.hp <= 0) { die(); return; }
-      // enchanted armor lashes back at the attacker (power = armor defense)
-      if (player.armor && attacker.hp > 0) procEnchants(player.armor.enchants, attacker, armorDef());
+      // enchanted worn gear (armor, rings, trinket, necklace) lashes back at the attacker
+      for (const it of wornItems()) {
+        if (attacker.hp <= 0) break;
+        if (GEAR[it.key].cat !== "weapon" && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it));
+      }
     }
   }
 
@@ -1192,7 +1225,26 @@
   function spriteForItem(key) {
     const d = defOf(key);
     if (d.cat === "weapon" || d.cat === "armor") return SPRITES[key];
-    return d.cat === "potion" ? SPRITES.potion : SPRITES.scroll;
+    if (d.cat === "potion") return SPRITES.potion;
+    if (d.cat === "scroll") return SPRITES.scroll;
+    return null;   // jewelry / tools draw procedurally
+  }
+  // Procedural jewelry glyph for the floor (no sprite asset needed).
+  function drawJewel(px, py, cat, color) {
+    const cx = px + tile / 2, cy = py + tile / 2;
+    ctx.lineWidth = Math.max(1, tile * 0.08);
+    if (cat === "ring") {
+      ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(cx, cy + tile * 0.05, tile * 0.2, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#bfe0ff"; ctx.beginPath(); ctx.arc(cx, cy - tile * 0.18, tile * 0.08, 0, Math.PI * 2); ctx.fill();
+    } else if (cat === "necklace") {
+      ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(cx, cy - tile * 0.02, tile * 0.22, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx, cy + tile * 0.22, tile * 0.09, 0, Math.PI * 2); ctx.fill();
+    } else {   // trinket: a small gem
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - tile * 0.22); ctx.lineTo(cx + tile * 0.2, cy); ctx.lineTo(cx, cy + tile * 0.22); ctx.lineTo(cx - tile * 0.2, cy);
+      ctx.closePath(); ctx.fill();
+    }
   }
   // Draw a sprite preserving its aspect, bottom-anchored in the tile (bosses
   // can be taller than one tile and scale > 1).
@@ -1313,7 +1365,8 @@
           ctx.fillStyle = g;
           ctx.fillRect(px - tile * 0.1, py - tile * 0.1, tile * 1.2, tile * 1.2);
         }
-        drawImg(spriteForItem(it.key), px, py);
+        const spr = spriteForItem(it.key);
+        if (!drawImg(spr, px, py)) drawJewel(px, py, GEAR[it.key] ? GEAR[it.key].cat : "trinket", rarityColor(it.rarity));
       }
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
     }
@@ -1460,8 +1513,11 @@
     document.getElementById("invStats").innerHTML =
       `${cname} · Lv ${player.level} · Atk ${playerAtk()} · Def ${df}` +
       `<br><span style="opacity:.85">${statLine}${pts}</span>`;
+    const slotRow = (lbl, inst) => `<div class="eq-row"><span class="eq-slot">${lbl}</span>${equipLabel(inst)}</div>`;
     document.getElementById("invEquip").innerHTML =
-      "Wielding: " + equipLabel(player.weapon) + "<br>Wearing: " + equipLabel(player.armor);
+      slotRow("Weapon", player.weapon) + slotRow("Armor", player.armor) +
+      slotRow("Ring", player.ring1) + slotRow("Ring", player.ring2) +
+      slotRow("Trinket", player.trinket) + slotRow("Necklace", player.necklace);
     const ul = document.getElementById("invList");
     ul.innerHTML = "";
     if (player.inv.length === 0) {
@@ -1476,7 +1532,7 @@
       const li = document.createElement("li");
       let tag, nameHtml;
       if (isGear(it)) {
-        tag = def.cat === "weapon" ? "atk " + gAtk(it) : "def " + gDef(it);
+        tag = def.cat === "weapon" ? "atk " + gAtk(it) : def.cat === "armor" ? "def " + gDef(it) : def.cat;
         const aff = itemAffixText(it);
         nameHtml = `<span class="i-name" style="color:${rarityColor(it.rarity)}">${itemName(it)}</span>` +
                    (aff ? `<br><span style="font-size:10px;opacity:.7">${aff}</span>` : "");
@@ -1493,24 +1549,21 @@
   function actItem(idx) {
     const it = player.inv[idx];
     if (!it) return;
-    const def = defOf(it.key);
-    if (def.cat === "weapon" || def.cat === "armor") equipItem(idx);
+    if (GEAR[it.key]) equipItem(idx);
     else useConsumable(idx);
   }
   function equipItem(idx) {
     const it = player.inv[idx];
     if (!it) return;
-    const def = GEAR[it.key];
+    const cat = GEAR[it.key].cat;
+    const slots = EQUIP_SLOTS[cat] || ["weapon"];
+    // fill the first empty slot for this cat, else swap out the first one
+    const slot = slots.find((s) => !player[s]) || slots[0];
     player.inv.splice(idx, 1);
-    if (def.cat === "weapon") {
-      if (player.weapon) player.inv.push(player.weapon);
-      player.weapon = it;
-      log("You wield the " + itemName(it) + ".");
-    } else {
-      if (player.armor) player.inv.push(player.armor);
-      player.armor = it;
-      log("You don the " + itemName(it) + ".");
-    }
+    if (player[slot]) player.inv.push(player[slot]);
+    player[slot] = it;
+    const verb = cat === "weapon" ? "You wield the " : cat === "armor" ? "You don the " : "You equip the ";
+    log(verb + itemName(it) + ".");
     player.maxHp = computeMaxHp();               // VIT affixes can change max HP
     player.hp = Math.min(player.hp, player.maxHp);
     updateHUD();
@@ -1947,6 +2000,7 @@
         depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
+        ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
         weaponAtk: weaponAtk(), armorDef: armorDef(),
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
@@ -1978,6 +2032,19 @@
     turns: () => turns,
   };
 
+  // A draft from the editor is in play — show a badge so it's obvious, and let the
+  // player tap it to drop back to the live (committed) content.
+  function showDraftBadge() {
+    if (!usingDraft) return;
+    const hud = document.getElementById("hud");
+    if (!hud) return;
+    const b = document.createElement("button");
+    b.id = "draftBadge"; b.type = "button"; b.textContent = "⚙ DRAFT";
+    b.title = "Playtesting an editor draft — tap to use the live game data";
+    b.onclick = () => { try { localStorage.removeItem("cantori_data_override"); } catch (e) {} location.reload(); };
+    hud.appendChild(b);
+  }
+
   // ---- Go ------------------------------------------------------------------
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);
@@ -1986,5 +2053,6 @@
   generateLevel();
   updateHUD();
   updateHotbar();
+  showDraftBadge();
   requestAnimationFrame(frame);
 })();

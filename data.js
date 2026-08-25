@@ -73,6 +73,12 @@ window.CANTORI_DATA = {
     leather: { cat: "armor",  name: "Leather Armor", def: 1, tier: 1, weight: 4, req: { STR: 0 }, glyph: "[", color: "#b98a5a" },
     chain:   { cat: "armor",  name: "Chain Mail",    def: 2, tier: 2, weight: 2, req: { STR: 4 }, glyph: "[", color: "#b9c0c8" },
     plate:   { cat: "armor",  name: "Plate Armor",   def: 3, tier: 3, weight: 1, req: { STR: 8 }, glyph: "[", color: "#dfe6f0" },
+    // Jewelry — equip in ring (x2) / trinket / necklace slots. No base atk/def;
+    // their value comes from rolled affixes (green+), so a plain white one is trash.
+    ring_copper: { cat: "ring",     name: "Copper Ring",   tier: 1, weight: 3, glyph: "o", color: "#c58a4a" },
+    ring_silver: { cat: "ring",     name: "Silver Ring",   tier: 2, weight: 2, glyph: "o", color: "#cfd4dc" },
+    charm_bone:  { cat: "trinket",  name: "Bone Charm",    tier: 1, weight: 2, glyph: "*", color: "#d8cfb0" },
+    amulet_jade: { cat: "necklace", name: "Jade Amulet",   tier: 2, weight: 2, glyph: "\"", color: "#7ec9a0" },
   },
 
   /* ==========================================================================

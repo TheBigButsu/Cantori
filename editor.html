@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cantori — Content Editor</title>
+  <style>
+    :root{
+      --bg:#0e0b07; --panel:#15110b; --panel2:#1b1610; --line:#2a2114;
+      --ink:#ece2cf; --ink-dim:#8a7c63; --amber:#f0a838; --green:#7ec98a; --red:#e0685a; --blue:#5a9fe0;
+      --mono: ui-monospace,"SF Mono","Menlo","Consolas",monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%}
+    body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13px;line-height:1.4}
+    a{color:var(--amber)}
+    header{
+      position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);
+      padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+    }
+    header .title{color:var(--amber);font-weight:700;letter-spacing:.16em;font-size:14px}
+    header .spacer{flex:1}
+    button.tool{
+      background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;
+      padding:8px 12px;font-family:var(--mono);font-size:12px;cursor:pointer;
+    }
+    button.tool:hover{border-color:var(--amber)}
+    button.tool.primary{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
+    button.tool.warn{color:var(--red)}
+    button.tool.on{background:var(--green);color:#0e1a10;border-color:var(--green);font-weight:700}
+    #status{color:var(--ink-dim);font-size:11.5px;min-width:120px}
+    #status.ok{color:var(--green)} #status.err{color:var(--red)}
+    .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+    .tab{
+      background:var(--panel2);color:var(--ink-dim);border:1px solid var(--line);border-radius:7px;
+      padding:7px 12px;font-family:var(--mono);font-size:12px;cursor:pointer;text-transform:capitalize;
+    }
+    .tab.on{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
+    main{padding:14px;max-width:1200px;margin:0 auto}
+    .hint{color:var(--ink-dim);font-size:11.5px;margin:0 0 12px}
+    .collbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+    .collbar h2{margin:0;font-size:14px;color:var(--amber);letter-spacing:.06em}
+    .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+    table{border-collapse:collapse;width:100%;min-width:640px}
+    th,td{border-bottom:1px solid var(--line);padding:6px 7px;text-align:left;white-space:nowrap}
+    th{background:var(--panel2);color:var(--ink-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0}
+    tr:hover td{background:rgba(240,168,56,0.03)}
+    input[type=text],input[type=number]{
+      background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+      padding:5px 6px;font-family:var(--mono);font-size:12px;width:100%;min-width:52px;
+    }
+    input[type=number]{min-width:56px;width:64px}
+    input.key{min-width:96px;color:var(--amber)}
+    input.name{min-width:120px}
+    input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:5px;background:#0c0905;padding:0;cursor:pointer}
+    select{background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:12px}
+    input:focus,select:focus{outline:none;border-color:var(--amber)}
+    .del{background:none;border:1px solid var(--line);color:var(--red);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:var(--mono)}
+    .del:hover{border-color:var(--red)}
+    .addrow{margin-top:10px}
+    .addrow button{background:var(--panel2);border:1px dashed var(--line);color:var(--green);border-radius:7px;padding:8px 14px;cursor:pointer;font-family:var(--mono);font-size:12px}
+    .addrow button:hover{border-color:var(--green)}
+    textarea.json{
+      width:100%;min-height:60vh;background:#0c0905;color:var(--ink);border:1px solid var(--line);
+      border-radius:9px;padding:12px;font-family:var(--mono);font-size:12.5px;line-height:1.5;resize:vertical;
+    }
+    textarea.json:focus{outline:none;border-color:var(--amber)}
+    .jsonerr{color:var(--red);font-size:12px;margin-top:6px;min-height:16px}
+    dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;max-width:680px;width:92%;padding:0}
+    dialog::backdrop{background:rgba(6,4,2,.7)}
+    .dlg-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+    .dlg-head b{color:var(--amber);letter-spacing:.08em}
+    .dlg-body{padding:14px 16px}
+    .dlg-body p{margin:0 0 10px;color:var(--ink-dim)}
+    .dlg-body textarea{width:100%;height:44vh;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11.5px}
+    .cols-note{color:var(--ink-dim);font-size:11px;margin:8px 0 0}
+  </style>
+</head>
+<body>
+  <header>
+    <span class="title">CANTORI · EDITOR</span>
+    <span id="status">loading…</span>
+    <span class="spacer"></span>
+    <button class="tool primary" id="btnPlay">▶ Playtest</button>
+    <button class="tool on" id="btnStop" style="display:none">■ Stop playtest</button>
+    <button class="tool" id="btnCopy">⧉ Copy for Claude</button>
+    <button class="tool" id="btnDownload">⤓ Download data.js</button>
+    <button class="tool warn" id="btnRevert">↺ Revert to shipped</button>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <main id="main"></main>
+
+  <dialog id="copyDlg">
+    <div class="dlg-head"><b>Copy this to Claude</b><button class="tool" id="copyClose">✕</button></div>
+    <div class="dlg-body">
+      <p>Paste this whole block into the chat and say “update the game data with this”. Or use “Copy” to grab it.</p>
+      <textarea id="copyText" readonly></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="tool primary" id="copyNow">Copy</button>
+        <span id="copyMsg" style="color:var(--green);align-self:center"></span>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="./data.js"></script>
+  <script src="./editor.js"></script>
+</body>
+</html>

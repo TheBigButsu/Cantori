@@ -80,6 +80,29 @@ gear bonus in green; rare drops glow in their rarity color on the floor.
 _Open follow-ups: gold/unique authored items; biasing stat rolls toward a weapon's
 identity (STR/DEX) instead of uniform; scaling enchant/plus numbers as content grows._
 
+## Equipment slots — DONE
+
+Six slots feed the effective stats: **Weapon · Armor · Ring · Ring · Trinket ·
+Necklace**. Weapons use `atk`, armor uses `def`; the three jewelry categories
+(`ring`/`trinket`/`necklace`, in `data.js` → `gear`) carry no base atk/def — their
+value is entirely rolled affixes, so they matter at Green+ rarity. Enchants on any
+worn non-weapon piece fire back at attackers (jewelry's proc power = its tier +
+plus). Rings fill the two ring slots in order.
+
+## Content editor — DONE
+
+`editor.html` + `editor.js` is a no-backend admin tool that reads the same
+`data.js` and lets you edit content without code:
+
+- **Table editors** for monsters, gear (incl. jewelry), consumables, and bosses —
+  add/remove rows, typed fields, colour pickers; unknown/optional fields are
+  preserved.
+- **Raw-JSON panels** for biomes, classes, loot, stats, gods (the nested bits).
+- **Playtest** writes the draft to `localStorage`; the game reads it on load
+  (`cantori_data_override`) and shows a tap-to-clear **⚙ DRAFT** badge. **Copy for
+  Claude** / **Download** produce a finished `data.js`; **Revert** restores shipped
+  content. Drafts never leave the browser until exported.
+
 ## Boons — Hades-style, per biome
 
 At the **start of each biome** the player picks **1 of 3 boons**, drawn from the
