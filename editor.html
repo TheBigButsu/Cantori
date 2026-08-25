@@ -144,6 +144,31 @@
     .dlg-body label input:focus{outline:none;border-color:var(--amber)}
     #ghMsg.ok{color:var(--green)} #ghMsg.err{color:var(--red)}
     #ghState{color:var(--green)}
+    /* flip-to-code cards + inline descriptions */
+    .bhead-r{display:flex;gap:6px;align-items:center}
+    .bbtn.flip{color:var(--blue);border-color:var(--line)}
+    .bbtn.flip:hover{border-color:var(--blue)}
+    .bfield.wide{grid-column:1/-1}
+    .bfield textarea,.edesc{background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 7px;font-family:var(--mono);font-size:11.5px;resize:vertical;line-height:1.4}
+    .bfield textarea:focus,.edesc:focus{outline:none;border-color:var(--amber)}
+    .codewrap{margin-top:4px}
+    .codebox{width:100%;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;white-space:pre;tab-size:2}
+    .codebox:focus{outline:none;border-color:var(--blue)}
+    .codemsg{font-size:11px;margin-top:5px}
+    .codemsg.ok{color:var(--green)} .codemsg.err{color:var(--red)}
+    /* formulae reference */
+    .ref{max-width:1200px;margin:10px auto 0;padding:0 14px}
+    .ref details{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:0 14px}
+    .ref summary{cursor:pointer;color:var(--amber);font-weight:700;letter-spacing:.05em;padding:11px 0;font-size:12px;list-style:none}
+    .ref summary::-webkit-details-marker{display:none}
+    .ref summary::before{content:"▸ ";color:var(--ink-dim)}
+    .ref details[open] summary::before{content:"▾ "}
+    .ref .refbody{padding-bottom:10px}
+    .ref h4{color:var(--green);margin:12px 0 4px;font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+    .ref table{border-collapse:collapse;width:100%;font-size:11.5px;margin-bottom:6px}
+    .ref td{border-bottom:1px solid var(--line);padding:4px 8px;vertical-align:top}
+    .ref td:first-child{color:var(--ink-dim);white-space:nowrap;width:170px}
+    .ref code{color:var(--blue);background:#0c0905;padding:1px 5px;border-radius:4px}
   </style>
 </head>
 <body>
@@ -160,6 +185,48 @@
   </header>
 
   <nav class="tabs" id="tabs"></nav>
+
+  <section class="ref">
+    <details>
+      <summary>Formulae &amp; stat reference — how the numbers actually work</summary>
+      <div class="refbody">
+        <h4>Combat</h4>
+        <table>
+          <tr><td>Hit chance</td><td><code>acc / (acc + eva)</code>. A target that hasn't noticed you is auto-hit for <code>×1.5</code> damage (surprise).</td></tr>
+          <tr><td>Your accuracy</td><td><code>base + DEX + weapon acc + level acc</code></td></tr>
+          <tr><td>Your evasion</td><td><code>base + DEX + level eva + armor subtype</code> (light +2, medium 0, heavy −3)</td></tr>
+          <tr><td>Damage dealt</td><td><code>roll(dmgMin..dmgMax) + STR bonus + bonuses − armor def − VIT resist</code>, minimum 1</td></tr>
+          <tr><td>Attack cost (time)</td><td><code>1 / (weapon speed × (1 + haste))</code> — lower is faster. Monsters bank <code>speed</code> energy per turn and act once per whole point.</td></tr>
+          <tr><td>Weapon range</td><td><code>1</code> = melee (adjacent). <code>2+</code> = tap a monster within reach + line of sight to strike (spear 2, bow 5).</td></tr>
+        </table>
+        <h4>Enchants (proc rolls per hit at <code>proc</code>)</h4>
+        <table>
+          <tr><td>burn</td><td><code>power × burstMult</code> now, then a single burning stack (<code>dotTurns</code>). Refreshes — never stacks.</td></tr>
+          <tr><td>poison</td><td><code>initial</code> hit now, then <code>perTurn</code> for <code>turns</code>. Every proc adds an independent stack.</td></tr>
+          <tr><td>shock</td><td><code>power × burstMult</code>, stun chance <code>= burst × stunPer / target level</code>.</td></tr>
+          <tr><td>thorns</td><td>when you're struck, reflect <code>power × mult</code> back at the attacker.</td></tr>
+          <tr><td>haste</td><td>passive while worn — folds into attack speed above (<code>mult</code>).</td></tr>
+          <tr><td>power =</td><td>weapon top-end damage (on your strike) · armor def (thorns/retaliation) · tier + plus (jewelry)</td></tr>
+        </table>
+        <h4>Progression</h4>
+        <table>
+          <tr><td>Identify</td><td><code>need = (tier + plus) × (rand 1..10 + rarity rank)</code>; +1 progress each time you use the item (strike / get hit).</td></tr>
+          <tr><td>HP regen</td><td>+1 HP every <code>12</code> turns.</td></tr>
+          <tr><td>XP to level</td><td><code>level × 8</code>. On level: main stat +2, secondary +1, +1 free point, plus the class <code>levelUp</code> set (hp/mp/acc/eva).</td></tr>
+        </table>
+        <h4>Loot &amp; stats</h4>
+        <table>
+          <tr><td>Drop rolls</td><td>rarity (white 50 / green 30 / blue 15 / purple 5) → category weights → tier by floor band → type within tier by its <code>rarity %</code> (blank = splits the remainder).</td></tr>
+          <tr><td>STR</td><td>damage &amp; weapon requirements</td></tr>
+          <tr><td>DEX</td><td>accuracy &amp; evasion</td></tr>
+          <tr><td>VIT</td><td>health &amp; damage resistance</td></tr>
+          <tr><td>INT</td><td>wand/spell power &amp; identifying</td></tr>
+          <tr><td>RES</td><td>enchant procs &amp; magic resist</td></tr>
+          <tr><td>LCK</td><td>critical hits &amp; a little of everything</td></tr>
+        </table>
+      </div>
+    </details>
+  </section>
 
   <main id="main"></main>
 
@@ -202,7 +269,7 @@
     </div>
   </dialog>
 
-  <script src="./data.js?v=30"></script>
-  <script src="./editor.js?v=30"></script>
+  <script src="./data.js?v=31"></script>
+  <script src="./editor.js?v=31"></script>
 </body>
 </html>

@@ -42,9 +42,11 @@
     gear: [
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
+      { f: "sub", label: "subtype", type: "select", opts: ["", "dagger", "sword", "axe", "spear", "bow", "light", "medium", "heavy"] },
       { f: "name", type: "text", cls: "name" },
       { f: "dmgMin", label: "dmg min", type: "num" }, { f: "dmgMax", label: "dmg max", type: "num" },
       { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "range", type: "num" },
       { f: "def", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
@@ -84,6 +86,53 @@
   let enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let activeClass = 0;
+  const flippedEnch = new Set();    // enchant rows currently showing raw code
+  const flippedSkill = new Set();   // skill cells currently showing raw code, keyed "cls:t,s"
+  // The effect kinds the engine understands, and the numbers each one reads.
+  // Leaving a param blank makes the engine fall back to its built-in default.
+  const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste"];
+  const EFFECT_PARAMS = {
+    burn:   [["burstMult", "burst × power", "0.05"], ["dotTurns", "burn turns", "1"]],
+    poison: [["initial", "initial hit", "1"], ["perTurn", "dmg / turn", "1"], ["turns", "turns per dose", "1"]],
+    shock:  [["burstMult", "burst × power", "0.05"], ["stunPer", "stun / power", "0.01"]],
+    thorns: [["mult", "reflect × power", "0.05"]],
+    haste:  [["mult", "haste (0–1)", "0.05"]],
+  };
+  // A reusable "flip to raw JSON" editor: shows the object as text, parses live,
+  // and hands the parsed value back so the user can write the governing code directly.
+  function codeEditor(obj, onParse) {
+    const box = document.createElement("div"); box.className = "codewrap";
+    const ta = document.createElement("textarea"); ta.className = "codebox"; ta.rows = 14; ta.spellcheck = false;
+    ta.value = JSON.stringify(obj, null, 2);
+    const msg = document.createElement("div"); msg.className = "codemsg ok"; msg.textContent = "✓ valid JSON";
+    ta.oninput = () => {
+      try { const parsed = JSON.parse(ta.value); onParse(parsed); msg.textContent = "✓ valid JSON — saved"; msg.className = "codemsg ok"; }
+      catch (e) { msg.textContent = "✕ " + e.message; msg.className = "codemsg err"; }
+    };
+    box.appendChild(ta); box.appendChild(msg); return box;
+  }
+  // The Effect block of an enchant: a type dropdown plus the numbers that type reads.
+  function renderEffect(o) {
+    const box = document.createElement("div"); box.className = "bmons";
+    const l = document.createElement("div"); l.className = "bmons-l"; l.textContent = "Effect (what it does):"; box.appendChild(l);
+    const row = document.createElement("div"); row.className = "bgrid";
+    const tw = document.createElement("label"); tw.className = "bfield";
+    const tl = document.createElement("span"); tl.textContent = "type"; tw.appendChild(tl);
+    const sel = document.createElement("select");
+    for (const t of EFFECT_TYPES) { const op = document.createElement("option"); op.value = t; op.textContent = t || "(none)"; sel.appendChild(op); }
+    sel.value = (o.effect && o.effect.type) || "";
+    sel.onchange = () => { if (!sel.value) delete o.effect; else o.effect = { type: sel.value }; render(); };
+    tw.appendChild(sel); row.appendChild(tw);
+    for (const [pf, plabel, pstep] of (EFFECT_PARAMS[o.effect && o.effect.type] || [])) {
+      const w = document.createElement("label"); w.className = "bfield";
+      const s = document.createElement("span"); s.textContent = plabel; w.appendChild(s);
+      const inp = document.createElement("input"); inp.type = "number"; inp.step = pstep;
+      inp.value = (o.effect && o.effect[pf] != null) ? o.effect[pf] : "";
+      inp.oninput = () => { o.effect = o.effect || { type: sel.value }; if (inp.value === "") delete o.effect[pf]; else o.effect[pf] = Number(inp.value); };
+      w.appendChild(inp); row.appendChild(w);
+    }
+    box.appendChild(row); return box;
+  }
   // Normalize a class: stats/start/levelUp exist, and the skill tree is a 5×5 grid
   // whose cells are either a skill object or null (a Diablo-style blank space).
   //   skill = { name, desc, levels: [up to 4 per-level notes], req: [[tier,slot], …] }
@@ -131,7 +180,8 @@
     }
     if (type === "bool") { if (checked) obj[f] = true; else delete obj[f]; return; }
     if (type === "num") { if (raw === "") delete obj[f]; else obj[f] = Number(raw); return; }
-    obj[f] = raw;   // text / color / select
+    if (type === "select") { if (raw === "") delete obj[f]; else obj[f] = raw; return; }
+    obj[f] = raw;   // text / color
   }
 
   // ---- Rendering -------------------------------------------------------------
@@ -443,13 +493,17 @@
       box.appendChild(add);
       return box;
     }
-    // header: name + remove
+    // header: name + flip-to-code + remove
+    const fkey = activeClass + ":" + t + "," + s;
     const head = document.createElement("div"); head.className = "shead";
     const nm = document.createElement("input"); nm.className = "sname"; nm.type = "text"; nm.value = cell.name || ""; nm.placeholder = "name";
     nm.oninput = () => { cell.name = nm.value; };
+    const flip = document.createElement("button"); flip.className = "bbtn flip"; flip.textContent = flippedSkill.has(fkey) ? "▦" : "</>"; flip.title = "flip between the form and raw JSON";
+    flip.onclick = () => { if (flippedSkill.has(fkey)) flippedSkill.delete(fkey); else flippedSkill.add(fkey); render(); };
     const rm = document.createElement("button"); rm.className = "bbtn"; rm.textContent = "✕"; rm.title = "clear slot";
-    rm.onclick = () => { o.skillTree[t][s] = null; render(); };
-    head.appendChild(nm); head.appendChild(rm); box.appendChild(head);
+    rm.onclick = () => { flippedSkill.delete(fkey); o.skillTree[t][s] = null; render(); };
+    head.appendChild(nm); head.appendChild(flip); head.appendChild(rm); box.appendChild(head);
+    if (flippedSkill.has(fkey)) { box.appendChild(codeEditor(cell, (parsed) => { o.skillTree[t][s] = parsed; })); return box; }
     // description
     const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "in-game description"; dsc.value = cell.desc || "";
     dsc.oninput = () => { cell.desc = dsc.value; };
@@ -499,16 +553,20 @@
     const bar = document.createElement("div"); bar.className = "collbar";
     const h = document.createElement("h2"); h.textContent = "enchants — " + enchantRows.length; bar.appendChild(h); wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires on a given hit. Slots = which item types it can appear on (click to toggle). Engine effects (fire = burst + burn, electric = burst + stun) are wired in code; these fields tune the odds and where they roll.";
+    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires per hit. Slots = which item types it can roll on. The Effect block drives what it DOES (a type + numbers the engine reads directly), and the description is shown to the player. Hit “</> code” to edit the whole enchant as raw JSON.";
     wrap.appendChild(note);
     enchantRows.forEach((r, i) => {
       const o = r.obj;
       const card = document.createElement("div"); card.className = "bcard";
       const head = document.createElement("div"); head.className = "bhead";
       const t = document.createElement("b"); t.textContent = (o.icon || "") + " " + (r.key || "?"); head.appendChild(t);
+      const hr = document.createElement("span"); hr.className = "bhead-r";
+      const flip = document.createElement("button"); flip.className = "bbtn flip"; flip.textContent = flippedEnch.has(r) ? "▦ form" : "</> code"; flip.title = "flip between the form and raw JSON";
+      flip.onclick = () => { if (flippedEnch.has(r)) flippedEnch.delete(r); else flippedEnch.add(r); render(); };
       const del = document.createElement("button"); del.className = "bbtn"; del.textContent = "✕"; del.title = "remove";
-      del.onclick = () => { enchantRows.splice(i, 1); render(); };
-      head.appendChild(del); card.appendChild(head);
+      del.onclick = () => { flippedEnch.delete(r); enchantRows.splice(i, 1); render(); };
+      hr.appendChild(flip); hr.appendChild(del); head.appendChild(hr); card.appendChild(head);
+      if (flippedEnch.has(r)) { card.appendChild(codeEditor(o, (parsed) => { r.obj = parsed; })); wrap.appendChild(card); return; }
       const grid = document.createElement("div"); grid.className = "bgrid";
       const fld = (label, f, type, opts) => {
         const w = document.createElement("label"); w.className = "bfield";
@@ -526,6 +584,12 @@
       grid.appendChild(fld("color", "color", "color"));
       grid.appendChild(fld("proc rate (0–1)", "proc", "num"));
       card.appendChild(grid);
+      const dwrap = document.createElement("label"); dwrap.className = "bfield wide";
+      const dl = document.createElement("span"); dl.textContent = "description (shown to the player)"; dwrap.appendChild(dl);
+      const dta = document.createElement("textarea"); dta.className = "edesc"; dta.rows = 2; dta.value = o.desc || "";
+      dta.oninput = () => { if (!dta.value) delete o.desc; else o.desc = dta.value; };
+      dwrap.appendChild(dta); card.appendChild(dwrap);
+      card.appendChild(renderEffect(o));
       const ml = document.createElement("div"); ml.className = "bmons";
       const lbl = document.createElement("div"); lbl.className = "bmons-l"; lbl.textContent = "Can appear on:"; ml.appendChild(lbl);
       const chips = document.createElement("div"); chips.className = "chips";
@@ -541,7 +605,7 @@
     });
     const add = document.createElement("div"); add.className = "addrow";
     const btn = document.createElement("button"); btn.textContent = "+ Add enchant";
-    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, slots: GEAR_CATS.slice() } }); render(); };
+    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, slots: GEAR_CATS.slice(), desc: "", effect: { type: "burn", burstMult: 0.5, dotTurns: 3 } } }); render(); };
     add.appendChild(btn); wrap.appendChild(add);
     return wrap;
   }
@@ -609,9 +673,16 @@
       if (seenC[key]) problems.push("classes: duplicate key “" + key + "”");
       seenC[key] = 1;
       const c = clone(obj);
-      // compress the skill grid: fully-blank cells → null (kept as scaffold, small on disk)
-      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => (cell && cell.name)
-        ? { name: cell.name, desc: cell.desc || "", levels: (cell.levels || []).slice(0, 4), req: cell.req || [] } : null));
+      // compress the skill grid: fully-blank cells → null (kept as scaffold, small on
+      // disk). A filled cell keeps ALL its fields — so any governing code written via
+      // the flip-to-JSON view survives — with the known ones normalized.
+      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => {
+        if (!cell || !cell.name) return null;
+        cell.desc = cell.desc || "";
+        cell.levels = (cell.levels || []).slice(0, 4);
+        cell.req = cell.req || [];
+        return cell;
+      }));
       out.classes[key] = c;
     }
     return { data: out, problems };
@@ -762,7 +833,7 @@
   function tableHint(coll) {
     return ({
       monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
-      gear: "cat sets the equip slot. WEAPONS use dmg min/max, speed (>1 fast, <1 slow), and acc; ARMOR uses def; JEWELRY uses neither (value = rolled affixes). tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; leave it EMPTY to be a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites come from assets/tiles/<key>.png; keys with no sprite draw their glyph.",
+      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype nudges evasion: light +2, medium 0, heavy −3. tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
     })[coll] || "";
