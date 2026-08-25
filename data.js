@@ -568,6 +568,10 @@ window.CANTORI_DATA = {
         "snake",
         "spider"
       ],
+      "spawnMix": {
+        "rat": [6, 4, 2, 1, 1],
+        "wolf": [1, 2, 3, 4, 4]
+      },
       "boss": "piper",
       "spawnInitial": [
         3,
@@ -688,6 +692,8 @@ window.CANTORI_DATA = {
         "armor": "leather"
       },
       "baseMp": 5,
+      "regenTurns": 600,
+      "vitRegen": 2,
       "levelUp": {
         "hp": 5,
         "mp": 2,

@@ -97,6 +97,13 @@
     }
     .chip:hover{border-color:var(--amber)}
     .chip.on{background:var(--green);color:#0e1a10;border-color:var(--green);font-weight:700}
+    .bmix{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+    .bmixrow{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+    .bmixname{flex:0 0 96px;color:var(--ink-dim);font-size:11px;overflow:hidden;text-overflow:ellipsis}
+    .bmixw{flex:1;min-width:0;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:4px 5px;font-family:var(--mono);font-size:11.5px;text-align:center}
+    .bmixw:focus{outline:none;border-color:var(--amber)}
+    .bmixrow.head .bmixw{border:none;background:none;color:var(--ink-dim);font-size:10px;padding:0}
+    .bmixw.lbl{border:none;background:none;color:var(--ink-dim);font-size:10px;letter-spacing:.05em}
     /* Classes editor */
     .cpick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
     .ctab2{background:var(--panel2);border:1px solid var(--line);color:var(--ink-dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:12px;cursor:pointer}
@@ -213,9 +220,11 @@
         </table>
         <h4>Progression</h4>
         <table>
+          <tr><td>Max HP</td><td><code>13 + VIT</code> (1 VIT = 1 HP), plus the class <code>levelUp</code> hp gained per level.</td></tr>
+          <tr><td>HP regen</td><td>Heals to full over the class's <code>regenTurns</code>, sped up by Vitality: <code>effective = regenTurns − VIT × vitRegen</code>. Per-turn heal = <code>maxHP / effective</code> (default 600 turns, factor 2).</td></tr>
           <tr><td>Identify</td><td><code>need = (tier + plus) × (rand 1..10 + rarity rank)</code>; +1 progress each time you use the item (strike / get hit).</td></tr>
-          <tr><td>HP regen</td><td>+1 HP every <code>12</code> turns.</td></tr>
           <tr><td>XP to level</td><td><code>level × 8</code>. On level: main stat +2, secondary +1, +1 free point, plus the class <code>levelUp</code> set (hp/mp/acc/eva).</td></tr>
+          <tr><td>Monster XP</td><td><code>ceil(minFloor / 2)</code> — floor 1–2 = 1, floor 3–4 = 2, floor 5 = 3. Bosses give a larger scaled reward.</td></tr>
         </table>
         <h4>Loot &amp; stats</h4>
         <table>
@@ -272,7 +281,7 @@
     </div>
   </dialog>
 
-  <script src="./data.js?v=32"></script>
-  <script src="./editor.js?v=32"></script>
+  <script src="./data.js?v=33"></script>
+  <script src="./editor.js?v=33"></script>
 </body>
 </html>

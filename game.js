@@ -32,7 +32,8 @@
 
   let map = [];
   let visible = [];
-  let explored = [];
+  let explored = [];        // revealed on the map (own eyes OR magic mapping)
+  let beenSeen = [];        // actually held in FOV at some point (not just mapped)
   let torches = [];            // decorative wall-mounted torches {x, y}
   let depth = 1;
   let dead = false;
@@ -48,7 +49,7 @@
 
   // Stats → effects (INT / RES / LCK come later)
   const UNARMED_MIN = 2, UNARMED_MAX = 3;
-  const HP_BASE = 6, HP_PER_VIT = 2;
+  const HP_BASE = 13, HP_PER_VIT = 1;     // 1 point of VIT = 1 HP (warrior: 13 + VIT ≈ 20)
   const ACC_BASE = 10, EVA_BASE = 1;      // DEX → accuracy & evasion
   const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
@@ -68,6 +69,7 @@
     cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
+    regenAcc: 0,                                       // fractional HP regen carry-over
   };
   // Equipment slots: cat -> which player field(s) it fills.
   const EQUIP_SLOTS = { weapon: ["weapon"], armor: ["armor"], ring: ["ring1", "ring2"], trinket: ["trinket"], necklace: ["necklace"] };
@@ -84,6 +86,7 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0;   // reset per-level bonuses
+    player.regenAcc = 0;
     player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
@@ -387,6 +390,7 @@
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
+    beenSeen = blankGrid(false);
     visible = blankGrid(false);
     torches = [];
     walkPath = [];
@@ -524,7 +528,7 @@
       if (map[y][x] !== FLOOR) continue;
       if (x === player.x && y === player.y) continue;
       if (monsterAt(x, y)) continue;
-      monsters.push(makeMonster(pool[randInt(0, pool.length - 1)], x, y));
+      const mk = pickMonster(); if (mk) monsters.push(makeMonster(mk, x, y));
     }
   }
 
@@ -568,6 +572,7 @@
         if (dx * dx + dy * dy <= r2 && inBounds(mx, my)) {
           visible[my][mx] = true;
           explored[my][mx] = true;
+          beenSeen[my][mx] = true;
         }
         if (blocked) {
           if (blocksSight(mx, my)) { newStart = rSlope; continue; }
@@ -585,6 +590,7 @@
     for (let y = 0; y < MAP_H; y++) visible[y].fill(false);
     visible[player.y][player.x] = true;
     explored[player.y][player.x] = true;
+    beenSeen[player.y][player.x] = true;
     for (const o of OCT) castLight(player.x, player.y, 1, 1.0, 0.0, o[0], o[1], o[2], o[3]);
   }
 
@@ -636,12 +642,11 @@
     if (target.hp > 0 || !monsters.includes(target)) return;
     monsters = monsters.filter((m) => m !== target);
     log("The " + monName(target) + " " + (verb || "dies") + ".", "hit");
-    let xp = target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp;
-    if (!target.boss) {
-      const diff = player.level - (target.level || 1);
-      if (diff >= 4) xp = 0;
-      else if (diff >= 2) xp = Math.round(xp * 0.5);
-    }
+    // Regular monsters award XP by their tier: ceil(minFloor / 2) — floor 1–2 = 1,
+    // floor 3–4 = 2, floor 5 = 3. Bosses give a larger scaled reward.
+    let xp;
+    if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
+    else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
     gainXP(xp);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
@@ -900,8 +905,24 @@
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
   const SENSE = 8;          // how far a monster notices the player (needs line of sight)
   const CHARGE_MAX = 7;
-  const REGEN_EVERY = 12;   // player heals 1 HP every this many turns
   let turns = 0;
+
+  // Passive regeneration is a per-class "turns to reach full health" number, sped
+  // up by Vitality:  effective = regenTurns − VIT × vitRegen.  Healing accrues
+  // fractionally each turn (maxHp / effective), so a partial tick carries over and
+  // the interval per HP can be non-integer.
+  function regenTick() {
+    if (player.hp >= player.maxHp) { player.regenAcc = 0; return; }
+    const cls = DATA.classes[player.cls] || {};
+    const base = cls.regenTurns != null ? cls.regenTurns : 600;
+    const vitF = cls.vitRegen != null ? cls.vitRegen : 2;
+    const effTurns = Math.max(1, base - eff("VIT") * vitF);
+    player.regenAcc = (player.regenAcc || 0) + player.maxHp / effTurns;
+    let healed = 0;
+    while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
+    if (player.hp >= player.maxHp) player.regenAcc = 0;
+    if (healed) { updateHUD(); floatText(player.x, player.y, "+" + healed, "#8ed69a"); }
+  }
 
   // Bresenham line of sight: true if no wall lies strictly between the tiles.
   function lineOfSight(x0, y0, x1, y1) {
@@ -978,6 +999,24 @@
     // enabled, and the earliest biome-floor (1..5) it may appear on.
     return biome.monsters.filter((k) => VERMIN[k].minFloor != null && VERMIN[k].minFloor <= f);
   }
+  // Weighted pick among the eligible monsters for the current biome-floor. Weights
+  // come from biome.spawnMix[key][floor-1] (default 1 when unset); a 0 bars that
+  // monster on that floor. Falls back to uniform if every weight is 0.
+  function pickMonster() {
+    const pool = eligiblePool();
+    if (!pool.length) return null;
+    const fi = floorInBiome(depth) - 1;
+    const mix = biome.spawnMix || {};
+    let total = 0;
+    const weights = pool.map((k) => {
+      const raw = mix[k] && mix[k][fi] != null ? Number(mix[k][fi]) : 1;
+      const w = raw > 0 ? raw : 0; total += w; return w;
+    });
+    if (total <= 0) return pool[randInt(0, pool.length - 1)];
+    let r = Math.random() * total;
+    for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r < 0) return pool[i]; }
+    return pool[pool.length - 1];
+  }
   function spawnOne() {
     const pool = eligiblePool();
     if (!pool.length) return;
@@ -985,7 +1024,7 @@
       const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
       if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
       if (cheb(x, y, player.x, player.y) < 6) continue;    // arrive out of sight, at a distance
-      monsters.push(makeMonster(pool[randInt(0, pool.length - 1)], x, y));
+      const mk = pickMonster(); if (mk) monsters.push(makeMonster(mk, x, y));
       return;
     }
   }
@@ -1053,9 +1092,7 @@
       }
       if (dead) return;
     }
-    if (turns % REGEN_EVERY === 0 && player.hp < player.maxHp) {
-      player.hp++; updateHUD(); floatText(player.x, player.y, "+1", "#8ed69a");
-    }
+    regenTick();
     maybeReinforce();
     updateHotbar();
     updateHUD();      // refresh vitals + enemy-in-sight counter every turn
@@ -1608,11 +1645,13 @@
       for (let x = 0; x < MAP_W; x++) {
         if (!explored[y][x]) continue;
         const t = map[y][x];
-        mctx.fillStyle = t === WALL ? "#4b3d27" : "#221b12";
-        mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap);
-        if (t === STAIRS) { mctx.fillStyle = "#f6b845"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
-        else if (t === DOOR) { mctx.fillStyle = "#8a6a3a"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
-        else if (t === THORN) { mctx.fillStyle = "#4a6a34"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
+        const been = beenSeen[y][x];       // been there in person vs. only magic-mapped
+        const px = ox + x * cell, py = oy + y * cell, sz = cell - gap;
+        mctx.fillStyle = t === WALL ? (been ? "#4b3d27" : "#2c2417") : (been ? "#221b12" : "#151009");
+        mctx.fillRect(px, py, sz, sz);
+        if (t === STAIRS) { mctx.fillStyle = been ? "#f6b845" : "#7c6231"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === DOOR) { mctx.fillStyle = been ? "#8a6a3a" : "#4e3e24"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === THORN) { mctx.fillStyle = been ? "#4a6a34" : "#2c3d20"; mctx.fillRect(px, py, sz, sz); }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -1622,6 +1661,11 @@
     mctx.font = `700 13px ${bodyFont()}`;
     mctx.textAlign = "left"; mctx.textBaseline = "top";
     mctx.fillText("FLOOR MAP · DEPTH " + depth, pad, pad - 8);
+    // legend: bright vs dim = explored vs merely mapped
+    mctx.textAlign = "left"; mctx.textBaseline = "top";
+    mctx.font = `11px ${bodyFont()}`;
+    mctx.fillStyle = "#cbb58a"; mctx.fillText("▉ explored", pad, pad + 12);
+    mctx.fillStyle = "#5c4c30"; mctx.fillText("▉ mapped (not yet visited)", pad + 78, pad + 12);
     mctx.fillStyle = "rgba(236,226,207,0.5)";
     mctx.font = `12px ${bodyFont()}`;
     mctx.textAlign = "center"; mctx.textBaseline = "bottom";

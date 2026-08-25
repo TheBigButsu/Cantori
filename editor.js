@@ -330,7 +330,7 @@
     const h = document.createElement("h2"); h.textContent = "biomes — " + biomeRows.length + " in depth order"; bar.appendChild(h);
     wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear). spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
+    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear). Spawn mix sets each monster's spawn weight per floor — e.g. rats 6→1 across F1–F5 makes them common early, rare deep. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
     wrap.appendChild(note);
     const bossKeys = rows.bosses.map((r) => r.key);
     const monKeys = rows.monsters.map((r) => r.key);
@@ -368,10 +368,38 @@
       for (const k of monKeys) {
         const on = b.monsters.indexOf(k) >= 0;
         const chip = document.createElement("button"); chip.className = "chip" + (on ? " on" : ""); chip.textContent = k;
-        chip.onclick = () => { const idx = b.monsters.indexOf(k); if (idx >= 0) b.monsters.splice(idx, 1); else b.monsters.push(k); chip.classList.toggle("on"); };
+        chip.onclick = () => { const idx = b.monsters.indexOf(k); if (idx >= 0) b.monsters.splice(idx, 1); else b.monsters.push(k); render(); };
         chips.appendChild(chip);
       }
       ml.appendChild(chips); card.appendChild(ml);
+
+      // spawn mix: a weight per biome-floor (1–5) for each selected monster.
+      // Blank = 1 (default), 0 = never on that floor. Higher = more common.
+      if (b.monsters.length) {
+        const mix = document.createElement("div"); mix.className = "bmix";
+        const ml2 = document.createElement("div"); ml2.className = "bmons-l"; ml2.textContent = "Spawn mix — weight per floor (blank = 1, 0 = never, higher = more common):"; mix.appendChild(ml2);
+        const hdr = document.createElement("div"); hdr.className = "bmixrow head";
+        const hn = document.createElement("span"); hn.className = "bmixname"; hdr.appendChild(hn);
+        for (let f = 1; f <= 5; f++) { const s = document.createElement("span"); s.className = "bmixw lbl"; s.textContent = "F" + f; hdr.appendChild(s); }
+        mix.appendChild(hdr);
+        b.spawnMix = b.spawnMix || {};
+        for (const k of b.monsters) {
+          const row = document.createElement("div"); row.className = "bmixrow";
+          const name = document.createElement("span"); name.className = "bmixname"; name.textContent = k; row.appendChild(name);
+          for (let f = 0; f < 5; f++) {
+            const inp = document.createElement("input"); inp.type = "number"; inp.className = "bmixw"; inp.min = "0"; inp.placeholder = "1";
+            const arr = b.spawnMix[k];
+            inp.value = (arr && arr[f] != null) ? arr[f] : "";
+            inp.oninput = () => {
+              if (!Array.isArray(b.spawnMix[k])) b.spawnMix[k] = [];
+              b.spawnMix[k][f] = inp.value === "" ? undefined : Number(inp.value);
+            };
+            row.appendChild(inp);
+          }
+          mix.appendChild(row);
+        }
+        card.appendChild(mix);
+      }
       wrap.appendChild(card);
     });
     const add = document.createElement("div"); add.className = "addrow";
@@ -446,7 +474,12 @@
     form.appendChild(classField(o, "start weapon", "start.weapon", "select", [""].concat(gearWeapons)));
     form.appendChild(classField(o, "start armor", "start.armor", "select", [""].concat(gearArmor)));
     form.appendChild(classField(o, "base MP", "baseMp", "num"));
+    form.appendChild(classField(o, "regen: turns to full HP", "regenTurns", "num"));
+    form.appendChild(classField(o, "VIT regen factor (×VIT)", "vitRegen", "num"));
     wrap.appendChild(form);
+    const rnote = document.createElement("p"); rnote.className = "hint";
+    rnote.textContent = "Regen: it takes “turns to full HP” turns to heal from empty to full, minus (VIT × factor) — so higher Vitality regenerates faster. Default 600 turns, factor 2. (HP itself = 13 + 1 per VIT.)";
+    wrap.appendChild(rnote);
 
     // base stats
     const sh = document.createElement("h3"); sh.className = "csec"; sh.textContent = "Base stats"; wrap.appendChild(sh);
@@ -678,6 +711,19 @@
     out.loot.enchants = eo;
     out.biomes = clone(biomeRows);                    // biomes come from the card editor
     biomeRows.forEach((b, i) => { if (!b.key) problems.push("biome " + (i + 1) + " has an empty key"); });
+    // tidy each biome's spawn mix: drop weights for unselected monsters and any
+    // row that's entirely default (all blank / all 1), and drop an empty mix.
+    for (const b of out.biomes) {
+      if (!b.spawnMix) continue;
+      const mons = Array.isArray(b.monsters) ? b.monsters : [];
+      for (const k of Object.keys(b.spawnMix)) {
+        const a = b.spawnMix[k];
+        const meaningful = mons.indexOf(k) >= 0 && Array.isArray(a) && a.some((w) => w != null && Number(w) !== 1);
+        if (!meaningful) delete b.spawnMix[k];
+        else b.spawnMix[k] = a.slice(0, 5).map((w) => (w == null ? null : Number(w)));
+      }
+      if (!Object.keys(b.spawnMix).length) delete b.spawnMix;
+    }
 
     out.classes = {};                                 // classes come from the form + skill grid
     const seenC = {};
