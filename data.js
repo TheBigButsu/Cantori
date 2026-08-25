@@ -176,6 +176,7 @@ window.CANTORI_DATA = {
   "gear": {
     "dagger": {
       "cat": "weapon",
+      "sub": "dagger",
       "name": "Dagger",
       "dmgMin": 1,
       "dmgMax": 3,
@@ -190,6 +191,7 @@ window.CANTORI_DATA = {
     },
     "sword": {
       "cat": "weapon",
+      "sub": "sword",
       "name": "Sword",
       "dmgMin": 3,
       "dmgMax": 6,
@@ -204,6 +206,7 @@ window.CANTORI_DATA = {
     },
     "mace": {
       "cat": "weapon",
+      "sub": "axe",
       "name": "Mace",
       "dmgMin": 5,
       "dmgMax": 10,
@@ -218,6 +221,7 @@ window.CANTORI_DATA = {
     },
     "leather": {
       "cat": "armor",
+      "sub": "light",
       "name": "Leather Armor",
       "def": 1,
       "tier": 1,
@@ -229,6 +233,7 @@ window.CANTORI_DATA = {
     },
     "chain": {
       "cat": "armor",
+      "sub": "medium",
       "name": "Chain Mail",
       "def": 2,
       "tier": 2,
@@ -240,6 +245,7 @@ window.CANTORI_DATA = {
     },
     "plate": {
       "cat": "armor",
+      "sub": "heavy",
       "name": "Plate Armor",
       "def": 3,
       "tier": 3,
@@ -279,6 +285,7 @@ window.CANTORI_DATA = {
     },
     "Axe": {
       "cat": "weapon",
+      "sub": "axe",
       "name": "Axe",
       "dmgMax": 12,
       "speed": 1,
@@ -290,6 +297,38 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "dmgMin": 4,
       "accuracy": -10
+    },
+    "spear": {
+      "cat": "weapon",
+      "sub": "spear",
+      "name": "Spear",
+      "dmgMin": 2,
+      "dmgMax": 6,
+      "speed": 0.9,
+      "tier": 1,
+      "req": {
+        "STR": 8
+      },
+      "range": 2,
+      "glyph": "/",
+      "color": "#c8b890",
+      "accuracy": 3
+    },
+    "bow": {
+      "cat": "weapon",
+      "sub": "bow",
+      "name": "Short Bow",
+      "dmgMin": 2,
+      "dmgMax": 5,
+      "speed": 1,
+      "tier": 1,
+      "req": {
+        "STR": 5
+      },
+      "range": 5,
+      "glyph": "}",
+      "color": "#b08a4a",
+      "accuracy": 5
     }
   },
   "loot": {
@@ -389,55 +428,45 @@ window.CANTORI_DATA = {
         "icon": "🔥",
         "color": "#ff8f4a",
         "proc": 0.35,
-        "slots": [
-          "weapon",
-          "armor",
-          "ring",
-          "trinket",
-          "necklace"
-        ]
+        "slots": ["weapon", "armor", "ring", "trinket", "necklace"],
+        "desc": "Sears on a hit for half the source's power, then keeps burning for a few turns. Only one flame burns at a time.",
+        "effect": { "type": "burn", "burstMult": 0.5, "dotTurns": 3 }
       },
       "electric": {
         "name": "Charged",
         "icon": "⚡",
         "color": "#9ad0ff",
         "proc": 0.3,
-        "slots": [
-          "weapon",
-          "armor",
-          "ring",
-          "trinket",
-          "necklace"
-        ]
+        "slots": ["weapon", "armor", "ring", "trinket", "necklace"],
+        "desc": "A jolt equal to the source's power, with a chance to stun that fades against higher-level foes.",
+        "effect": { "type": "shock", "burstMult": 1, "stunPer": 0.10 }
       },
       "Speed": {
         "name": "Speed",
         "icon": "✦",
-        "color": "#cccccc",
+        "color": "#bfe0ff",
         "proc": 1,
-        "slots": [
-          "ring",
-          "armor"
-        ]
+        "slots": ["ring", "armor"],
+        "desc": "While worn, your attacks cost less time — you act faster.",
+        "effect": { "type": "haste", "mult": 0.25 }
       },
       "Thorns": {
-        "icon": "✦",
-        "color": "#cccccc",
+        "name": "Thorns",
+        "icon": "🜲",
+        "color": "#cdd6a0",
         "proc": 0.5,
-        "slots": [
-          "armor",
-          "necklace"
-        ],
-        "name": "Thorns"
+        "slots": ["armor", "necklace"],
+        "desc": "When you're struck, lash back at the attacker for a share of your armor's power.",
+        "effect": { "type": "thorns", "mult": 1 }
       },
       "Poison": {
         "name": "Poison",
-        "icon": "✦",
-        "color": "#cccccc",
+        "icon": "☠",
+        "color": "#9ad06a",
         "proc": 0.2,
-        "slots": [
-          "weapon"
-        ]
+        "slots": ["weapon"],
+        "desc": "A small bite now (+2), then 1 damage per turn for several turns. Every proc stacks another dose.",
+        "effect": { "type": "poison", "initial": 2, "perTurn": 1, "turns": 5 }
       }
     }
   },

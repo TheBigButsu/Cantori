@@ -56,7 +56,7 @@
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
   const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0);
   const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0);  // DEX + weapon + level
-  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0);                      // DEX + level
+  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + armorSubEva();       // DEX + level + armor weight
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
   const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
@@ -189,6 +189,27 @@
   const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax);
   const weaponAccuracy = () => (player.weapon ? (GEAR[player.weapon.key].accuracy || 0) : 0);
   const weaponSpeed = () => (player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1);
+  // Weapon reach: 1 = melee (adjacent only). Spears/bows carry a range > 1 and
+  // can strike a monster that far away with line of sight.
+  const weaponRange = () => (player.weapon ? (GEAR[player.weapon.key].range || 1) : 1);
+  const weaponSub = () => (player.weapon ? (GEAR[player.weapon.key].sub || "") : "");
+  // Armor subtype tweaks evasion: lighter armor is easier to dodge in, heavier
+  // trades that away for the raw defense its tier already grants. Tunable here.
+  const ARMOR_SUB_EVA = { light: 2, medium: 0, heavy: -3 };
+  const armorSubEva = () => (player.armor ? (ARMOR_SUB_EVA[GEAR[player.armor.key].sub] || 0) : 0);
+  // Passive "haste" from worn Speed enchants — makes your attacks cost less time.
+  function wornHaste() {
+    let h = 0;
+    for (const it of wornItems()) {
+      if (!it || !it.enchants) continue;
+      for (const e of it.enchants) {
+        const def = LOOT.enchants[e];
+        if (def && def.effect && def.effect.type === "haste") h += (def.effect.mult || 0);
+      }
+    }
+    return h;
+  }
+  const playerActSpeed = () => weaponSpeed() * (1 + wornHaste());
   // The "power" an item's enchant procs at: weapon top-end damage, armor defense,
   // or (for jewelry) its tier + plus.
   function itemPower(inst) {
@@ -625,6 +646,20 @@
   // Fire an item's enchants at a target. `power` is the source's primary number
   // (weapon atk on your strike, armor def when you retaliate). Returns nothing;
   // handles the target's death from burst damage.
+  // Apply a damage-over-time stack to a monster. `stack:true` adds a fresh,
+  // independent stack (poison); `stack:false` refreshes the single existing one
+  // of that tag (burn — only ever one at a time).
+  function addDot(m, dot, stack) {
+    if (!m.dots) m.dots = [];
+    if (stack) { m.dots.push(dot); return; }
+    const ex = m.dots.find((d) => d.tag === dot.tag);
+    if (ex) Object.assign(ex, dot); else m.dots.push(dot);
+  }
+
+  // Fire an item's enchants at a target. `power` is the source's primary number
+  // (weapon atk on your strike, armor def when you retaliate). Each enchant is
+  // driven by its `effect` block in the data (type + params), so new enchants can
+  // be authored in the editor without touching this code.
   function procEnchants(enchants, target, power) {
     if (!enchants || !enchants.length || target.hp <= 0) return;
     for (const e of enchants) {
@@ -632,17 +667,34 @@
       const def = LOOT.enchants[e] || {};
       const proc = def.proc != null ? def.proc : 1;     // chance the enchant fires this hit
       if (Math.random() >= proc) continue;
-      if (e === "fire") {
-        const burst = Math.ceil(power / 2);
-        target.hp -= burst; flash(target);
-        floatText(target.x, target.y, "🔥-" + burst, "#ff8f4a");
-        target.burn = { dmg: Math.max(1, Math.ceil(burst / 2)), rounds: 3 };   // DOT: 50% of burst, 3 turns
-      } else if (e === "electric") {
-        const burst = power;
-        target.hp -= burst; flash(target);
-        floatText(target.x, target.y, "⚡-" + burst, "#9ad0ff");
-        const chance = (burst * 0.10) / Math.max(1, target.level || 1);
-        if (Math.random() < chance) { target.stun = (target.stun || 0) + 1; floatText(target.x, target.y, "stun!", "#cfe6ff"); }
+      const fx = def.effect || {};
+      const icon = def.icon || "✦", color = def.color || "#cfe6ff";
+      switch (fx.type) {
+        case "burn": {                                  // instant burst + a short DOT that stacks only once
+          const burst = Math.max(1, Math.ceil(power * (fx.burstMult != null ? fx.burstMult : 0.5)));
+          target.hp -= burst; flash(target); floatText(target.x, target.y, "🔥-" + burst, "#ff8f4a");
+          addDot(target, { tag: "burn", dmg: Math.max(1, Math.ceil(burst / 2)), rounds: fx.dotTurns || 3, icon: "🔥", color: "#ff8f4a" }, false);
+          break;
+        }
+        case "poison": {                                // small hit now, then 1/turn — and it stacks
+          const init = fx.initial != null ? fx.initial : 2;
+          target.hp -= init; flash(target); floatText(target.x, target.y, "☠-" + init, "#9ad06a");
+          addDot(target, { tag: "poison", dmg: fx.perTurn || 1, rounds: fx.turns || 5, icon: "☠", color: "#9ad06a" }, true);
+          break;
+        }
+        case "shock": {                                 // burst + a scaling stun chance
+          const burst = Math.max(1, Math.round(power * (fx.burstMult != null ? fx.burstMult : 1)));
+          target.hp -= burst; flash(target); floatText(target.x, target.y, "⚡-" + burst, "#9ad0ff");
+          const chance = (burst * (fx.stunPer != null ? fx.stunPer : 0.10)) / Math.max(1, target.level || 1);
+          if (Math.random() < chance) { target.stun = (target.stun || 0) + 1; floatText(target.x, target.y, "stun!", "#cfe6ff"); }
+          break;
+        }
+        case "thorns": {                                // reflect a share of the source's power back
+          const dmg = Math.max(1, Math.round(power * (fx.mult != null ? fx.mult : 1)));
+          target.hp -= dmg; flash(target); floatText(target.x, target.y, icon + "-" + dmg, color);
+          break;
+        }
+        default: break;                                 // "haste" and unknown types do nothing on-hit
       }
     }
     if (target.hp <= 0) killMonster(target, "is destroyed");
@@ -773,7 +825,7 @@
     const nx = player.x + dx, ny = player.y + dy;
 
     const mon = monsterAt(nx, ny);
-    if (mon) { attack(player, mon); worldTurn(1 / weaponSpeed()); return true; }   // weapon speed → attack cost
+    if (mon) { attack(player, mon); worldTurn(1 / playerActSpeed()); return true; }   // weapon speed (+haste) → attack cost
 
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
@@ -844,7 +896,7 @@
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
   const SENSE = 8;          // how far a monster notices the player (needs line of sight)
   const CHARGE_MAX = 7;
-  const REGEN_EVERY = 40;   // player heals 1 HP every this many turns
+  const REGEN_EVERY = 12;   // player heals 1 HP every this many turns
   let turns = 0;
 
   // Bresenham line of sight: true if no wall lies strictly between the tiles.
@@ -877,14 +929,14 @@
     return null;
   }
 
-  function stepMonsterToward(m) {
+  function stepMonsterTo(m, tx, ty) {
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
       if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;   // monsters won't brave brambles
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
-      const d = cheb(nx, ny, player.x, player.y);
+      const d = cheb(nx, ny, tx, ty);
       if (d < bestD) { bestD = d; best = [nx, ny]; }
     }
     if (best) { m.x = best[0]; m.y = best[1]; }
@@ -944,19 +996,26 @@
   // acting; the caller checks `dead`.
   function monsterAct(m) {
     if (m.hp <= 0) return;
-    if (m.burn && m.burn.rounds > 0) {          // fire DOT ticks at the start of its action
-      m.hp -= m.burn.dmg; flash(m); floatText(m.x, m.y, "🔥-" + m.burn.dmg, "#ff8f4a");
-      m.burn.rounds--;
-      if (m.hp <= 0) { killMonster(m, "burns away"); return; }
+    if (m.dots && m.dots.length) {              // burn/poison ticks at the start of its action
+      for (const dot of m.dots.slice()) {
+        m.hp -= dot.dmg; flash(m); floatText(m.x, m.y, dot.icon + "-" + dot.dmg, dot.color);
+        if (--dot.rounds <= 0) m.dots = m.dots.filter((x) => x !== dot);
+        if (m.hp <= 0) { killMonster(m, dot.tag === "poison" ? "succumbs to poison" : "burns away"); return; }
+      }
     }
     if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
-    if (canSee(m)) m.aware = true;              // once it spots you, no more free ambush
+    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }  // spotted: remember where
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { attack(m, player); return; }
     if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
-    if (canSee(m)) stepMonsterToward(m);        // seen you → close in directly
-    else patrolStep(m);
+    if (canSee(m)) { stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in directly
+    if (m.lastSeen) {                            // lost sight → head to where you were last seen
+      stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
+      if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null;   // reached it, trail goes cold
+      return;
+    }
+    patrolStep(m);                               // no lead → wander
   }
 
   // Accrue identify-progress on one equipped item through *use* (a weapon when you
@@ -1058,6 +1117,14 @@
     if (adjacent && isThorn(tx, ty)) {
       const ti = player.inv.findIndex((i) => i.key === "torch");
       if (ti >= 0) { useConsumable(ti); return; }
+    }
+    // ranged weapon (spear/bow): tap a monster within reach + line of sight to fire
+    const reach = weaponRange();
+    if (reach > 1 && !adjacent) {
+      const tgt = monsterAt(tx, ty);
+      if (tgt && tgt.hp > 0 && cheb(player.x, player.y, tx, ty) <= reach && lineOfSight(player.x, player.y, tx, ty)) {
+        attack(player, tgt); worldTurn(1 / playerActSpeed()); return;
+      }
     }
     if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
     const path = findPath(player.x, player.y, tx, ty);
@@ -2102,7 +2169,7 @@
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, burn: m.burn ? Object.assign({}, m.burn) : null, stun: m.stun || 0 })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0 })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
