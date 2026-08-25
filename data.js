@@ -429,6 +429,15 @@ window.CANTORI_DATA = {
           "necklace"
         ],
         "name": "Thorns"
+      },
+      "Poison": {
+        "name": "Poison",
+        "icon": "✦",
+        "color": "#cccccc",
+        "proc": 0.2,
+        "slots": [
+          "weapon"
+        ]
       }
     }
   },
