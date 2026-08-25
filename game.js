@@ -28,11 +28,13 @@
   const FLOOR = 1;
   const STAIRS = 2;
   const DOOR = 3;              // hall entrance; passable, but a *closed* door blocks sight
+  const THORN = 4;             // bramble barrier: you can push through, but it hurts
 
   let map = [];
   let visible = [];
   let explored = [];
   let opened = [];             // per-tile: has this door been opened (walked through)?
+  let torches = [];            // decorative wall-mounted torches {x, y}
   let depth = 1;
   let dead = false;
 
@@ -92,6 +94,7 @@
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
   const isWall = (x, y) => !inBounds(x, y) || map[y][x] === WALL;
   const isDoor = (x, y) => inBounds(x, y) && map[y][x] === DOOR;
+  const isThorn = (x, y) => inBounds(x, y) && map[y][x] === THORN;
   const passable = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
   // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
   // room stays hidden until you reach its doorway, enabling surprise ambushes.
@@ -184,11 +187,74 @@
     }
   }
 
+  // The wall-ring cells of a room (its perimeter), as [x, y] pairs.
+  function roomRing(r) {
+    const ring = [];
+    for (let x = r.x; x < r.x + r.w; x++) { ring.push([x, r.y - 1]); ring.push([x, r.y + r.h]); }
+    for (let y = r.y; y < r.y + r.h; y++) { ring.push([r.x - 1, y]); ring.push([r.x + r.w, y]); }
+    return ring;
+  }
+  function roomDoors(r) {
+    return roomRing(r).filter(([x, y]) => isDoor(x, y));
+  }
+  function freeFloorInRoom(r) {
+    for (let t = 0; t < 40; t++) {
+      const x = randInt(r.x, r.x + r.w - 1), y = randInt(r.y, r.y + r.h - 1);
+      if (map[y][x] !== FLOOR) continue;
+      if (x === player.x && y === player.y) continue;
+      if (itemAt(x, y) || monsterAt(x, y)) continue;
+      return { x, y };
+    }
+    return null;
+  }
+  function vaultLootKey() {
+    const r = Math.random();
+    if (r < 0.45) return weightedGearKey();
+    if (r < 0.70) return "strength";       // permanent stat gain — worth the sting
+    return weightedConsumKey();
+  }
+
+  // Seal a small side room behind brambles and hide a choice item inside. Returns a
+  // Set of restricted room indices (torches are kept out of them).
+  function makeThornVaults(rooms, last) {
+    const restricted = new Set();
+    const candidates = [];
+    for (let i = 1; i < rooms.length; i++) {
+      const r = rooms[i];
+      if (r === last) continue;
+      const doors = roomDoors(r).length;
+      if (doors >= 1 && doors <= 2 && r.w * r.h <= 12) candidates.push(i);
+    }
+    const nVaults = Math.random() < 0.5 ? 1 : 2;
+    for (let v = 0; v < nVaults && candidates.length; v++) {
+      const pick = candidates.splice(randInt(0, candidates.length - 1), 1)[0];
+      const r = rooms[pick];
+      for (const [x, y] of roomDoors(r)) map[y][x] = THORN;   // wall it in with brambles
+      const spot = freeFloorInRoom(r);
+      if (spot) items.push({ x: spot.x, y: spot.y, key: vaultLootKey() });
+      restricted.add(pick);
+    }
+    return restricted;
+  }
+
+  // Mount a few decorative torches on room walls — never inside a thorn vault.
+  function placeTorches(rooms, restricted) {
+    let budget = randInt(4, 8);
+    for (let i = 0; i < rooms.length && budget > 0; i++) {
+      if (restricted.has(i)) continue;
+      const spots = roomRing(rooms[i]).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
+      if (!spots.length) continue;
+      const [tx, ty] = spots[randInt(0, spots.length - 1)];
+      if (!torches.some((t) => t.x === tx && t.y === ty)) { torches.push({ x: tx, y: ty }); budget--; }
+    }
+  }
+
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
     visible = blankGrid(false);
     opened = blankGrid(false);
+    torches = [];
     walkPath = [];
     monsters = [];
     items = [];
@@ -222,6 +288,10 @@
     player.y = start.y;
     const last = rooms[rooms.length - 1];
 
+    // seal a room or two behind thorns and hide good loot inside; those rooms are
+    // "restricted", so torches (below) are kept out of them
+    const restricted = makeThornVaults(rooms, last);
+
     if (isBossDepth(depth)) {
       // The 5th floor: a boss guards the last room; the exit opens on its defeat.
       bossActive = true;
@@ -232,6 +302,7 @@
       spawnMonsters(rooms);
     }
     spawnItems(rooms);
+    placeTorches(rooms, restricted);
     computeFOV();
     setDepthLabel();
     floaters = [];
@@ -533,6 +604,12 @@
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
       if (map[ny][nx] === DOOR && !opened[ny][nx]) { opened[ny][nx] = true; log("You open the " + doorWord() + "."); }
+      if (map[ny][nx] === THORN) {
+        const d = randInt(2, 4);
+        player.hp -= d; flash(player); floatText(player.x, player.y, "-" + d, "#ff8f84");
+        log("The thorns tear at you! (-" + d + ")", "hurt");
+        if (player.hp <= 0) { updateHUD(); computeFOV(); die(); return true; }
+      }
       computeFOV();
       pickUp();
       if (map[ny][nx] === STAIRS) { descend(); return true; }  // fresh level, no world turn
@@ -630,7 +707,7 @@
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy)) continue;
+      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;   // monsters won't brave brambles
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       const d = cheb(nx, ny, player.x, player.y);
@@ -642,7 +719,7 @@
     const opts = [];
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy)) continue;
+      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       opts.push([nx, ny]);
@@ -655,7 +732,7 @@
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy)) continue;
+      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       const d = cheb(nx, ny, m.patrol.x, m.patrol.y);
@@ -670,7 +747,7 @@
     while (cheb(m.x, m.y, player.x, player.y) > 1) {
       const nx = m.x + dir[0], ny = m.y + dir[1];
       if (nx === player.x && ny === player.y) break;
-      if (!canStep(m.x, m.y, dir[0], dir[1]) || monsterAt(nx, ny)) break;
+      if (!canStep(m.x, m.y, dir[0], dir[1]) || isThorn(nx, ny) || monsterAt(nx, ny)) break;
       m.x = nx; m.y = ny; moved++;
     }
     if (cheb(m.x, m.y, player.x, player.y) === 1) attack(m, player, moved);  // +1 dmg per tile crossed
@@ -741,7 +818,7 @@
       for (const [dx, dy] of DIRS8) {
         const nx = cx + dx, ny = cy + dy;
         if (!explored[ny] || !explored[ny][nx]) continue;
-        if (!canStep(cx, cy, dx, dy)) continue;
+        if (!canStep(cx, cy, dx, dy) || isThorn(nx, ny)) continue;  // never auto-walk through thorns
         const k = key(nx, ny);
         if (prev.has(k)) continue;
         prev.set(k, [cx, cy]);
@@ -777,7 +854,10 @@
     if (!inBounds(tx, ty)) return;
     if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
     const path = findPath(player.x, player.y, tx, ty);
-    if (path.length) walkPath = path;
+    if (path.length) { walkPath = path; return; }
+    // no route (e.g. blocked by thorns): if the tap is an adjacent tile, step in
+    // manually — this is how you deliberately push through brambles to the loot
+    if (cheb(player.x, player.y, tx, ty) === 1) stepToward(tx, ty);
   }
 
   // ---- Canvas, camera, zoom ------------------------------------------------
@@ -903,6 +983,17 @@
         ctx.fillStyle = shade(fy < 0.5 ? "#3f7a3a" : "#2f5f30", b);
         ctx.fill();
       }
+      // ripe berries dotted through the foliage (fewer once trampled open)
+      const berries = closed
+        ? [[0.34, 0.40], [0.62, 0.52], [0.50, 0.30], [0.44, 0.62], [0.70, 0.36]]
+        : [[0.30, 0.36], [0.72, 0.66]];
+      const br = Math.max(1.2, tile * 0.055);
+      for (const [fx, fy] of berries) {
+        ctx.beginPath();
+        ctx.arc(px + fx * tile, py + fy * tile, br, 0, Math.PI * 2);
+        ctx.fillStyle = shade("#c53a4a", b);
+        ctx.fill();
+      }
       return;
     }
     if (closed) {
@@ -921,6 +1012,55 @@
       ctx.fillRect(px, py, w, tile);
       ctx.fillRect(px + tile - w, py, w, tile);
     }
+  }
+  // A bramble barrier: a dark tangle with pale spikes jabbing outward. Passable,
+  // but stepping through it hurts — it walls off the loot vault.
+  function drawThorn(px, py, b) {
+    const cx = px + tile / 2, cy = py + tile / 2;
+    ctx.fillStyle = shade("#243418", b);
+    ctx.beginPath();
+    ctx.arc(cx, cy, tile * 0.40, 0, Math.PI * 2);
+    ctx.fill();
+    const spikes = 9;
+    ctx.strokeStyle = shade("#b9c48a", b);
+    ctx.lineWidth = Math.max(1, tile * 0.045);
+    for (let i = 0; i < spikes; i++) {
+      const a = (i / spikes) * Math.PI * 2 + (px + py) * 0.01;   // jitter per tile
+      const r0 = tile * 0.14, r1 = tile * 0.44;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      ctx.stroke();
+    }
+    // a couple of red berries caught in the thorns — a hint of what waits beyond
+    ctx.fillStyle = shade("#c53a4a", b);
+    ctx.beginPath(); ctx.arc(cx - tile * 0.12, cy + tile * 0.08, Math.max(1.2, tile * 0.05), 0, Math.PI * 2); ctx.fill();
+  }
+  // Wall-mounted torch: a bracket and a flickering flame, with a soft glow pool.
+  function drawTorch(px, py, b, now) {
+    const cx = px + tile / 2;
+    const flick = 1 + Math.sin(now / 120 + (px + py)) * 0.12;
+    // glow pool
+    const g = ctx.createRadialGradient(cx, py + tile * 0.42, tile * 0.1, cx, py + tile * 0.42, tile * 0.9);
+    g.addColorStop(0, "rgba(246,184,69," + (0.30 * b).toFixed(3) + ")");
+    g.addColorStop(1, "rgba(246,184,69,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(px - tile * 0.4, py - tile * 0.4, tile * 1.8, tile * 1.8);
+    // bracket
+    ctx.strokeStyle = shade("#3c2c18", b);
+    ctx.lineWidth = Math.max(1, tile * 0.06);
+    ctx.beginPath(); ctx.moveTo(cx, py + tile * 0.72); ctx.lineTo(cx, py + tile * 0.42); ctx.stroke();
+    // flame
+    ctx.beginPath();
+    ctx.moveTo(cx, py + tile * (0.16 * flick));
+    ctx.quadraticCurveTo(cx + tile * 0.16, py + tile * 0.34, cx, py + tile * 0.46);
+    ctx.quadraticCurveTo(cx - tile * 0.16, py + tile * 0.34, cx, py + tile * (0.16 * flick));
+    ctx.fillStyle = shade("#f6b845", b);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, py + tile * 0.36, tile * 0.07, 0, Math.PI * 2);
+    ctx.fillStyle = shade("#ffe08a", b);
+    ctx.fill();
   }
   function spriteForItem(key) {
     const d = defOf(key);
@@ -1009,10 +1149,18 @@
           }
           if (t === STAIRS) drawImg(SPRITES[biome.exitSprite || "stairs"], px, py);
           else if (t === DOOR) drawDoor(px, py, !opened[my][mx], b);
+          else if (t === THORN) drawThorn(px, py, b);
         }
         dim(px, py, 1 - b);                                   // torch falloff / memory
         if (!vis) { ctx.fillStyle = "rgba(70,90,130,0.10)"; ctx.fillRect(px, py, tile, tile); }
       }
+    }
+
+    // wall torches (drawn after terrain so their glow sits on top)
+    for (const tr of torches) {
+      if (!inBounds(tr.x, tr.y) || !explored[tr.y][tr.x]) continue;
+      const vis = visible[tr.y][tr.x];
+      drawTorch(SX(tr.x), SY(tr.y), vis ? litBright(tr.x, tr.y) : MEM, now);
     }
 
     // route markers
@@ -1125,6 +1273,7 @@
         mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap);
         if (t === STAIRS) { mctx.fillStyle = "#f6b845"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
         else if (t === DOOR) { mctx.fillStyle = "#8a6a3a"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
+        else if (t === THORN) { mctx.fillStyle = "#4a6a34"; mctx.fillRect(ox + x * cell, oy + y * cell, cell - gap, cell - gap); }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -1307,6 +1456,11 @@
       }
       player.x = nx; player.y = ny; steps++;
       if (map[ny][nx] === DOOR) opened[ny][nx] = true;   // barge through
+      if (map[ny][nx] === THORN) {                       // dashing through brambles stings too
+        const td = randInt(2, 4);
+        player.hp -= td; flash(player); floatText(player.x, player.y, "-" + td, "#ff8f84");
+        if (player.hp <= 0) { player.skills.rush.cd = cur.cd; updateHUD(); computeFOV(); die(); updateHotbar(); return; }
+      }
       computeFOV(); pickUp();
       if (map[player.y][player.x] === STAIRS) { player.skills.rush.cd = cur.cd; descend(); updateHotbar(); return; }
     }
@@ -1356,9 +1510,12 @@
     }
     const it = items.find((i) => i.x === x && i.y === y);
     if (it && visible[y][x]) { log(it.key === "gold" ? (it.amount + " gold") : displayName(it.key)); return; }
+    const torch = torches.find((tr) => tr.x === x && tr.y === y);
+    if (torch) { log("A wall torch — its light holds back the dark."); return; }
     const t = map[y][x];
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
         t === DOOR ? (opened[y][x] ? "An open " + doorWord() + "." : "A closed " + doorWord() + " — sight can't pass until you reach it.") :
+        t === THORN ? "A wall of thorns — you can force through, but it'll draw blood. Something waits beyond." :
         "Open ground.");
   }
 
@@ -1616,8 +1773,11 @@
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
+        torches: torches.map((t) => ({ x: t.x, y: t.y })),
+        thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
       };
     },
+    tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
     useIdx: (i) => actItem(i),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },

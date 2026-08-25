@@ -170,5 +170,13 @@ any visible tile. Banked points are spent on the skill tree.
   live in a **bottom-left vitals stack** so the notch can crop the top bar harmlessly.
   MP and Food are placeholders pinned at 100 until spells and hunger land.
 - **Examine auto-closes** after one inspection — tap 🔍, tap a tile, done.
+- **Berry bushes & thorn vaults.** Forest doorways are berry bushes (red fruit
+  dotted through the leaves). A separate hazard tile — **thorns** — seals off the
+  occasional side room: it's passable but bites for 2–4 HP each step through, and
+  monsters refuse to enter, so a thorn vault is a player-only risk/reward pocket
+  with a **choice item hidden inside** (biased toward gear or a Strength potion).
+  Auto-travel never routes through thorns; you push in deliberately, tile by tile.
+- **Torches.** A handful of wall-mounted torches light each floor (a flame plus a
+  soft glow pool), placed only in ordinary rooms — never inside a thorn vault.
 
 _Also still open: selecting among multiple classes at run start._
