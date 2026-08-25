@@ -80,6 +80,28 @@ gear bonus in green; rare drops glow in their rarity color on the floor.
 _Open follow-ups: gold/unique authored items; biasing stat rolls toward a weapon's
 identity (STR/DEX) instead of uniform; scaling enchant/plus numbers as content grows._
 
+## Identification — DONE
+
+Gear is **unidentified on pickup** — you see the base type (e.g. "Sword") and its
+intrinsic feel (dmg range, speed, accuracy), but its **magic is hidden**: rarity
+colour, the +X, and rolled affixes don't show until you learn the item. It still
+**works fully** while unidentified; you just can't read the numbers. You learn it
+by **using it** (any turn it's equipped adds 1 identify-progress); it reveals once
+progress reaches:
+
+> **idNeed = (tier + plus) × (random 1–10 + rarity rank)**,  rank white=1 … purple=4 … gold=5
+
+So rarer, higher-plus, higher-tier items take longer to identify. Truly blank items
+(white, +0, no affixes — e.g. the starting kit) are known immediately. The pack
+shows an "id NN%" progress tag on unidentified gear.
+
+## Free-look camera — DONE
+
+Swipe (or mouse-drag on desktop) to **pan the camera around the level** without
+being locked to the character — **inverted**, so the camera follows your finger
+(swipe right → look right). The view snaps back to the player the moment you take
+any action (move, attack, wait, use). Pinch still zooms.
+
 ## Weapons: damage range, speed, accuracy — DONE
 
 Weapons carry **dmgMin/dmgMax** (a damage range instead of a flat bonus),

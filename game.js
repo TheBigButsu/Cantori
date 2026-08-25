@@ -173,9 +173,17 @@
       if (Math.random() < LOOT.purpleSecondStatChance) addStat(); else addEnchant();
     }
     // white gets nothing but its (possible) plus; gold is authored, not rolled here
-    return { key, rarity, plus, stats, enchants };
+    // Identification: how much use it takes to learn this item's hidden properties.
+    //   idNeed = (tier + plus) * (1..10 + rarity rank),  white=1 … purple=4 … gold=5
+    const rank = LOOT.rarities.findIndex((r) => r.key === rarity) + 1;
+    const idNeed = (tier + plus) * (randInt(1, 10) + rank);
+    const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0;
+    return { key, rarity, plus, stats, enchants, idNeed, idXp: 0, identified: nothingHidden };
   }
-  const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [] });
+  // A plain, already-known base item (starting kit, gold/authored items).
+  const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [], idNeed: 0, idXp: 0, identified: true });
+  // Copy an item instance without its map position (for pack/equip moves).
+  function stripPos(it) { const o = Object.assign({}, it); delete o.x; delete o.y; delete o.amount; return o; }
 
   // Effective numbers for an instance (base + plus).
   const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (inst.plus || 0);
@@ -264,20 +272,34 @@
     return rollItem(key, floor);
   }
 
-  // Display: colored name, +X prefix, and an affix summary line.
+  // Identification: gear reveals its magic (rarity, +X, affixes) only once you've
+  // learned it through use; the base item type is always visible. Consumables use
+  // the by-key `identified` set. The item still works fully while unidentified —
+  // you just can't read its numbers yet.
+  const itemIdentified = (inst) => (isGear(inst) ? !!inst.identified : identified.has(inst.key));
+  const dispPlus = (inst) => (itemIdentified(inst) ? (inst.plus || 0) : 0);
+  const itemColor = (inst) => ((isGear(inst) && itemIdentified(inst)) ? rarityColor(inst.rarity) : "#cfc3a0");
+  // Display damage/def hide the +X until identified (combat still uses the real gDmg*/gDef).
+  const dDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + dispPlus(inst);
+  const dDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + dispPlus(inst);
+  const dDef = (inst) => (GEAR[inst.key].def || 0) + dispPlus(inst);
+  const idPct = (inst) => (itemIdentified(inst) ? 100 : Math.min(99, Math.floor(((inst.idXp || 0) / Math.max(1, inst.idNeed || 1)) * 100)));
+
+  // Display: colored name, +X prefix (only if known), and an affix summary line.
   function itemName(inst) {
     if (!isGear(inst)) return displayName(inst.key);
-    const p = inst.plus > 0 ? "+" + inst.plus + " " : "";
+    const p = dispPlus(inst) > 0 ? "+" + dispPlus(inst) + " " : "";
     return p + GEAR[inst.key].name;
   }
   function itemAffixText(inst) {
     if (!isGear(inst)) return "";
     const parts = [];
     const g = GEAR[inst.key];
-    if (g.cat === "weapon") {
+    if (g.cat === "weapon") {   // base weapon feel is intrinsic — always shown
       if (g.speed != null && g.speed !== 1) parts.push("spd " + g.speed);
       if (g.accuracy) parts.push("acc " + (g.accuracy > 0 ? "+" : "") + g.accuracy);
     }
+    if (!itemIdentified(inst)) { parts.push("unidentified"); return parts.join(", "); }
     for (const s of inst.stats || []) parts.push("+" + (s.val + (inst.plus || 0)) + " " + s.stat);
     for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
     return parts.join(", ");
@@ -821,8 +843,8 @@
       return;
     }
     if (player.inv.length >= 12) { log("Your pack is full."); return; }
-    // carry the item minus its map position (gear keeps its rolled affixes)
-    player.inv.push(isGear(it) ? { key: it.key, rarity: it.rarity, plus: it.plus, stats: it.stats, enchants: it.enchants } : { key: it.key });
+    // carry the item minus its map position (gear keeps its rolled affixes + id progress)
+    player.inv.push(isGear(it) ? stripPos(it) : { key: it.key });
     items = items.filter((x) => x !== it);
     log("You pick up the " + itemName(it) + ".");
   }
@@ -978,6 +1000,20 @@
     else patrolStep(m);
   }
 
+  // Accrue identify-progress on equipped, still-mysterious gear; reveal it once the
+  // accumulated use reaches its idNeed threshold.
+  function tickIdentify() {
+    for (const it of wornItems()) {
+      if (it.identified) continue;
+      it.idXp = (it.idXp || 0) + 1;
+      if (it.idXp >= (it.idNeed || 1)) {
+        it.identified = true;
+        const aff = itemAffixText(it);
+        log("You've learned your " + itemName(it) + (aff && aff !== "unidentified" ? " — " + aff : "") + ".", "hit");
+      }
+    }
+  }
+
   // Advance the world by `cost` time units (a normal action = 1). Each monster
   // banks energy at its own speed and acts once per whole point — so against a
   // fast weapon (cost < 1) monsters act less often, and a slow one (cost > 1)
@@ -987,6 +1023,8 @@
     cost = cost == null ? 1 : cost;
     turns++;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
+    panX = 0; panY = 0;                        // any action recenters the camera on you
+    tickIdentify();
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
@@ -1091,6 +1129,7 @@
   let baseTile = 26, tile = 26;
   let viewCols = 13, viewRows = 21;
   let camX = 0, camY = 0;
+  let panX = 0, panY = 0;                 // free-look camera offset (tiles); reset on any action
   let dpr = 1;
   let zoom = 1;
   const MIN_ZOOM = 0.55, MAX_ZOOM = 2.8;
@@ -1130,8 +1169,19 @@
     const clamp = (v, max) => Math.max(0, Math.min(max, v));
     const rx = player.rx === undefined ? player.x : player.rx;
     const ry = player.ry === undefined ? player.y : player.ry;
-    camX = clamp(rx - (viewCols - 1) / 2, MAP_W - viewCols);   // float: smooth scroll
-    camY = clamp(ry - (viewRows - 1) / 2, MAP_H - viewRows);
+    // player-centred, plus the free-look pan offset (swipe to survey the level)
+    camX = clamp(rx - (viewCols - 1) / 2 + panX, MAP_W - viewCols);
+    camY = clamp(ry - (viewRows - 1) / 2 + panY, MAP_H - viewRows);
+  }
+  // Pan the free-look camera by a screen-pixel delta. Inverted: the camera moves in
+  // the direction you swipe (like nudging a joystick), not the map under your finger.
+  function panBy(dxPx, dyPx) {
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    panX += dxPx / (rect.width / viewCols);
+    panY += dyPx / (rect.height / viewRows);
+    panX = Math.max(-MAP_W, Math.min(MAP_W, panX));
+    panY = Math.max(-MAP_H, Math.min(MAP_H, panY));
   }
 
   // ---- Colours & lighting --------------------------------------------------
@@ -1579,7 +1629,7 @@
   function equipLabel(inst) {
     if (!inst) return "—";
     const aff = itemAffixText(inst);
-    return `<b style="color:${rarityColor(inst.rarity)}">${itemName(inst)}</b>` + (aff ? ` <span style="opacity:.7">(${aff})</span>` : "");
+    return `<b style="color:${itemColor(inst)}">${itemName(inst)}</b>` + (aff ? ` <span style="opacity:.7">(${aff})</span>` : "");
   }
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
@@ -1610,9 +1660,10 @@
       const li = document.createElement("li");
       let tag, nameHtml;
       if (isGear(it)) {
-        tag = def.cat === "weapon" ? "dmg " + gDmgMin(it) + "–" + gDmgMax(it) : def.cat === "armor" ? "def " + gDef(it) : def.cat;
+        tag = def.cat === "weapon" ? "dmg " + dDmgMin(it) + "–" + dDmgMax(it) : def.cat === "armor" ? "def " + dDef(it) : def.cat;
+        if (!itemIdentified(it)) tag = "id " + idPct(it) + "%";
         const aff = itemAffixText(it);
-        nameHtml = `<span class="i-name" style="color:${rarityColor(it.rarity)}">${itemName(it)}</span>` +
+        nameHtml = `<span class="i-name" style="color:${itemColor(it)}">${itemName(it)}</span>` +
                    (aff ? `<br><span style="font-size:10px;opacity:.7">${aff}</span>` : "");
       } else {
         if (def.cat === "tool") tag = "burn thorns";
@@ -2010,7 +2061,7 @@
   }, { passive: false });
 
   // ---- Touch: tap-to-walk, two-finger pinch-to-zoom -----------------------
-  let touchMode = null, tapStart = null, pinchStartDist = 0, pinchStartZoom = 1, lastTouchEnd = 0;
+  let touchMode = null, tapStart = null, panLast = null, pinchStartDist = 0, pinchStartZoom = 1, lastTouchEnd = 0;
   const dist2 = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   function tileAt(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -2036,25 +2087,38 @@
       e.preventDefault();
       const d = dist2(e.touches[0], e.touches[1]) || 1;
       setZoom(pinchStartZoom * (d / pinchStartDist));
-    } else if (touchMode === "tap" && e.touches.length === 1) {
-      const t = e.touches[0];
-      if (Math.hypot(t.clientX - tapStart.x, t.clientY - tapStart.y) > 16) touchMode = "drag";
+      return;
     }
+    if (e.touches.length !== 1 || (touchMode !== "tap" && touchMode !== "drag")) return;
+    const t = e.touches[0];
+    if (touchMode === "tap" && Math.hypot(t.clientX - tapStart.x, t.clientY - tapStart.y) > 14) {
+      touchMode = "drag"; panLast = { x: t.clientX, y: t.clientY };
+    }
+    if (touchMode === "drag") { e.preventDefault(); panBy(t.clientX - panLast.x, t.clientY - panLast.y); panLast = { x: t.clientX, y: t.clientY }; }
   }, { passive: false });
   canvas.addEventListener("touchend", (e) => {
+    lastTouchEnd = performance.now();     // suppress the synthetic click (tap or drag)
     if (touchMode === "tap" && tapStart) {
       e.preventDefault();
-      lastTouchEnd = performance.now();
       const [tx, ty] = tileAt(tapStart.x, tapStart.y);
       walkTo(tx, ty);
     }
-    if (e.touches.length === 0) { touchMode = null; tapStart = null; }
+    if (e.touches.length === 0) { touchMode = null; tapStart = null; panLast = null; }
   }, { passive: false });
   canvas.addEventListener("click", (e) => {
-    if (performance.now() - lastTouchEnd < 500) return;
+    if (performance.now() - lastTouchEnd < 500 || mouseDragged) return;
     const [tx, ty] = tileAt(e.clientX, e.clientY);
     walkTo(tx, ty);
   });
+  // Mouse drag = pan the free-look camera (desktop parity with swipe).
+  let mouseDown = null, mouseDragged = false;
+  canvas.addEventListener("mousedown", (e) => { mouseDown = { x: e.clientX, y: e.clientY }; mouseDragged = false; });
+  window.addEventListener("mousemove", (e) => {
+    if (!mouseDown) return;
+    if (!mouseDragged && Math.hypot(e.clientX - mouseDown.x, e.clientY - mouseDown.y) > 4) mouseDragged = true;
+    if (mouseDragged) { panBy(e.clientX - mouseDown.x, e.clientY - mouseDown.y); mouseDown = { x: e.clientX, y: e.clientY }; }
+  });
+  window.addEventListener("mouseup", () => { mouseDown = null; });
 
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
@@ -2084,6 +2148,7 @@
         weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: armorDef(),
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex,
+        camX, camY, panX, panY,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
@@ -2094,6 +2159,7 @@
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    pan: (dxPx, dyPx) => panBy(dxPx, dyPx),
     spawnAt: (type, x, y, hp, level) => {   // dev: drop a monster with custom HP next to you
       if (!VERMIN[type] || !inBounds(x, y)) return false;
       const m = makeMonster(type, x, y);
