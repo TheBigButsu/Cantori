@@ -30,7 +30,6 @@
       { f: "__key", label: "key", type: "key" },
       { f: "name", type: "text", cls: "name" },
       { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
-      { f: "erratic", type: "num", step: "0.05" },
       { f: "acc", type: "num" }, { f: "eva", type: "num" },
       { f: "range", type: "num" }, { f: "minFloor", type: "num" },
       { f: "charge", type: "bool" }, { f: "ranged", type: "bool" },
@@ -60,7 +59,7 @@
   };
   // Blank templates when adding a row.
   const TEMPLATES = {
-    monsters: { name: "New Monster", hp: 5, atkMin: 1, atkMax: 2, erratic: 0, glyph: "?", color: "#c0c0c0" },
+    monsters: { name: "New Monster", hp: 5, atkMin: 1, atkMax: 2, glyph: "?", color: "#c0c0c0" },
     gear: { cat: "weapon", name: "New Gear", atk: 1, tier: 1, weight: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
     consumables: { cat: "potion", name: "New Item", effect: "heal", weight: 1, glyph: "!", color: "#cccccc" },
     bosses: { name: "New Boss", hp: 40, atkMin: 4, atkMax: 6 },

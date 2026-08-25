@@ -422,7 +422,7 @@
     const b = DATA.bosses[key];
     return {
       x, y, type: key, boss: true, name: b.name, glyph: "@", color: "#f0a838", level: depth,
-      hp: b.hp, maxHp: b.hp, atkMin: b.atkMin, atkMax: b.atkMax, erratic: 0.0,
+      hp: b.hp, maxHp: b.hp, atkMin: b.atkMin, atkMax: b.atkMax,
     };
   }
   function monName(m) {
@@ -852,17 +852,6 @@
     }
     if (best) { m.x = best[0]; m.y = best[1]; }
   }
-  function stepMonsterRandom(m) {
-    const opts = [];
-    for (const [dx, dy] of DIRS8) {
-      const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;
-      if (nx === player.x && ny === player.y) continue;
-      if (monsterAt(nx, ny)) continue;
-      opts.push([nx, ny]);
-    }
-    if (opts.length) { const c = opts[randInt(0, opts.length - 1)]; m.x = c[0]; m.y = c[1]; }
-  }
   function patrolStep(m) {
     if (!m.patrol || (m.x === m.patrol.x && m.y === m.patrol.y)) m.patrol = randomFloor();
     if (!m.patrol) return;
@@ -932,7 +921,7 @@
       if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) {
         doCharge(m); if (dead) return; continue;
       }
-      if (canSee(m)) { if (Math.random() >= m.erratic) stepMonsterToward(m); else stepMonsterRandom(m); }
+      if (canSee(m)) stepMonsterToward(m);       // seen you → close in directly
       else patrolStep(m);
     }
     if (turns % REGEN_EVERY === 0 && player.hp < player.maxHp) {
