@@ -469,7 +469,7 @@
     // 5×5 skill tree (Diablo-style: cells are a skill or a blank space)
     const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 slots"; wrap.appendChild(th);
     const tnote = document.createElement("p"); tnote.className = "hint";
-    tnote.textContent = "Leave slots blank to shape the tree. Each skill has an in-game description, up to 4 levels (write what each level does — the dots show how high it goes), and prerequisites (other skills that must be taken first). Arrows between them come later.";
+    tnote.textContent = "Leave slots blank to shape the tree. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first), and a wiring row: key (engine id), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Axe Master are fully wired examples.";
     wrap.appendChild(tnote);
     const allSkills = [];   // gather named skills for the prereq picker
     for (let t = 0; t < TIERS; t++) for (let s = 0; s < SLOTS; s++) { const c = o.skillTree[t][s]; if (c && c.name) allSkills.push({ t, s, name: c.name }); }
@@ -508,6 +508,19 @@
     const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "in-game description"; dsc.value = cell.desc || "";
     dsc.oninput = () => { cell.desc = dsc.value; };
     box.appendChild(dsc);
+    // engine wiring: key + icon + behavior + condition. The per-level mechanics
+    // (the `ranks` array) live in the </> code view — this row makes the skill real.
+    const wire = document.createElement("div"); wire.className = "swire";
+    const mkIn = (ph, f) => { const i = document.createElement("input"); i.type = "text"; i.placeholder = ph; i.value = cell[f] || ""; i.oninput = () => { if (!i.value) delete cell[f]; else cell[f] = i.value.trim(); }; return i; };
+    wire.appendChild(mkIn("key", "key"));
+    wire.appendChild(mkIn("icon", "icon"));
+    const kind = document.createElement("select");
+    for (const k of ["passive", "rush", "spin"]) { const op = document.createElement("option"); op.value = k; op.textContent = k; kind.appendChild(op); }
+    kind.value = cell.kind || "passive";
+    kind.onchange = () => { cell.kind = kind.value; };
+    wire.appendChild(kind);
+    wire.appendChild(mkIn("when (e.g. axe)", "when"));
+    box.appendChild(wire);
     // 4 level rows + dots
     const dots = document.createElement("div"); dots.className = "sdots";
     const refreshDots = () => {
