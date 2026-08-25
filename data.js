@@ -58,6 +58,8 @@ window.CANTORI_DATA = {
      GEAR — weapons & armor
        cat:    "weapon" or "armor"
        atk:    weapon damage bonus     |   def: armor damage reduction
+       tier:   quality tier (1–3). Drives the loot system: a rolled affix's
+               magnitude equals the item's tier (tier 1 = +1 stat, tier 3 = +3).
        weight: how often it drops (relative)
        req:    stat needed to equip — Diablo-style gating. [DESIGN — not yet
                enforced; here so it's easy to plan the numbers.]
@@ -65,12 +67,41 @@ window.CANTORI_DATA = {
   gear: {
     // req.STR gates damage scaling: STR damage bonus = floor((STR - req.STR)/4).
     // Heavier weapons need more STR before they scale.
-    dagger:  { cat: "weapon", name: "Dagger", atk: 1, weight: 5, req: { STR: 0 }, glyph: "/", color: "#cfc3a0" },
-    sword:   { cat: "weapon", name: "Sword",  atk: 3, weight: 2, req: { STR: 4 }, glyph: "/", color: "#d8e0ec" },
-    mace:    { cat: "weapon", name: "Mace",   atk: 5, weight: 1, req: { STR: 8 }, glyph: "/", color: "#c8a878" },
-    leather: { cat: "armor",  name: "Leather Armor", def: 1, weight: 4, req: { STR: 0 }, glyph: "[", color: "#b98a5a" },
-    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, weight: 2, req: { STR: 4 }, glyph: "[", color: "#b9c0c8" },
-    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, weight: 1, req: { STR: 8 }, glyph: "[", color: "#dfe6f0" },
+    dagger:  { cat: "weapon", name: "Dagger", atk: 1, tier: 1, weight: 5, req: { STR: 0 }, glyph: "/", color: "#cfc3a0" },
+    sword:   { cat: "weapon", name: "Sword",  atk: 3, tier: 2, weight: 2, req: { STR: 4 }, glyph: "/", color: "#d8e0ec" },
+    mace:    { cat: "weapon", name: "Mace",   atk: 5, tier: 3, weight: 1, req: { STR: 8 }, glyph: "/", color: "#c8a878" },
+    leather: { cat: "armor",  name: "Leather Armor", def: 1, tier: 1, weight: 4, req: { STR: 0 }, glyph: "[", color: "#b98a5a" },
+    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, tier: 2, weight: 2, req: { STR: 4 }, glyph: "[", color: "#b9c0c8" },
+    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, tier: 3, weight: 1, req: { STR: 8 }, glyph: "[", color: "#dfe6f0" },
+  },
+
+  /* ==========================================================================
+     LOOT SYSTEM — rarity, affixes, enchants (consumed by game.js)
+       rarities:  chance table + the display color for each tier. Gold is not in
+                  the random table — golds are hand-authored uniques.
+       stat pool: which stats a random affix can roll (magnitude = item tier).
+       enchants:  on-hit procs. Weapons fire them on your strike; enchanted armor
+                  fires them back at whoever hits you (its "power" is armor def).
+         fire:     a burst = ceil(power/2), then a burn for ceil(burst/2) per turn
+                   over 3 turns.
+         electric: a burst = power, with a stun chance = (burst * 10%) / target level.
+       plus:      +X applies on top of any rarity; it raises base atk/def AND every
+                  rolled affix by X. Max +X on a floor = ceil(floor / 5).
+     ========================================================================== */
+  loot: {
+    rarities: [
+      { key: "white",  name: "",        chance: 0.50, color: "#e6e0d2" },
+      { key: "green",  name: "",        chance: 0.30, color: "#7ec98a" },
+      { key: "blue",   name: "",        chance: 0.15, color: "#5a9fe0" },
+      { key: "purple", name: "",        chance: 0.05, color: "#b491d6" },
+      { key: "gold",   name: "",        chance: 0.00, color: "#f0c14b" },
+    ],
+    statPool: ["STR", "INT", "VIT", "DEX", "RES", "LCK"],
+    purpleSecondStatChance: 0.75,       // purple's extra roll: 75% stat, else enchant
+    enchants: {
+      fire:     { name: "Flaming",   icon: "🔥", color: "#ff8f4a" },
+      electric: { name: "Charged",   icon: "⚡", color: "#9ad0ff" },
+    },
   },
 
   /* ==========================================================================

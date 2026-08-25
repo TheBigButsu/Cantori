@@ -52,12 +52,12 @@
   const HP_BASE = 6, HP_PER_VIT = 2;
   const ACC_BASE = 10, EVA_BASE = 1;      // DEX → accuracy & evasion
   const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
-  const weaponStrReq = () => (player.weapon && GEAR[player.weapon].req ? (GEAR[player.weapon].req.STR || 0) : 0);
-  const strBonus = () => Math.max(0, Math.floor((player.stats.STR - weaponStrReq()) / 4)); // STR vs weapon req → damage
-  const computeMaxHp = () => HP_BASE + player.stats.VIT * HP_PER_VIT;  // VIT → health
-  const playerAcc = () => ACC_BASE + player.stats.DEX;                 // DEX → accuracy
-  const playerEva = () => EVA_BASE + player.stats.DEX;                 // DEX → evasion
-  const vitResist = () => Math.floor(player.stats.VIT / 5);            // VIT → damage resist
+  const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
+  const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
+  const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT;        // VIT → health
+  const playerAcc = () => ACC_BASE + eff("DEX");                       // DEX → accuracy
+  const playerEva = () => EVA_BASE + eff("DEX");                       // DEX → evasion
+  const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
   const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
 
@@ -76,15 +76,15 @@
     player.weapon = null; player.armor = null; player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     identified.clear();
-    player.maxHp = computeMaxHp();
-    player.hp = player.maxHp;
     player.skills = {};
     const cs = c.skills || {};
     for (const k of Object.keys(cs)) player.skills[k] = { rank: 0, cd: 0 };
-    if (c.start) {                             // starting kit, already equipped
-      if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = c.start.weapon;
-      if (c.start.armor && GEAR[c.start.armor]) player.armor = c.start.armor;
+    if (c.start) {                             // starting kit (plain white), already equipped
+      if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = mkBase(c.start.weapon);
+      if (c.start.armor && GEAR[c.start.armor]) player.armor = mkBase(c.start.armor);
     }
+    player.maxHp = computeMaxHp();             // after gear, so VIT affixes count
+    player.hp = player.maxHp;
   }
   function resetPlayer() { applyClass(player.cls || "warrior"); }
   let monsters = [];
@@ -125,6 +125,77 @@
     let roll = Math.random() * total;
     for (const k of GEAR_KEYS) { roll -= GEAR[k].weight; if (roll <= 0) return k; }
     return GEAR_KEYS[0];
+  }
+
+  // ---- Loot system: rarity + affixes ---------------------------------------
+  const LOOT = DATA.loot;
+  const RARITY = {};                       // key -> {name,chance,color}
+  for (const r of LOOT.rarities) RARITY[r.key] = r;
+  const isGear = (it) => it && GEAR[it.key];              // a rolled gear instance (vs consumable/gold)
+  const rarityColor = (k) => (RARITY[k] ? RARITY[k].color : "#e6e0d2");
+
+  function rollRarity() {
+    let r = Math.random();
+    for (const rar of LOOT.rarities) { if (rar.chance <= 0) continue; if (r < rar.chance) return rar.key; r -= rar.chance; }
+    return "white";
+  }
+  function maxPlusForFloor(floor) { return Math.ceil((floor || 1) / 5); }   // baseline: floor/5, round up
+
+  // Roll a full gear instance for a base key found on a given floor.
+  function rollItem(key, floor) {
+    const base = GEAR[key];
+    const tier = base.tier || 1;
+    const rarity = rollRarity();
+    const plus = randInt(0, maxPlusForFloor(floor));
+    const stats = [], enchants = [];
+    const ekeys = Object.keys(LOOT.enchants);
+    const addStat = () => stats.push({ stat: LOOT.statPool[randInt(0, LOOT.statPool.length - 1)], val: tier });
+    const addEnchant = () => enchants.push(ekeys[randInt(0, ekeys.length - 1)]);
+    if (rarity === "green") { addStat(); }
+    else if (rarity === "blue") { addStat(); addEnchant(); }
+    else if (rarity === "purple") {
+      addStat(); addEnchant();
+      if (Math.random() < LOOT.purpleSecondStatChance) addStat(); else addEnchant();
+    }
+    // white gets nothing but its (possible) plus; gold is authored, not rolled here
+    return { key, rarity, plus, stats, enchants };
+  }
+  const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [] });
+  // Wrap a loot key as the right payload: a rolled gear instance, or a plain
+  // consumable/tool reference.
+  function makeLootItem(key, floor) { return GEAR[key] ? rollItem(key, floor) : { key }; }
+
+  // Effective numbers for an instance (base + plus).
+  const gAtk = (inst) => (GEAR[inst.key].atk || 0) + (inst.plus || 0);
+  const gDef = (inst) => (GEAR[inst.key].def || 0) + (inst.plus || 0);
+  const gStatBonus = (inst, statKey) => {
+    let n = 0;
+    for (const s of inst.stats || []) if (s.stat === statKey) n += s.val + (inst.plus || 0);
+    return n;
+  };
+  // Sum a stat bonus across equipped weapon + armor.
+  function equipStat(statKey) {
+    let n = 0;
+    if (player.weapon) n += gStatBonus(player.weapon, statKey);
+    if (player.armor) n += gStatBonus(player.armor, statKey);
+    return n;
+  }
+  const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
+  const weaponAtk = () => (player.weapon ? gAtk(player.weapon) : 0);
+  const armorDef = () => (player.armor ? gDef(player.armor) : 0);
+
+  // Display: colored name, +X prefix, and an affix summary line.
+  function itemName(inst) {
+    if (!isGear(inst)) return displayName(inst.key);
+    const p = inst.plus > 0 ? "+" + inst.plus + " " : "";
+    return p + GEAR[inst.key].name;
+  }
+  function itemAffixText(inst) {
+    if (!isGear(inst)) return "";
+    const parts = [];
+    for (const s of inst.stats || []) parts.push("+" + (s.val + (inst.plus || 0)) + " " + s.stat);
+    for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
+    return parts.join(", ");
   }
 
   // ---- Loot: potions & scrolls, identified by use (defined in data.js) ----
@@ -231,7 +302,7 @@
       const r = rooms[pick];
       for (const [x, y] of roomDoors(r)) map[y][x] = THORN;   // wall it in with brambles
       const spot = freeFloorInRoom(r);
-      if (spot) items.push({ x: spot.x, y: spot.y, key: vaultLootKey() });
+      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, makeLootItem(vaultLootKey(), depth)));
       restricted.add(pick);
     }
     return restricted;
@@ -366,7 +437,7 @@
       if (r < 0.34) {
         items.push({ x: spot.x, y: spot.y, key: "gold", amount: randInt(2, 12) + depth * 2 });
       } else if (r < 0.67) {
-        items.push({ x: spot.x, y: spot.y, key: weightedGearKey() });
+        items.push(Object.assign({ x: spot.x, y: spot.y }, rollItem(weightedGearKey(), depth)));
       } else {
         items.push({ x: spot.x, y: spot.y, key: weightedConsumKey() });
       }
@@ -497,6 +568,44 @@
   }
 
   // ---- Combat --------------------------------------------------------------
+  // Remove a slain monster and award XP (with over-level scaling and boss handling).
+  function killMonster(target, verb) {
+    if (target.hp > 0 || !monsters.includes(target)) return;
+    monsters = monsters.filter((m) => m !== target);
+    log("The " + monName(target) + " " + (verb || "dies") + ".", "hit");
+    let xp = target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp;
+    if (!target.boss) {
+      const diff = player.level - (target.level || 1);
+      if (diff >= 4) xp = 0;
+      else if (diff >= 2) xp = Math.round(xp * 0.5);
+    }
+    gainXP(xp);
+    if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
+  }
+
+  // Fire an item's enchants at a target. `power` is the source's primary number
+  // (weapon atk on your strike, armor def when you retaliate). Returns nothing;
+  // handles the target's death from burst damage.
+  function procEnchants(enchants, target, power) {
+    if (!enchants || !enchants.length || target.hp <= 0) return;
+    for (const e of enchants) {
+      if (target.hp <= 0) break;
+      if (e === "fire") {
+        const burst = Math.ceil(power / 2);
+        target.hp -= burst; flash(target);
+        floatText(target.x, target.y, "🔥-" + burst, "#ff8f4a");
+        target.burn = { dmg: Math.max(1, Math.ceil(burst / 2)), rounds: 3 };   // DOT: 50% of burst, 3 turns
+      } else if (e === "electric") {
+        const burst = power;
+        target.hp -= burst; flash(target);
+        floatText(target.x, target.y, "⚡-" + burst, "#9ad0ff");
+        const chance = (burst * 0.10) / Math.max(1, target.level || 1);
+        if (Math.random() < chance) { target.stun = (target.stun || 0) + 1; floatText(target.x, target.y, "stun!", "#cfe6ff"); }
+      }
+    }
+    if (target.hp <= 0) killMonster(target, "is destroyed");
+  }
+
   function attack(attacker, target, bonus) {
     bonus = bonus || 0;
     if (attacker === player) {
@@ -508,7 +617,7 @@
         log("The " + monName(target) + " evades your blow.");
         return;
       }
-      const watk = player.weapon ? GEAR[player.weapon].atk : 0;
+      const watk = weaponAtk();
       let dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus + bonus;
       if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
       target.hp -= dmg;
@@ -516,18 +625,11 @@
       floatText(target.x, target.y, (surprise ? "!" : "") + "-" + dmg, surprise ? "#ffd98a" : "#ffe08a");
       const pre = surprise ? "Surprise! You strike the " : "You strike the ";
       if (target.hp <= 0) {
-        monsters = monsters.filter((m) => m !== target);
-        log(pre + monName(target) + " — it dies. (-" + dmg + ")", "hit");
-        let xp = target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp;
-        if (!target.boss) {                            // over-leveled kills are worth less
-          const diff = player.level - (target.level || 1);
-          if (diff >= 4) xp = 0;
-          else if (diff >= 2) xp = Math.round(xp * 0.5);
-        }
-        gainXP(xp);
-        if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
+        killMonster(target, "dies");
       } else {
         log(pre + monName(target) + ". (-" + dmg + ")", "hit");
+        // weapon enchants proc on a connecting hit (power = weapon damage)
+        if (player.weapon) procEnchants(player.weapon.enchants, target, weaponAtk());
       }
     } else {
       bump(attacker, player.x, player.y);
@@ -538,15 +640,16 @@
         return;
       }
       let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
-      const adef = player.armor ? GEAR[player.armor].def : 0;
-      dmg = Math.max(1, dmg - adef - vitResist());
+      dmg = Math.max(1, dmg - armorDef() - vitResist());
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
       updateHUD();
       const verb = bonus > 0 ? " charges you!" : attacker.ranged ? " strikes from afar." : " hits you.";
       log("The " + monName(attacker) + verb + " (-" + dmg + ")", "hurt");
-      if (player.hp <= 0) die();
+      if (player.hp <= 0) { die(); return; }
+      // enchanted armor lashes back at the attacker (power = armor defense)
+      if (player.armor && attacker.hp > 0) procEnchants(player.armor.enchants, attacker, armorDef());
     }
   }
 
@@ -629,9 +732,10 @@
       return;
     }
     if (player.inv.length >= 12) { log("Your pack is full."); return; }
-    player.inv.push({ key: it.key });
+    // carry the item minus its map position (gear keeps its rolled affixes)
+    player.inv.push(isGear(it) ? { key: it.key, rarity: it.rarity, plus: it.plus, stats: it.stats, enchants: it.enchants } : { key: it.key });
     items = items.filter((x) => x !== it);
-    log("You pick up the " + displayName(it.key) + ".");
+    log("You pick up the " + itemName(it) + ".");
   }
 
   function descend() {
@@ -780,6 +884,12 @@
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
+      if (m.burn && m.burn.rounds > 0) {        // fire DOT ticks at the start of its turn
+        m.hp -= m.burn.dmg; flash(m); floatText(m.x, m.y, "🔥-" + m.burn.dmg, "#ff8f4a");
+        m.burn.rounds--;
+        if (m.hp <= 0) { killMonster(m, "burns away"); continue; }
+      }
+      if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); continue; }  // stunned: skip turn
       if (canSee(m)) m.aware = true;            // once it spots you, no more free ambush
       const d = cheb(m.x, m.y, player.x, player.y);
       if (d === 1) { attack(m, player); if (dead) return; continue; }
@@ -1194,7 +1304,17 @@
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
       const px = SX(it.x), py = SY(it.y);
       if (it.key === "gold") drawCoin(px, py);
-      else drawImg(spriteForItem(it.key), px, py);
+      else {
+        if (isGear(it) && it.rarity && it.rarity !== "white") {   // rarity glow marks worthwhile loot
+          const cx = px + tile / 2, cy = py + tile / 2;
+          const g = ctx.createRadialGradient(cx, cy, tile * 0.08, cx, cy, tile * 0.55);
+          g.addColorStop(0, rarityColor(it.rarity) + "cc");
+          g.addColorStop(1, rarityColor(it.rarity) + "00");
+          ctx.fillStyle = g;
+          ctx.fillRect(px - tile * 0.1, py - tile * 0.1, tile * 1.2, tile * 1.2);
+        }
+        drawImg(spriteForItem(it.key), px, py);
+      }
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
     }
 
@@ -1321,23 +1441,27 @@
     document.getElementById("btnBag").classList.toggle("on", invOpen);
   }
   function playerAtk() {
-    const w = player.weapon ? GEAR[player.weapon].atk : 0;
-    const b = strBonus() + player.atkBonus + w;
+    const b = strBonus() + player.atkBonus + weaponAtk();
     return (player.atkMin + b) + "–" + (player.atkMax + b);
+  }
+  // A colored, affix-annotated label for an equipped/carried gear instance.
+  function equipLabel(inst) {
+    if (!inst) return "—";
+    const aff = itemAffixText(inst);
+    return `<b style="color:${rarityColor(inst.rarity)}">${itemName(inst)}</b>` + (aff ? ` <span style="opacity:.7">(${aff})</span>` : "");
   }
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
-    const df = (player.armor ? GEAR[player.armor].def : 0) + vitResist();
+    const df = armorDef() + vitResist();
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
-    const s = player.stats;
-    const statLine = `STR ${s.STR} · VIT ${s.VIT} · DEX ${s.DEX} · INT ${s.INT} · RES ${s.RES} · LCK ${s.LCK}`;
+    const withGear = (k) => { const g = equipStat(k); return eff(k) + (g ? `<span style="color:#7ec98a">(+${g})</span>` : ""); };
+    const statLine = `STR ${withGear("STR")} · VIT ${withGear("VIT")} · DEX ${withGear("DEX")} · INT ${withGear("INT")} · RES ${withGear("RES")} · LCK ${withGear("LCK")}`;
     const pts = player.statPoints > 0 ? `  ·  <b style="color:#f0c14b">${player.statPoints} pts</b>` : "";
     document.getElementById("invStats").innerHTML =
       `${cname} · Lv ${player.level} · Atk ${playerAtk()} · Def ${df}` +
       `<br><span style="opacity:.85">${statLine}${pts}</span>`;
-    document.getElementById("invEquip").textContent =
-      "Wielding: " + (player.weapon ? GEAR[player.weapon].name : "—") +
-      "   ·   Wearing: " + (player.armor ? GEAR[player.armor].name : "—");
+    document.getElementById("invEquip").innerHTML =
+      "Wielding: " + equipLabel(player.weapon) + "<br>Wearing: " + equipLabel(player.armor);
     const ul = document.getElementById("invList");
     ul.innerHTML = "";
     if (player.inv.length === 0) {
@@ -1350,12 +1474,18 @@
     player.inv.forEach((it, idx) => {
       const def = defOf(it.key);
       const li = document.createElement("li");
-      let tag;
-      if (def.cat === "weapon") tag = "+" + def.atk + " atk";
-      else if (def.cat === "armor") tag = "+" + def.def + " def";
-      else if (def.cat === "tool") tag = "burn thorns";
-      else tag = identified.has(it.key) ? "use" : "use · ?";
-      li.innerHTML = '<span class="i-name">' + displayName(it.key) + "</span><span class=\"i-tag\">" + tag + "</span>";
+      let tag, nameHtml;
+      if (isGear(it)) {
+        tag = def.cat === "weapon" ? "atk " + gAtk(it) : "def " + gDef(it);
+        const aff = itemAffixText(it);
+        nameHtml = `<span class="i-name" style="color:${rarityColor(it.rarity)}">${itemName(it)}</span>` +
+                   (aff ? `<br><span style="font-size:10px;opacity:.7">${aff}</span>` : "");
+      } else {
+        if (def.cat === "tool") tag = "burn thorns";
+        else tag = identified.has(it.key) ? "use" : "use · ?";
+        nameHtml = '<span class="i-name">' + displayName(it.key) + "</span>";
+      }
+      li.innerHTML = nameHtml + "<span class=\"i-tag\">" + tag + "</span>";
       li.addEventListener("click", () => actItem(idx));
       ul.appendChild(li);
     });
@@ -1373,14 +1503,16 @@
     const def = GEAR[it.key];
     player.inv.splice(idx, 1);
     if (def.cat === "weapon") {
-      if (player.weapon) player.inv.push({ key: player.weapon });
-      player.weapon = it.key;
-      log("You wield the " + def.name + ".");
+      if (player.weapon) player.inv.push(player.weapon);
+      player.weapon = it;
+      log("You wield the " + itemName(it) + ".");
     } else {
-      if (player.armor) player.inv.push({ key: player.armor });
-      player.armor = it.key;
-      log("You don the " + def.name + ".");
+      if (player.armor) player.inv.push(player.armor);
+      player.armor = it;
+      log("You don the " + itemName(it) + ".");
     }
+    player.maxHp = computeMaxHp();               // VIT affixes can change max HP
+    player.hp = Math.min(player.hp, player.maxHp);
     updateHUD();
     worldTurn();               // equipping takes a turn
     if (dead) { toggleInv(false); return; }
@@ -1549,7 +1681,11 @@
       return;
     }
     const it = items.find((i) => i.x === x && i.y === y);
-    if (it && visible[y][x]) { log(it.key === "gold" ? (it.amount + " gold") : displayName(it.key)); return; }
+    if (it && visible[y][x]) {
+      if (it.key === "gold") { log(it.amount + " gold"); return; }
+      const aff = isGear(it) ? itemAffixText(it) : "";
+      log(itemName(it) + (aff ? " — " + aff : "")); return;
+    }
     const torch = torches.find((tr) => tr.x === x && tr.y === y);
     if (torch) { log("A wall torch — tap it to take it; fire clears thorns."); return; }
     const t = map[y][x];
@@ -1578,12 +1714,14 @@
     }
   }
   function charStatsHTML() {
-    const s = player.stats;
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
-    const df = (player.armor ? GEAR[player.armor].def : 0) + vitResist();
-    const eff = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: "—" };
-    const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) =>
-      `<div class="cstat"><span>${k}<small>${eff[k]}</small></span><b>${s[k]}</b></div>`).join("");
+    const df = armorDef() + vitResist();
+    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: "—" };
+    const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
+      const g = equipStat(k);
+      const val = player.stats[k] + (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
+      return `<div class="cstat"><span>${k}<small>${effDesc[k]}</small></span><b>${val}</b></div>`;
+    }).join("");
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b></div>` +
@@ -1791,7 +1929,10 @@
   window.cantori = {
     descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart,
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
-    give: (k) => { if (defOf(k)) player.inv.push({ key: k }); },
+    give: (k) => { if (GEAR[k]) player.inv.push(rollItem(k, depth)); else if (defOf(k)) player.inv.push({ key: k }); },
+    // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
+    giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
+    rollItem: (k, f) => rollItem(k, f != null ? f : depth),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
@@ -1806,18 +1947,28 @@
         depth, hp: player.hp, maxHp: player.maxHp, level: player.level, xp: player.xp,
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
-        inv: player.inv.map((i) => i.key), identified: [...identified],
+        effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
+        weaponAtk: weaponAtk(), armorDef: armorDef(),
+        inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware })),
-        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, burn: m.burn ? Object.assign({}, m.burn) : null, stun: m.stun || 0 })),
+        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    spawnAt: (type, x, y, hp, level) => {   // dev: drop a monster with custom HP next to you
+      if (!VERMIN[type] || !inBounds(x, y)) return false;
+      const m = makeMonster(type, x, y);
+      if (hp != null) { m.hp = hp; m.maxHp = Math.max(hp, m.maxHp); }
+      if (level != null) m.level = level;
+      m.aware = true;                        // no surprise multiplier, clean numbers
+      monsters.push(m); return true;
+    },
     useIdx: (i) => actItem(i),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },

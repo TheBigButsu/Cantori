@@ -53,6 +53,33 @@ weapon needs DEX), rather than Shattered Pixel Dungeon's strength-plus-upgrade
 model. This makes stat investment gate *access* to gear, reinforcing class
 fantasy. (Requirements are drafted in `data.js` → `gear` → `req`.)
 
+## Loot system — rarity + affixes + plus — DONE
+
+Dropped gear rolls on multiple axes (config in `data.js` → `loot`; each gear piece
+has a **tier** 1–3 that sets affix magnitude):
+
+- **Rarity (color).** Rolled at drop: **White 50% · Green 30% · Blue 15% · Purple
+  5%**. **Gold** (uniques) isn't in the random table — golds are hand-authored.
+  - **White** — base item.
+  - **Green** — + one random stat, magnitude = item tier (tier 1 → +1 … tier 3 → +3).
+  - **Blue** — green + one **enchant**.
+  - **Purple** — blue + one extra roll: **75% a second stat** (may duplicate) or
+    **25% a second enchant**.
+- **+X (plus).** Rolled on top of any rarity. It raises the item's **base atk/def
+  AND every rolled affix** by X. Max +X on a floor = **⌈floor / 5⌉**.
+- **Enchants** (on-hit procs). On a **weapon** they fire when you strike; on
+  **armor** they fire back at whoever hits you (its "power" = armor defense).
+  - **Fire** — burst = ⌈power/2⌉, then a burn for ⌈burst/2⌉ per turn over 3 turns.
+  - **Electric** — burst = power, with a **stun chance = (burst × 10%) / target level**
+    (a stun makes the target skip its next turn).
+
+Equipped gear feeds the **effective stats** (`base + gear`), so a +VIT piece raises
+max HP, +DEX raises accuracy/evasion, etc. The pack and character screen show the
+gear bonus in green; rare drops glow in their rarity color on the floor.
+
+_Open follow-ups: gold/unique authored items; biasing stat rolls toward a weapon's
+identity (STR/DEX) instead of uniform; scaling enchant/plus numbers as content grows._
+
 ## Boons — Hades-style, per biome
 
 At the **start of each biome** the player picks **1 of 3 boons**, drawn from the
