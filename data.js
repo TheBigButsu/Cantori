@@ -4,50 +4,65 @@ window.CANTORI_DATA = {
   "monsters": {
     "rat": {
       "name": "Rat",
-      "hp": 3,
+      "hp": 6,
       "atkMin": 1,
-      "atkMax": 2,
+      "atkMax": 3,
       "minFloor": 1,
       "glyph": "r",
-      "color": "#c9b48f"
+      "color": "#c9b48f",
+      "speed": 1,
+      "acc": 0,
+      "eva": 0
     },
     "bat": {
       "name": "Bat",
-      "hp": 2,
-      "atkMin": 1,
-      "atkMax": 2,
+      "atkMin": 2,
+      "atkMax": 3,
       "minFloor": 1,
       "glyph": "b",
-      "color": "#b491d6"
+      "color": "#b491d6",
+      "hp": 5,
+      "speed": 1.5,
+      "acc": 10,
+      "eva": 10
     },
     "snake": {
       "name": "Snake",
-      "hp": 4,
+      "hp": 8,
       "atkMin": 2,
-      "atkMax": 3,
-      "minFloor": 1,
+      "atkMax": 4,
       "glyph": "s",
-      "color": "#7ec98a"
+      "color": "#7ec98a",
+      "minFloor": 2,
+      "speed": 1,
+      "acc": 5,
+      "eva": 20
     },
     "spider": {
       "name": "Spider",
-      "hp": 3,
+      "hp": 10,
       "atkMin": 1,
-      "atkMax": 3,
+      "atkMax": 4,
       "minFloor": 1,
       "glyph": "x",
-      "color": "#d68f8f"
+      "color": "#d68f8f",
+      "speed": 2,
+      "acc": 10,
+      "eva": 10,
+      "range": 4,
+      "ranged": true
     },
     "wolf": {
       "name": "Wolf",
-      "hp": 7,
-      "atkMin": 2,
-      "atkMax": 4,
+      "atkMin": 3,
       "acc": 11,
       "eva": 3,
-      "minFloor": 1,
       "glyph": "W",
-      "color": "#9aa0a8"
+      "color": "#9aa0a8",
+      "minFloor": 3,
+      "hp": 15,
+      "atkMax": 8,
+      "speed": 1
     },
     "bee": {
       "name": "Bee",
@@ -56,9 +71,11 @@ window.CANTORI_DATA = {
       "atkMax": 3,
       "acc": 10,
       "eva": 16,
-      "minFloor": 1,
       "glyph": "e",
-      "color": "#e6c34a"
+      "color": "#e6c34a",
+      "minFloor": 3,
+      "ranged": true,
+      "range": 2
     },
     "bear": {
       "name": "Bear",
@@ -81,9 +98,9 @@ window.CANTORI_DATA = {
       "eva": 8,
       "ranged": true,
       "range": 4,
-      "minFloor": 4,
       "glyph": "H",
-      "color": "#6b6f7a"
+      "color": "#6b6f7a",
+      "minFloor": 3
     },
     "jackal": {
       "name": "Jackal",
@@ -259,6 +276,20 @@ window.CANTORI_DATA = {
       "tier": 2,
       "glyph": "\"",
       "color": "#7ec9a0"
+    },
+    "Axe": {
+      "cat": "weapon",
+      "name": "Axe",
+      "dmgMax": 12,
+      "speed": 1,
+      "tier": 1,
+      "req": {
+        "STR": 10
+      },
+      "glyph": "/",
+      "color": "#cccccc",
+      "dmgMin": 4,
+      "accuracy": -10
     }
   },
   "loot": {
@@ -358,14 +389,46 @@ window.CANTORI_DATA = {
         "icon": "🔥",
         "color": "#ff8f4a",
         "proc": 0.35,
-        "slots": ["weapon", "armor", "ring", "trinket", "necklace"]
+        "slots": [
+          "weapon",
+          "armor",
+          "ring",
+          "trinket",
+          "necklace"
+        ]
       },
       "electric": {
         "name": "Charged",
         "icon": "⚡",
         "color": "#9ad0ff",
         "proc": 0.3,
-        "slots": ["weapon", "armor", "ring", "trinket", "necklace"]
+        "slots": [
+          "weapon",
+          "armor",
+          "ring",
+          "trinket",
+          "necklace"
+        ]
+      },
+      "Speed": {
+        "name": "Speed",
+        "icon": "✦",
+        "color": "#cccccc",
+        "proc": 1,
+        "slots": [
+          "ring",
+          "armor"
+        ]
+      },
+      "Thorns": {
+        "icon": "✦",
+        "color": "#cccccc",
+        "proc": 0.5,
+        "slots": [
+          "armor",
+          "necklace"
+        ],
+        "name": "Thorns"
       }
     }
   },
@@ -663,7 +726,17 @@ window.CANTORI_DATA = {
             ],
             "req": []
           },
-          null,
+          {
+            "name": "Axe Master",
+            "desc": "Dodge back",
+            "levels": [
+              "+1 damage for axes",
+              "+2 damage for axes",
+              "+4 damage for axes",
+              "+6 damage and +15 accuracy for axes"
+            ],
+            "req": []
+          },
           null,
           null
         ],
