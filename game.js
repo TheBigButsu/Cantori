@@ -55,8 +55,8 @@
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
   const computeMaxHp = () => HP_BASE + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0);
-  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0);  // DEX + weapon + level
-  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + armorSubEva();       // DEX + level + armor weight
+  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills
+  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + armorSubEva() + passiveMod("eva");     // DEX + level + armor weight + skills
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
   const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
@@ -86,9 +86,10 @@
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0;   // reset per-level bonuses
     player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
+    _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
     player.skills = {};
-    const cs = c.skills || {};
-    for (const k of Object.keys(cs)) player.skills[k] = { rank: 0, cd: 0 };
+    const sk = treeSkills(key).skills;
+    for (const k of Object.keys(sk)) player.skills[k] = { rank: 0, cd: 0 };
     if (c.start) {                             // starting kit (plain white), already equipped
       if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = mkBase(c.start.weapon);
       if (c.start.armor && GEAR[c.start.armor]) player.armor = mkBase(c.start.armor);
@@ -183,7 +184,7 @@
     return n;
   }
   const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
-  const armorDef = () => (player.armor ? gDef(player.armor) : 0);
+  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorSubMit();
   // Weapon combat numbers (unarmed falls back to the base 2–3 fists).
   const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin);
   const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax);
@@ -193,10 +194,12 @@
   // can strike a monster that far away with line of sight.
   const weaponRange = () => (player.weapon ? (GEAR[player.weapon.key].range || 1) : 1);
   const weaponSub = () => (player.weapon ? (GEAR[player.weapon.key].sub || "") : "");
-  // Armor subtype tweaks evasion: lighter armor is easier to dodge in, heavier
-  // trades that away for the raw defense its tier already grants. Tunable here.
-  const ARMOR_SUB_EVA = { light: 2, medium: 0, heavy: -3 };
-  const armorSubEva = () => (player.armor ? (ARMOR_SUB_EVA[GEAR[player.armor.key].sub] || 0) : 0);
+  // Armor subtype: lighter armor dodges better (evasion), heavier mitigates more
+  // damage on top of the item's def. Tunable here.
+  const ARMOR_SUB = { light: { eva: 3, mit: 0 }, medium: { eva: 0, mit: 1 }, heavy: { eva: -3, mit: 3 } };
+  const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
+  const armorSubEva = () => { const a = armorSub(); return a ? (a.eva || 0) : 0; };
+  const armorSubMit = () => { const a = armorSub(); return a ? (a.mit || 0) : 0; };
   // Passive "haste" from worn Speed enchants — makes your attacks cost less time.
   function wornHaste() {
     let h = 0;
@@ -660,7 +663,7 @@
   // (weapon atk on your strike, armor def when you retaliate). Each enchant is
   // driven by its `effect` block in the data (type + params), so new enchants can
   // be authored in the editor without touching this code.
-  function procEnchants(enchants, target, power) {
+  function procEnchants(enchants, target, power, incoming) {
     if (!enchants || !enchants.length || target.hp <= 0) return;
     for (const e of enchants) {
       if (target.hp <= 0) break;
@@ -689,8 +692,9 @@
           if (Math.random() < chance) { target.stun = (target.stun || 0) + 1; floatText(target.x, target.y, "stun!", "#cfe6ff"); }
           break;
         }
-        case "thorns": {                                // reflect a share of the source's power back
-          const dmg = Math.max(1, Math.round(power * (fx.mult != null ? fx.mult : 1)));
+        case "thorns": {                                // reflect a share of the damage you just took
+          const base = incoming != null ? incoming : power;
+          const dmg = Math.max(1, Math.round(base * (fx.mult != null ? fx.mult : 0.5)));
           target.hp -= dmg; flash(target); floatText(target.x, target.y, icon + "-" + dmg, color);
           break;
         }
@@ -711,7 +715,7 @@
         log("The " + monName(target) + " evades your blow.");
         return;
       }
-      let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus;
+      let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
       if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
       target.hp -= dmg;
       flash(target);
@@ -747,7 +751,7 @@
       for (const it of wornItems()) {
         if (GEAR[it.key].cat === "weapon") continue;
         gainIdentify(it, 1);
-        if (attacker.hp > 0 && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it));
+        if (attacker.hp > 0 && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it), dmg);
       }
     }
   }
@@ -1102,9 +1106,9 @@
   function walkTo(tx, ty) {
     if (dead) return;
     if (examineMode) { describeTile(tx, ty); toggleExamine(false); updateHotbar(); return; }
-    if (pendingSkill === "rush") {
+    if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "rush") {
       const dir = [Math.sign(tx - player.x), Math.sign(ty - player.y)];
-      if (dir[0] || dir[1]) executeRush(dir); else { pendingSkill = null; updateHotbar(); }
+      if (dir[0] || dir[1]) executeRush(pendingSkill, dir); else { pendingSkill = null; updateHotbar(); }
       return;
     }
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
@@ -1784,13 +1788,64 @@
   let charTab = "stats";
 
   // ---- Skills --------------------------------------------------------------
-  function classSkills() { return (DATA.classes[player.cls] || {}).skills || {}; }
+  // Usable skills are built from the class's skill tree. A tree cell becomes a
+  // real skill once it carries a `ranks` array (per-level mechanics); cells with
+  // only description text are authoring scaffold and are skipped. `kind` picks the
+  // behavior: "rush" (directional dash), "spin" (area strike), or "passive" (a
+  // continuous modifier). Passives may set `when` = a weapon subtype they require.
+  // Falls back to a class's legacy `skills` map if the tree wires nothing yet.
+  let _skillCache = { cls: null, skills: {}, byPos: {} };
+  function treeSkills(cls) {
+    if (_skillCache.cls === cls) return _skillCache;
+    const c = DATA.classes[cls] || {};
+    const tree = Array.isArray(c.skillTree) ? c.skillTree : [];
+    const skills = {}, byPos = {};
+    const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    tree.forEach((tier, t) => (tier || []).forEach((cell, s) => {
+      if (!cell || !cell.name || !Array.isArray(cell.ranks) || !cell.ranks.length) return;
+      const key = cell.key || slug(cell.name);
+      skills[key] = {
+        name: cell.name, icon: cell.icon || "✦", desc: cell.desc || "",
+        kind: cell.kind || "passive", when: cell.when || null,
+        max: cell.ranks.length, ranks: cell.ranks, levels: cell.levels || [],
+        req: cell.req || [], pos: [t, s],
+      };
+      byPos[t + "," + s] = key;
+    }));
+    if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
+      for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], pos: null }, c.skills[k]);
+    }
+    _skillCache = { cls, skills, byPos };
+    return _skillCache;
+  }
+  function classSkills() { return treeSkills(player.cls).skills; }
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
+  function skillAtPos(t, s) { return treeSkills(player.cls).byPos[t + "," + s]; }
+  function prereqsMet(d) {
+    if (!d.req || !d.req.length) return true;
+    return d.req.every(([t, s]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= 1); });
+  }
+  function prereqNames(d) {
+    return (d.req || []).map(([t, s]) => { const k = skillAtPos(t, s); return (k && classSkills()[k]) ? classSkills()[k].name : null; }).filter(Boolean);
+  }
+  // Sum a passive-skill modifier (dmg/acc/eva/…) across learned passives whose
+  // condition (`when` = required weapon subtype) currently holds.
+  function passiveMod(field) {
+    let v = 0; const sk = classSkills();
+    for (const key in sk) {
+      const d = sk[key]; if (d.kind !== "passive") continue;
+      const st = player.skills[key]; if (!st || st.rank < 1) continue;
+      if (d.when && d.when !== weaponSub()) continue;
+      const r = d.ranks[st.rank - 1] || {}; if (r[field] != null) v += r[field];
+    }
+    return v;
+  }
 
   function learnSkill(key) {
     const d = skillDef(key), st = player.skills[key];
     if (!d || !st || st.rank >= d.max || player.statPoints <= 0) return;
+    if (!prereqsMet(d)) { log("Requires " + (prereqNames(d).join(", ") || "a prerequisite") + " first.", ""); return; }
     player.statPoints--; st.rank++;
     log((st.rank === 1 ? "Learned " : "Upgraded ") + d.name + " (rank " + st.rank + ").", "hit");
     renderChar(); updateHotbar();
@@ -1798,48 +1853,54 @@
   function useSkill(key) {
     if (dead || mapOpen || invOpen || charOpen) return;
     const st = player.skills[key], d = skillDef(key);
-    if (!st || st.rank < 1) return;
+    if (!st || st.rank < 1 || !d) return;
+    if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
     if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
-    if (key === "rush") beginRush();
-    else if (key === "spin") executeSpin();
+    if (d.kind === "rush") beginRush(key);
+    else if (d.kind === "spin") executeSpin(key);
   }
-  function beginRush() {
-    pendingSkill = pendingSkill === "rush" ? null : "rush";
-    log(pendingSkill ? "Rush — choose a direction (tap a nearby tile or press an arrow)." : "Rush cancelled.");
+  function beginRush(key) {
+    pendingSkill = pendingSkill === key ? null : key;
+    const d = skillDef(key);
+    log(pendingSkill ? d.name + " — choose a direction (tap a nearby tile or press an arrow)." : d.name + " cancelled.");
     updateHotbar();
   }
-  function executeRush(dir) {
+  function executeRush(key, dir) {
     pendingSkill = null;
-    const cur = skillCur("rush");
+    const cur = skillCur(key);
     if (!cur) { updateHotbar(); return; }
     let steps = 0;
     while (steps <= 60) {
       const nx = player.x + dir[0], ny = player.y + dir[1];
       const mon = monsterAt(nx, ny);
-      if (mon) { bump(player, nx, ny); attack(player, mon, cur.dmg); break; }
+      if (mon) {
+        bump(player, nx, ny); attack(player, mon, cur.dmg);
+        if (cur.stun && mon.hp > 0 && Math.random() < cur.stun) { mon.stun = (mon.stun || 0) + 1; floatText(mon.x, mon.y, "stun!", "#cfe6ff"); }
+        break;
+      }
       if (isWall(nx, ny)) {
         bump(player, nx, ny);
         const self = randInt(2, 4);
         player.hp -= self; flash(player); floatText(player.x, player.y, "-" + self, "#ff8f84");
         updateHUD(); log("You slam into the wall! (-" + self + ")", "hurt");
-        if (player.hp <= 0) { player.skills.rush.cd = cur.cd; die(); updateHotbar(); return; }
+        if (player.hp <= 0) { player.skills[key].cd = cur.cd; die(); updateHotbar(); return; }
         break;
       }
       player.x = nx; player.y = ny; steps++;
       if (map[ny][nx] === THORN) {                       // dashing through brambles stings too
         const td = randInt(5, 10);
         player.hp -= td; flash(player); floatText(player.x, player.y, "-" + td, "#ff8f84");
-        if (player.hp <= 0) { player.skills.rush.cd = cur.cd; updateHUD(); computeFOV(); die(); updateHotbar(); return; }
+        if (player.hp <= 0) { player.skills[key].cd = cur.cd; updateHUD(); computeFOV(); die(); updateHotbar(); return; }
       }
       computeFOV(); pickUp();
-      if (map[player.y][player.x] === STAIRS) { player.skills.rush.cd = cur.cd; descend(); updateHotbar(); return; }
+      if (map[player.y][player.x] === STAIRS) { player.skills[key].cd = cur.cd; descend(); updateHotbar(); return; }
     }
     computeFOV();
-    player.skills.rush.cd = cur.cd;
+    player.skills[key].cd = cur.cd;
     worldTurn();
   }
-  function executeSpin() {
-    const cur = skillCur("spin");
+  function executeSpin(key) {
+    const cur = skillCur(key);
     if (!cur) return;
     const R = cur.range || 1;
     let hit = 0;
@@ -1850,8 +1911,9 @@
       }
     }
     log(hit ? ("You spin, striking " + hit + (hit === 1 ? " foe." : " foes.")) : "You spin, hitting nothing.", hit ? "hit" : "");
-    player.skills.spin.cd = cur.cd;
-    worldTurn();
+    player.skills[key].cd = cur.cd;
+    if (cur.freeAction) { updateHotbar(); updateHUD(); }   // free action: the turn clock doesn't advance
+    else worldTurn();
   }
 
   // ---- Examine -------------------------------------------------------------
@@ -1928,19 +1990,33 @@
   }
   function charSkillsHTML() {
     const sk = classSkills();
+    const keys = Object.keys(sk);
+    if (!keys.length) return `<div class="cline">This class has no skills yet.</div>`;
+    const fmt = (r) => {
+      const p = [];
+      if (r.dmg != null) p.push((r.dmg >= 0 ? "+" : "") + r.dmg + " dmg");
+      if (r.acc != null) p.push("+" + r.acc + " acc");
+      if (r.eva != null) p.push("+" + r.eva + " eva");
+      if (r.range) p.push("range " + r.range);
+      if (r.stun) p.push(Math.round(r.stun * 100) + "% stun");
+      if (r.freeAction) p.push("free action");
+      if (r.cd != null) p.push(r.cd + "t cd");
+      return p.join(", ") || "—";
+    };
     let html = `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>`;
-    for (const key of Object.keys(sk)) {
+    for (const key of keys) {
       const d = sk[key], st = player.skills[key];
-      const cur = st.rank > 0 ? d.ranks[st.rank - 1] : null;
-      const nextR = st.rank < d.max ? d.ranks[st.rank] : null;
-      const fmt = (r) => `+${r.dmg} dmg${r.range ? ", range " + r.range : ""}, ${r.cd}t cd`;
-      const nextTxt = nextR ? `Next (rank ${st.rank + 1}): ${fmt(nextR)}` : "Maxed.";
-      const canUp = st.rank < d.max && player.statPoints > 0;
-      const label = st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
+      const locked = st.rank === 0 && !prereqsMet(d);
+      const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || fmt(d.ranks[st.rank - 1])) : null;
+      const nextTxt = st.rank < d.max ? (d.levels[st.rank] || fmt(d.ranks[st.rank])) : "Maxed.";
+      const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
+      const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
+      const kindTag = d.kind === "passive" ? " · passive" : "";
+      const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${prereqNames(d).join(", ") || "a prerequisite"}</div>` : "";
       html += `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
-        `<span class="srank">rank ${st.rank}/${d.max}</span></div>` +
-        `<div class="sdesc">${d.desc}</div>` +
-        `<div class="snext">${cur ? "Now: " + fmt(cur) + "<br>" : ""}${nextTxt}</div>` +
+        `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
+        `<div class="sdesc">${d.desc}</div>` + reqTxt +
+        `<div class="snext">${curTxt ? "Now: " + curTxt + "<br>" : ""}${st.rank < d.max ? "Next: " + nextTxt : nextTxt}</div>` +
         `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
     }
     return html;
@@ -1971,7 +2047,7 @@
     bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn()));
     for (const key of Object.keys(player.skills || {})) {
       const st = player.skills[key], d = skillDef(key);
-      if (!st || st.rank < 1 || !d) continue;
+      if (!st || st.rank < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
       bar.appendChild(makeSlot(d.icon, d.name, st.cd <= 0, st.cd > 0 ? st.cd : 0, pendingSkill === key, () => useSkill(key)));
     }
   }
@@ -2027,14 +2103,17 @@
     if (key === "x") { e.preventDefault(); toggleExamine(); return; }
     if (e.key === "Escape" && (examineMode || pendingSkill)) { examineMode = false; pendingSkill = null; toggleExamine(false); updateHotbar(); return; }
     if (key === "z" || e.key === "." || e.code === "Numpad5") { e.preventDefault(); waitTurn(); return; }
-    if (key === "1") { e.preventDefault(); useSkill("rush"); return; }
-    if (key === "2") { e.preventDefault(); useSkill("spin"); return; }
+    if (key >= "1" && key <= "9") {                        // number keys → learned active skills, in order
+      const actives = Object.keys(classSkills()).filter((k) => { const d = classSkills()[k]; return d.kind !== "passive" && player.skills[k] && player.skills[k].rank >= 1; });
+      const s = actives[parseInt(key, 10) - 1];
+      if (s) { e.preventDefault(); useSkill(s); return; }
+    }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(zoom * 1.2); return; }
     if (e.key === "-" || e.key === "_") { e.preventDefault(); setZoom(zoom / 1.2); return; }
     const dir = BY_CODE[e.code] || BY_KEY[e.key] || BY_KEY[key];
     if (dir) {
       e.preventDefault();
-      if (pendingSkill === "rush") { executeRush(dir); return; }
+      if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "rush") { executeRush(pendingSkill, dir); return; }
       walkPath = []; playerAct(dir[0], dir[1]);
     }
   });

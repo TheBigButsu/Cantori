@@ -456,8 +456,8 @@ window.CANTORI_DATA = {
         "color": "#cdd6a0",
         "proc": 0.5,
         "slots": ["armor", "necklace"],
-        "desc": "When you're struck, lash back at the attacker for a share of your armor's power.",
-        "effect": { "type": "thorns", "mult": 1 }
+        "desc": "When you're struck, lash back at the attacker for half the damage you took.",
+        "effect": { "type": "thorns", "mult": 0.5 }
       },
       "Poison": {
         "name": "Poison",
@@ -695,55 +695,13 @@ window.CANTORI_DATA = {
         "evasion": 2
       },
       "blurb": "Front-line brawler. All around weapons master.",
-      "skills": {
-        "rush": {
-          "name": "Rush",
-          "icon": "➤",
-          "desc": "Dash in a direction until you collide — smash a monster, or ram yourself into a wall.",
-          "max": 3,
-          "ranks": [
-            {
-              "cd": 100,
-              "dmg": 0
-            },
-            {
-              "cd": 100,
-              "dmg": 3
-            },
-            {
-              "cd": 50,
-              "dmg": 5
-            }
-          ]
-        },
-        "spin": {
-          "name": "Spin",
-          "icon": "↻",
-          "desc": "Whirl and strike every monster around you.",
-          "max": 3,
-          "ranks": [
-            {
-              "cd": 80,
-              "dmg": 0,
-              "range": 1
-            },
-            {
-              "cd": 80,
-              "dmg": 1,
-              "range": 1
-            },
-            {
-              "cd": 80,
-              "dmg": 1,
-              "range": 2
-            }
-          ]
-        }
-      },
       "skillTree": [
         [
           {
             "name": "Rush",
+            "key": "rush",
+            "icon": "➤",
+            "kind": "rush",
             "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
             "levels": [
               "+0 damage, 100 turn cooldown",
@@ -751,10 +709,19 @@ window.CANTORI_DATA = {
               "+5 damage, 50 turn cooldown",
               "can stun enemies 50% of the time"
             ],
+            "ranks": [
+              { "dmg": 0, "cd": 100 },
+              { "dmg": 3, "cd": 100 },
+              { "dmg": 5, "cd": 50 },
+              { "dmg": 5, "cd": 50, "stun": 0.5 }
+            ],
             "req": []
           },
           {
             "name": "Spin",
+            "key": "spin",
+            "icon": "↻",
+            "kind": "spin",
             "desc": "Become a blender — strike every monster around you.",
             "levels": [
               "hit all adjacent foes, 80 turn cooldown",
@@ -762,16 +729,32 @@ window.CANTORI_DATA = {
               "+1 damage, range 2 (hits within 2 tiles)",
               "free action — doesn't advance the turn clock"
             ],
+            "ranks": [
+              { "dmg": 0, "cd": 80, "range": 1 },
+              { "dmg": 1, "cd": 80, "range": 1 },
+              { "dmg": 1, "cd": 80, "range": 2 },
+              { "dmg": 1, "cd": 80, "range": 2, "freeAction": true }
+            ],
             "req": []
           },
           {
             "name": "Axe Master",
-            "desc": "Dodge back",
+            "key": "axe_master",
+            "icon": "🪓",
+            "kind": "passive",
+            "when": "axe",
+            "desc": "Mastery of the axe — passive bonuses that apply while an axe is equipped.",
             "levels": [
               "+1 damage for axes",
               "+2 damage for axes",
               "+4 damage for axes",
               "+6 damage and +15 accuracy for axes"
+            ],
+            "ranks": [
+              { "dmg": 1 },
+              { "dmg": 2 },
+              { "dmg": 4 },
+              { "dmg": 6, "acc": 15 }
             ],
             "req": []
           },
