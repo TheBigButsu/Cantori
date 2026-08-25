@@ -112,9 +112,26 @@ Steps can reorder; save first is the main dependency.
 
 - **Warrior** is the only class (single-class focus). Base stats STR 8 / VIT 7 /
   DEX 4 / INT 3 / RES 3 / LCK 4; starts wielding a Sword and Leather Armor.
-- **Derived effects wired:** STR → +⌊STR/4⌋ damage; VIT → max HP (6 + VIT×2) and
-  −⌊VIT/5⌋ damage taken; DEX → dodge chance (min(35%, DEX×1.5%)). INT / RES / LCK
-  are tracked but not yet used (await spells / enchants / crits).
+- **Derived effects wired:** STR → damage, gated by the wielded weapon:
+  +⌊(STR − weaponSTRreq)/4⌋ (so a Warrior nets ~+1 damage every 2 levels, and a
+  weapon you barely meet gives no bonus). VIT → max HP (6 + VIT×2) and −⌊VIT/5⌋
+  damage taken. DEX → **accuracy (10 + DEX)** and **evasion (1 + DEX)**. INT / RES /
+  LCK are tracked but not yet used (await spells / enchants / crits).
+
+- **Accuracy vs evasion:** every strike rolls hit chance = `acc / (acc + eva)`
+  (attacker accuracy vs defender evasion) instead of a flat dodge. Monsters carry
+  their own `acc`/`eva` in `data.js` (default 12/4). This makes high-evasion foes
+  like the Bee (eva 16) genuinely slippery — a Warrior lands only ~half his blows.
+- **Surprise (ambush) auto-hit:** a monster that has never seen you (`aware` is
+  false — line of sight broken by a wall or door) takes a **guaranteed hit for 1.5×
+  damage** when you strike first. This is the intentional-play answer to evasive
+  enemies: break sight, close in, and open with a certain, heavy blow. A monster
+  becomes `aware` the moment it can see you, so the ambush is a one-time opening.
+
+- **Weapon STR requirements** (Diablo-style, `data.js` → `gear` → `req`): Dagger 0
+  / Sword 4 / Mace 8 STR; armor Leather 0 / Chain 4 / Plate 8. Currently the
+  requirement feeds the **damage formula** (under-meeting a weapon zeroes the STR
+  bonus); hard equip-gating (refuse to wield below req) is a later step.
 - **Leveling:** +2 main stat, +1 secondary, +1 banked point per level; +3 banked
   points per boss. Banked points accumulate for the **skill tree (next)**.
 - Strength potion now grants +1 STR (permanent).

@@ -43,19 +43,25 @@
   const floorInBiome = (d) => ((d - 1) % 5) + 1;
   const isBossDepth = (d) => floorInBiome(d) === 5;
 
-  // Stats → effects (skill tree to spend points comes later)
+  // Stats → effects (INT / RES / LCK come later)
   const UNARMED_MIN = 2, UNARMED_MAX = 3;
   const HP_BASE = 6, HP_PER_VIT = 2;
-  const strBonus = () => Math.floor(player.stats.STR / 4);   // STR → damage
-  const computeMaxHp = () => HP_BASE + player.stats.VIT * HP_PER_VIT; // VIT → health
-  const playerEvasion = () => Math.min(0.35, player.stats.DEX * 0.015); // DEX → dodge
-  const vitResist = () => Math.floor(player.stats.VIT / 5);  // VIT → damage resist
+  const ACC_BASE = 10, EVA_BASE = 1;      // DEX → accuracy & evasion
+  const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
+  const weaponStrReq = () => (player.weapon && GEAR[player.weapon].req ? (GEAR[player.weapon].req.STR || 0) : 0);
+  const strBonus = () => Math.max(0, Math.floor((player.stats.STR - weaponStrReq()) / 4)); // STR vs weapon req → damage
+  const computeMaxHp = () => HP_BASE + player.stats.VIT * HP_PER_VIT;  // VIT → health
+  const playerAcc = () => ACC_BASE + player.stats.DEX;                 // DEX → accuracy
+  const playerEva = () => EVA_BASE + player.stats.DEX;                 // DEX → evasion
+  const vitResist = () => Math.floor(player.stats.VIT / 5);            // VIT → damage resist
+  // hit chance = attacker accuracy / (accuracy + defender evasion)
+  const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
 
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
     atkBonus: 0, weapon: null, armor: null, inv: [], gold: 0, xp: 0, level: 1,
     cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
-    statPoints: 0, evasion: 0,
+    statPoints: 0,
   };
   function applyClass(key) {
     const c = DATA.classes[key] || DATA.classes.warrior;
@@ -68,7 +74,6 @@
     identified.clear();
     player.maxHp = computeMaxHp();
     player.hp = player.maxHp;
-    player.evasion = playerEvasion();
     player.skills = {};
     const cs = c.skills || {};
     for (const k of Object.keys(cs)) player.skills[k] = { rank: 0, cd: 0 };
@@ -376,21 +381,25 @@
     bonus = bonus || 0;
     if (attacker === player) {
       bump(player, target.x, target.y);
-      if (target.evasion && Math.random() < target.evasion) {   // dodge
+      const surprise = !target.aware;                 // ambush: it never saw you coming
+      target.aware = true;
+      if (!surprise && !rollHit(playerAcc(), target.eva != null ? target.eva : MON_EVA)) {
         floatText(target.x, target.y, "miss", "#cfe6b0");
-        log("The " + monName(target) + " dodges.");
+        log("The " + monName(target) + " evades your blow.");
         return;
       }
       const watk = player.weapon ? GEAR[player.weapon].atk : 0;
-      const dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus + bonus;
+      let dmg = randInt(player.atkMin, player.atkMax) + strBonus() + watk + player.atkBonus + bonus;
+      if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
       target.hp -= dmg;
       flash(target);
-      floatText(target.x, target.y, "-" + dmg, "#ffe08a");
+      floatText(target.x, target.y, (surprise ? "!" : "") + "-" + dmg, surprise ? "#ffd98a" : "#ffe08a");
+      const pre = surprise ? "Surprise! You strike the " : "You strike the ";
       if (target.hp <= 0) {
         monsters = monsters.filter((m) => m !== target);
-        log("You strike the " + monName(target) + " — it dies. (-" + dmg + ")", "hit");
+        log(pre + monName(target) + " — it dies. (-" + dmg + ")", "hit");
         let xp = target.boss ? 15 + Math.round(target.maxHp * 0.4) : target.maxHp;
-        if (!target.boss) {                      // over-leveled kills are worth less
+        if (!target.boss) {                            // over-leveled kills are worth less
           const diff = player.level - (target.level || 1);
           if (diff >= 4) xp = 0;
           else if (diff >= 2) xp = Math.round(xp * 0.5);
@@ -398,13 +407,14 @@
         gainXP(xp);
         if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
       } else {
-        log("You strike the " + monName(target) + ". (-" + dmg + ")", "hit");
+        log(pre + monName(target) + ". (-" + dmg + ")", "hit");
       }
     } else {
       bump(attacker, player.x, player.y);
-      if (player.evasion && Math.random() < player.evasion) {   // player dodge (DEX)
+      const acc = attacker.acc != null ? attacker.acc : MON_ACC;
+      if (!rollHit(acc, playerEva())) {                // player evades (DEX)
         floatText(player.x, player.y, "miss", "#cfe6b0");
-        log("You dodge the " + monName(attacker) + ".");
+        log("You evade the " + monName(attacker) + ".");
         return;
       }
       let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
@@ -449,7 +459,6 @@
       const nm = computeMaxHp();
       player.hp = Math.min(nm, player.hp + (nm - player.maxHp) + 2);
       player.maxHp = nm;
-      player.evasion = playerEvasion();
       log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point", "hit");
       threshold = player.level * 8;
     }
@@ -644,6 +653,7 @@
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
+      if (canSee(m)) m.aware = true;            // once it spots you, no more free ambush
       const d = cheb(m.x, m.y, player.x, player.y);
       if (d === 1) { attack(m, player); if (dead) return; continue; }
       if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) {
@@ -1245,7 +1255,9 @@
       if (m.boss) tags.push("BOSS");
       if (m.ranged) tags.push("ranged");
       if (m.charge) tags.push("charges");
-      if (m.evasion) tags.push("evasive");
+      if ((m.eva != null ? m.eva : MON_EVA) >= 10) tags.push("evasive");
+      if ((m.acc != null ? m.acc : MON_ACC) >= 14) tags.push("accurate");
+      if (!m.aware) tags.push("unaware");
       log(monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp + (tags.length ? " (" + tags.join(", ") + ")" : ""));
       return;
     }
@@ -1281,7 +1293,7 @@
     const s = player.stats;
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = (player.armor ? GEAR[player.armor].def : 0) + vitResist();
-    const eff = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: Math.round(playerEvasion() * 100) + "% dodge", INT: "—", RES: "—", LCK: "—" };
+    const eff = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: "—" };
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) =>
       `<div class="cstat"><span>${k}<small>${eff[k]}</small></span><b>${s[k]}</b></div>`).join("");
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
@@ -1513,7 +1525,7 @@
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, evasion: m.evasion || 0 })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key })),
       };
     },

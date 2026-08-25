@@ -33,14 +33,15 @@ window.CANTORI_DATA = {
     snake:  { name: "Snake",  hp: 4, atkMin: 2, atkMax: 3, erratic: 0.0,  glyph: "s", color: "#7ec98a" },
     spider: { name: "Spider", hp: 3, atkMin: 1, atkMax: 3, erratic: 0.2,  glyph: "x", color: "#d68f8f" },
     // Forest
-    //   evasion 0..1 = chance to dodge an attack
+    //   acc / eva = accuracy & evasion values (hit chance = acc / (acc + defender eva);
+    //     omitted -> default acc 12, eva 4). Surprise attacks always hit.
     //   charge  = rushes in a straight line (line of sight), +1 damage per tile crossed
     //   ranged  = attacks from afar up to `range` tiles (line of sight)
     //   minFloor = earliest floor *within the biome* (1..5) it may appear
-    wolf:   { name: "Wolf",   hp: 7,  atkMin: 2, atkMax: 4, erratic: 0.05, glyph: "W", color: "#9aa0a8" },
-    bee:    { name: "Bee",    hp: 2,  atkMin: 2, atkMax: 3, erratic: 0.4,  evasion: 0.45, glyph: "e", color: "#e6c34a" },
-    bear:   { name: "Bear",   hp: 12, atkMin: 3, atkMax: 5, erratic: 0.0,  charge: true, minFloor: 3, glyph: "B", color: "#8a6a44" },
-    harpy:  { name: "Harpy",  hp: 5,  atkMin: 2, atkMax: 4, erratic: 0.1,  ranged: true, range: 4, minFloor: 4, glyph: "H", color: "#6b6f7a" },
+    wolf:   { name: "Wolf",   hp: 7,  atkMin: 2, atkMax: 4, erratic: 0.05, acc: 11, eva: 3,  glyph: "W", color: "#9aa0a8" },
+    bee:    { name: "Bee",    hp: 2,  atkMin: 2, atkMax: 3, erratic: 0.4,  acc: 10, eva: 16, glyph: "e", color: "#e6c34a" },
+    bear:   { name: "Bear",   hp: 12, atkMin: 3, atkMax: 5, erratic: 0.0,  acc: 14, eva: 1, charge: true, minFloor: 3, glyph: "B", color: "#8a6a44" },
+    harpy:  { name: "Harpy",  hp: 5,  atkMin: 2, atkMax: 4, erratic: 0.1,  acc: 13, eva: 8, ranged: true, range: 4, minFloor: 4, glyph: "H", color: "#6b6f7a" },
     jackal: { name: "Jackal", hp: 3, atkMin: 1, atkMax: 2, erratic: 0.1,  glyph: "j", color: "#b79a6b" },
     hornet: { name: "Hornet", hp: 2, atkMin: 2, atkMax: 3, erratic: 0.35, glyph: "h", color: "#e0a13c" },
     // Tomb
@@ -62,12 +63,14 @@ window.CANTORI_DATA = {
                enforced; here so it's easy to plan the numbers.]
      ========================================================================== */
   gear: {
-    dagger:  { cat: "weapon", name: "Dagger", atk: 1, weight: 5, req: { DEX: 0 },  glyph: "/", color: "#cfc3a0" },
-    sword:   { cat: "weapon", name: "Sword",  atk: 3, weight: 2, req: { STR: 12 }, glyph: "/", color: "#d8e0ec" },
-    mace:    { cat: "weapon", name: "Mace",   atk: 5, weight: 1, req: { STR: 18 }, glyph: "/", color: "#c8a878" },
-    leather: { cat: "armor",  name: "Leather Armor", def: 1, weight: 4, req: { STR: 0 },  glyph: "[", color: "#b98a5a" },
-    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, weight: 2, req: { STR: 14 }, glyph: "[", color: "#b9c0c8" },
-    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, weight: 1, req: { STR: 20 }, glyph: "[", color: "#dfe6f0" },
+    // req.STR gates damage scaling: STR damage bonus = floor((STR - req.STR)/4).
+    // Heavier weapons need more STR before they scale.
+    dagger:  { cat: "weapon", name: "Dagger", atk: 1, weight: 5, req: { STR: 0 }, glyph: "/", color: "#cfc3a0" },
+    sword:   { cat: "weapon", name: "Sword",  atk: 3, weight: 2, req: { STR: 4 }, glyph: "/", color: "#d8e0ec" },
+    mace:    { cat: "weapon", name: "Mace",   atk: 5, weight: 1, req: { STR: 8 }, glyph: "/", color: "#c8a878" },
+    leather: { cat: "armor",  name: "Leather Armor", def: 1, weight: 4, req: { STR: 0 }, glyph: "[", color: "#b98a5a" },
+    chain:   { cat: "armor",  name: "Chain Mail",    def: 2, weight: 2, req: { STR: 4 }, glyph: "[", color: "#b9c0c8" },
+    plate:   { cat: "armor",  name: "Plate Armor",   def: 3, weight: 1, req: { STR: 8 }, glyph: "[", color: "#dfe6f0" },
   },
 
   /* ==========================================================================
