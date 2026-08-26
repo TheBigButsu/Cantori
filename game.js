@@ -66,7 +66,10 @@
   const critMult = () => (BASE_CRIT_DMG + (player.lvlCritDmg || 0)) / 100;
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
-  const rollHit = (acc, eva) => Math.random() < acc / (acc + eva);
+  // To-hit is difference-based and easy to read: 50% at even acc/eva, then ±3%
+  // for each point of accuracy over (or under) evasion, clamped to 10%–95%.
+  const hitChance = (acc, eva) => Math.max(0.10, Math.min(0.95, 0.5 + (acc - eva) * 0.03));
+  const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
 
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
@@ -2535,8 +2538,8 @@
       if (m.boss) tags.push("BOSS");
       if (m.ranged) tags.push("ranged");
       if (m.charge) tags.push("charges");
-      if ((m.eva != null ? m.eva : MON_EVA) >= 10) tags.push("evasive");
-      if ((m.acc != null ? m.acc : MON_ACC) >= 14) tags.push("accurate");
+      if ((m.eva != null ? m.eva : MON_EVA) >= 12) tags.push("evasive");
+      if ((m.acc != null ? m.acc : MON_ACC) >= 12) tags.push("accurate");
       if (!m.aware) tags.push("unaware");
       log(monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp + (tags.length ? " (" + tags.join(", ") + ")" : ""));
       return;

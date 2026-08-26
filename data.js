@@ -11,8 +11,8 @@ window.CANTORI_DATA = {
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
-      "acc": 15,
-      "eva": 15
+      "acc": 8,
+      "eva": 8
     },
     "bat": {
       "name": "Bat",
@@ -23,8 +23,8 @@ window.CANTORI_DATA = {
       "color": "#b491d6",
       "hp": 8,
       "speed": 1.5,
-      "acc": 10,
-      "eva": 25
+      "acc": 9,
+      "eva": 12
     },
     "snake": {
       "name": "Snake",
@@ -35,8 +35,8 @@ window.CANTORI_DATA = {
       "color": "#7ec98a",
       "minFloor": 2,
       "speed": 1,
-      "acc": 20,
-      "eva": 55
+      "acc": 10,
+      "eva": 18
     },
     "spider": {
       "name": "Spider",
@@ -46,8 +46,8 @@ window.CANTORI_DATA = {
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
-      "acc": 10,
-      "eva": 10,
+      "acc": 8,
+      "eva": 6,
       "range": 4,
       "ranged": true,
       "hp": 20
@@ -55,13 +55,13 @@ window.CANTORI_DATA = {
     "wolf": {
       "name": "Wolf",
       "atkMin": 4,
-      "acc": 11,
+      "acc": 10,
       "glyph": "W",
       "color": "#9aa0a8",
       "hp": 28,
       "atkMax": 8,
       "speed": 1,
-      "eva": 30,
+      "eva": 12,
       "minFloor": 2
     },
     "bee": {
@@ -69,8 +69,8 @@ window.CANTORI_DATA = {
       "hp": 15,
       "atkMin": 2,
       "atkMax": 6,
-      "acc": 20,
-      "eva": 45,
+      "acc": 11,
+      "eva": 16,
       "glyph": "e",
       "color": "#e6c34a",
       "minFloor": 3,
@@ -94,8 +94,8 @@ window.CANTORI_DATA = {
       "name": "Harpy",
       "atkMin": 4,
       "atkMax": 12,
-      "acc": 30,
-      "eva": 33,
+      "acc": 12,
+      "eva": 14,
       "ranged": true,
       "range": 4,
       "glyph": "H",
