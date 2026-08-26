@@ -1310,6 +1310,107 @@
 
   // One monster action (its burn tick, stun, and AI move/attack). Returns after
   // acting; the caller checks `dead`.
+  // Drop `count` monsters of `type` on free floor within `radius` tiles of (cx,cy).
+  function spawnNear(type, cx, cy, radius, count) {
+    let placed = 0;
+    for (let t = 0; t < 240 && placed < count; t++) {
+      const gx = cx + randInt(-radius, radius), gy = cy + randInt(-radius, radius);
+      if (!inBounds(gx, gy) || map[gy][gx] === WALL || map[gy][gx] === THORN) continue;
+      if (cheb(gx, gy, cx, cy) > radius) continue;
+      if (monsterAt(gx, gy) || (gx === player.x && gy === player.y)) continue;
+      const mm = makeMonster(type, gx, gy); mm.aware = true;
+      monsters.push(mm); placed++;
+    }
+    return placed;
+  }
+  function snapEntity(m) { m.rx = m.x; m.ry = m.y; m.lx = m.x; m.ly = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; }
+
+  // ---- The Pied Piper (forest boss) ---------------------------------------
+  function piperAct(m) {
+    if (m.beam) { piperFireBeam(m); return; }        // fire the line telegraphed last turn
+    const see = canSee(m);
+    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }
+    // Entrance: the first time it sees you, it calls vermin to your side.
+    if (see && !m.summoned) {
+      m.summoned = true;
+      spawnNear("rat", player.x, player.y, 3, 2);
+      spawnNear("snake", player.x, player.y, 3, 1);
+      flashScreen("#7a1e1e", 320);
+      log("The Piper's shrill tune summons vermin around you!", "hurt");
+      return;
+    }
+    // Halfway: vanish (up to 10 tiles) and leave a brood behind.
+    if (!m.phased && m.hp <= m.maxHp * 0.5) { m.phased = true; piperPhaseShift(m); return; }
+    const d = cheb(m.x, m.y, player.x, player.y);
+    // Signature attack: telegraph a straight line, then send an exploding rat down it.
+    if ((m.beamCd | 0) <= 0 && see && d >= 2 && lineOfSight(m.x, m.y, player.x, player.y)) {
+      piperCastBeam(m); m.beamCd = 7; return;
+    }
+    if (m.beamCd > 0) m.beamCd--;
+    if (d === 1) { attack(m, player); return; }
+    if (see) { stepMonsterTo(m, player.x, player.y); return; }
+    if (m.lastSeen) { stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y); if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null; return; }
+    patrolStep(m);
+  }
+  function piperPhaseShift(m) {
+    const ox = m.x, oy = m.y;
+    let best = null, bestScore = -1;
+    for (let t = 0; t < 300; t++) {
+      const x = m.x + randInt(-10, 10), y = m.y + randInt(-10, 10);
+      if (!inBounds(x, y) || map[y][x] === WALL || map[y][x] === THORN) continue;
+      const dd = cheb(x, y, m.x, m.y);
+      if (dd < 3 || dd > 10) continue;
+      if (monsterAt(x, y) || (x === player.x && y === player.y)) continue;
+      const score = cheb(x, y, player.x, player.y);   // prefer landing far from the player
+      if (score > bestScore) { bestScore = score; best = { x, y }; }
+    }
+    spawnBurst(ox, oy, "#c79bff");
+    if (best) { m.x = best.x; m.y = best.y; snapEntity(m); }
+    spawnBurst(m.x, m.y, "#c79bff"); flashScreen("#7a4fb0", 380);
+    spawnNear("rat", ox, oy, 2, 3);
+    spawnNear("snake", ox, oy, 2, 2);
+    m.aware = true; m.lastSeen = { x: player.x, y: player.y };
+    log("The Piper vanishes in a swirl, leaving its brood behind!", "hurt");
+  }
+  // Build a straight line through the player's tile (wall to wall) and mark it red.
+  function piperCastBeam(m) {
+    const dx = player.x - m.x, dy = player.y - m.y;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    let dir;
+    if (adx === 0 && ady === 0) dir = [1, 0];
+    else if (adx >= 2 * ady) dir = [Math.sign(dx), 0];
+    else if (ady >= 2 * adx) dir = [0, Math.sign(dy)];
+    else dir = [Math.sign(dx) || 1, Math.sign(dy) || 1];
+    const pass = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
+    let sx = player.x, sy = player.y;                 // back up to the piper-side wall
+    while (pass(sx - dir[0], sy - dir[1])) { sx -= dir[0]; sy -= dir[1]; }
+    const tiles = [];
+    for (let x = sx, y = sy; pass(x, y); x += dir[0], y += dir[1]) tiles.push([x, y]);
+    m.beam = { dir, tiles };
+    flashScreen("#c02020", 300);                      // a sharp red pulse — impossible to miss
+    floatText(player.x, player.y, "⚠", "#ff5a5a");
+    log("The Piper marks a line of death — MOVE off it!", "hurt");
+  }
+  function piperFireBeam(m) {
+    const line = m.beam.tiles; m.beam = null;         // the red line clears as the rat launches
+    const start = line[0];
+    let hitIdx = -1;
+    for (let i = 0; i < line.length; i++) if (line[i][0] === player.x && line[i][1] === player.y) { hitIdx = i; break; }
+    const end = line[hitIdx >= 0 ? hitIdx : line.length - 1];
+    spawnProjectile(start[0], start[1], end[0], end[1], "#e0685a");
+    spawnBurst(end[0], end[1], "#ff6a4a");
+    if (hitIdx >= 0) {
+      const dmg = 30;
+      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
+      log("The exploding rat slams into you! (-" + dmg + ")", "hurt");
+      updateHUD();
+      if (player.hp <= 0) { die(); return; }
+    } else {
+      spawnNear("rat", end[0], end[1], 1, 2);         // bursts on the wall, two rats spill out
+      log("You dodge! The rat bursts on the wall — two more scurry out.", "hit");
+    }
+  }
+
   function monsterAct(m) {
     if (m.hp <= 0) return;
     if (m.dots && m.dots.length) {              // burn/poison ticks at the start of its action
@@ -1320,6 +1421,7 @@
       }
     }
     if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
+    if (m.type === "piper") { piperAct(m); return; }             // the Pied Piper has its own playbook
     if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }  // spotted: remember where
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
@@ -1883,6 +1985,20 @@
         drawItemIcon(px, py, it);
       }
       dim(px, py, (1 - litBright(it.x, it.y)) * 0.8);
+    }
+
+    // boss attack telegraph: a bold, pulsing red line — dodge off it!
+    for (const m of monsters) {
+      if (!m.beam || m.hp <= 0) continue;
+      const pulse = 0.34 + 0.26 * Math.abs(Math.sin(now / 110));
+      for (const [x, y] of m.beam.tiles) {
+        if (!inBounds(x, y) || !visible[y][x]) continue;
+        const px = SX(x), py = SY(y);
+        ctx.fillStyle = "rgba(220,38,38," + pulse.toFixed(3) + ")";
+        ctx.fillRect(px, py, tile, tile);
+        ctx.strokeStyle = "rgba(255,96,96,0.95)"; ctx.lineWidth = 2;
+        ctx.strokeRect(px + 1, py + 1, tile - 2, tile - 2);
+      }
     }
 
     // monsters (glide + lunge + flash; bosses render larger)
@@ -2747,7 +2863,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0 })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung })),
