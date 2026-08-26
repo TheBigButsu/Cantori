@@ -4,15 +4,15 @@ window.CANTORI_DATA = {
   "monsters": {
     "rat": {
       "name": "Rat",
-      "hp": 6,
-      "atkMin": 1,
-      "atkMax": 3,
+      "hp": 10,
+      "atkMin": 2,
+      "atkMax": 4,
       "minFloor": 1,
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
-      "acc": 0,
-      "eva": 0
+      "acc": 15,
+      "eva": 15
     },
     "bat": {
       "name": "Bat",
@@ -21,61 +21,62 @@ window.CANTORI_DATA = {
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
-      "hp": 5,
+      "hp": 8,
       "speed": 1.5,
       "acc": 10,
-      "eva": 10
+      "eva": 25
     },
     "snake": {
       "name": "Snake",
       "hp": 8,
-      "atkMin": 2,
-      "atkMax": 4,
+      "atkMin": 3,
+      "atkMax": 5,
       "glyph": "s",
       "color": "#7ec98a",
       "minFloor": 2,
       "speed": 1,
-      "acc": 5,
-      "eva": 20
+      "acc": 20,
+      "eva": 55
     },
     "spider": {
       "name": "Spider",
-      "hp": 10,
-      "atkMin": 1,
-      "atkMax": 4,
-      "minFloor": 1,
+      "atkMin": 3,
+      "atkMax": 6,
+      "minFloor": 3,
       "glyph": "x",
       "color": "#d68f8f",
-      "speed": 2,
+      "speed": 1,
       "acc": 10,
       "eva": 10,
       "range": 4,
-      "ranged": true
+      "ranged": true,
+      "hp": 20
     },
     "wolf": {
       "name": "Wolf",
-      "atkMin": 3,
+      "atkMin": 4,
       "acc": 11,
-      "eva": 3,
       "glyph": "W",
       "color": "#9aa0a8",
-      "minFloor": 3,
-      "hp": 15,
+      "hp": 28,
       "atkMax": 8,
-      "speed": 1
+      "speed": 1,
+      "eva": 30,
+      "minFloor": 2
     },
     "bee": {
       "name": "Bee",
-      "hp": 2,
+      "hp": 15,
       "atkMin": 2,
-      "atkMax": 3,
-      "acc": 10,
-      "eva": 16,
+      "atkMax": 6,
+      "acc": 20,
+      "eva": 45,
       "glyph": "e",
       "color": "#e6c34a",
       "minFloor": 3,
       "ranged": true,
-      "range": 2
+      "range": 2,
+      "speed": 1
     },
     "bear": {
       "name": "Bear",
@@ -91,16 +92,16 @@ window.CANTORI_DATA = {
     },
     "harpy": {
       "name": "Harpy",
-      "hp": 5,
-      "atkMin": 2,
-      "atkMax": 4,
-      "acc": 13,
-      "eva": 8,
+      "atkMin": 4,
+      "atkMax": 12,
+      "acc": 30,
+      "eva": 33,
       "ranged": true,
       "range": 4,
       "glyph": "H",
       "color": "#6b6f7a",
-      "minFloor": 3
+      "minFloor": 4,
+      "hp": 35
     },
     "jackal": {
       "name": "Jackal",
@@ -207,17 +208,18 @@ window.CANTORI_DATA = {
     "mace": {
       "cat": "weapon",
       "sub": "axe",
-      "name": "Mace",
-      "dmgMin": 5,
-      "dmgMax": 10,
-      "speed": 0.7,
-      "accuracy": -1,
+      "name": "Big axe",
+      "dmgMin": 6,
+      "dmgMax": 15,
+      "speed": 0.9,
       "glyph": "/",
       "color": "#c8a878",
       "tier": 2,
       "req": {
         "STR": 15
-      }
+      },
+      "accuracy": -15,
+      "rarity": 4
     },
     "leather": {
       "cat": "armor",
@@ -288,7 +290,6 @@ window.CANTORI_DATA = {
       "sub": "axe",
       "name": "Axe",
       "dmgMax": 12,
-      "speed": 1,
       "tier": 1,
       "req": {
         "STR": 10
@@ -296,7 +297,8 @@ window.CANTORI_DATA = {
       "glyph": "/",
       "color": "#cccccc",
       "dmgMin": 4,
-      "accuracy": -10
+      "speed": 0.9,
+      "accuracy": -15
     },
     "spear": {
       "cat": "weapon",
@@ -336,19 +338,19 @@ window.CANTORI_DATA = {
       {
         "key": "white",
         "name": "",
-        "chance": 0.5,
+        "chance": 0.6,
         "color": "#e6e0d2"
       },
       {
         "key": "green",
         "name": "",
-        "chance": 0.3,
+        "chance": 0.25,
         "color": "#7ec98a"
       },
       {
         "key": "blue",
         "name": "",
-        "chance": 0.15,
+        "chance": 0.1,
         "color": "#5a9fe0"
       },
       {
@@ -428,45 +430,84 @@ window.CANTORI_DATA = {
         "icon": "🔥",
         "color": "#ff8f4a",
         "proc": 0.35,
-        "slots": ["weapon", "armor", "ring", "trinket", "necklace"],
+        "slots": [
+          "weapon",
+          "armor",
+          "ring",
+          "trinket",
+          "necklace"
+        ],
         "desc": "Sears on a hit for half the source's power, then keeps burning for a few turns. Only one flame burns at a time.",
-        "effect": { "type": "burn", "burstMult": 0.5, "dotTurns": 3 }
+        "effect": {
+          "type": "burn",
+          "burstMult": 0.5,
+          "dotTurns": 3
+        }
       },
       "electric": {
         "name": "Charged",
         "icon": "⚡",
         "color": "#9ad0ff",
         "proc": 0.3,
-        "slots": ["weapon", "armor", "ring", "trinket", "necklace"],
+        "slots": [
+          "weapon",
+          "armor",
+          "ring",
+          "trinket",
+          "necklace"
+        ],
         "desc": "A jolt equal to the source's power, with a chance to stun that fades against higher-level foes.",
-        "effect": { "type": "shock", "burstMult": 1, "stunPer": 0.10 }
+        "effect": {
+          "type": "shock",
+          "burstMult": 1,
+          "stunPer": 0.1
+        }
       },
       "Speed": {
         "name": "Speed",
         "icon": "✦",
         "color": "#bfe0ff",
         "proc": 1,
-        "slots": ["ring", "armor"],
+        "slots": [
+          "ring",
+          "armor"
+        ],
         "desc": "While worn, your attacks cost less time — you act faster.",
-        "effect": { "type": "haste", "mult": 0.25 }
+        "effect": {
+          "type": "haste",
+          "mult": 0.25
+        }
       },
       "Thorns": {
         "name": "Thorns",
         "icon": "🜲",
         "color": "#cdd6a0",
         "proc": 0.5,
-        "slots": ["armor", "necklace"],
+        "slots": [
+          "armor",
+          "necklace"
+        ],
         "desc": "When you're struck, lash back at the attacker for half the damage you took.",
-        "effect": { "type": "thorns", "mult": 0.5 }
+        "effect": {
+          "type": "thorns",
+          "mult": 0.5
+        }
       },
       "Poison": {
         "name": "Poison",
         "icon": "☠",
         "color": "#9ad06a",
         "proc": 0.2,
-        "slots": ["weapon"],
+        "slots": [
+          "weapon"
+        ],
         "desc": "A small bite now (+2), then 1 damage per turn for several turns. Every proc stacks another dose.",
-        "effect": { "type": "poison", "initial": 2, "perTurn": 1, "turns": 5 }
+        "effect": {
+          "type": "poison",
+          "initial": 2,
+          "perTurn": 1,
+          "turns": 5
+        }
       }
     }
   },
@@ -532,9 +573,9 @@ window.CANTORI_DATA = {
   "bosses": {
     "piper": {
       "name": "The Pied Piper",
-      "hp": 30,
       "atkMin": 6,
-      "atkMax": 10
+      "atkMax": 10,
+      "hp": 200
     },
     "golem": {
       "name": "Stone Golem",
@@ -578,8 +619,59 @@ window.CANTORI_DATA = {
         "spider"
       ],
       "spawnMix": {
-        "rat": [6, 4, 2, 1, 1],
-        "wolf": [1, 2, 3, 4, 4]
+        "rat": [
+          4,
+          4,
+          1,
+          1,
+          1
+        ],
+        "wolf": [
+          1,
+          2,
+          3,
+          4,
+          4
+        ],
+        "spider": [
+          3,
+          3,
+          3,
+          2,
+          2
+        ],
+        "bee": [
+          null,
+          4,
+          3,
+          4,
+          3
+        ],
+        "bear": [
+          null,
+          null,
+          3,
+          3
+        ],
+        "harpy": [
+          null,
+          null,
+          3,
+          3
+        ],
+        "bat": [
+          4,
+          3,
+          2,
+          1
+        ],
+        "snake": [
+          null,
+          2,
+          3,
+          3,
+          1
+        ]
       },
       "boss": "piper",
       "spawnInitial": [
@@ -702,7 +794,7 @@ window.CANTORI_DATA = {
       },
       "baseHp": 13,
       "baseMp": 5,
-      "regenTurns": 600,
+      "regenTurns": 400,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
@@ -730,10 +822,23 @@ window.CANTORI_DATA = {
               "can stun enemies 50% of the time"
             ],
             "ranks": [
-              { "dmg": 0, "cd": 100 },
-              { "dmg": 3, "cd": 100 },
-              { "dmg": 5, "cd": 50 },
-              { "dmg": 5, "cd": 50, "stun": 0.5 }
+              {
+                "dmg": 0,
+                "cd": 100
+              },
+              {
+                "dmg": 3,
+                "cd": 100
+              },
+              {
+                "dmg": 5,
+                "cd": 50
+              },
+              {
+                "dmg": 5,
+                "cd": 50,
+                "stun": 0.5
+              }
             ],
             "req": []
           },
@@ -750,10 +855,27 @@ window.CANTORI_DATA = {
               "free action — doesn't advance the turn clock"
             ],
             "ranks": [
-              { "dmg": 0, "cd": 80, "range": 1 },
-              { "dmg": 1, "cd": 80, "range": 1 },
-              { "dmg": 1, "cd": 80, "range": 2 },
-              { "dmg": 1, "cd": 80, "range": 2, "freeAction": true }
+              {
+                "dmg": 0,
+                "cd": 80,
+                "range": 1
+              },
+              {
+                "dmg": 1,
+                "cd": 80,
+                "range": 1
+              },
+              {
+                "dmg": 1,
+                "cd": 80,
+                "range": 2
+              },
+              {
+                "dmg": 1,
+                "cd": 80,
+                "range": 2,
+                "freeAction": true
+              }
             ],
             "req": []
           },
@@ -771,10 +893,19 @@ window.CANTORI_DATA = {
               "+6 damage and +15 accuracy for axes"
             ],
             "ranks": [
-              { "dmg": 1 },
-              { "dmg": 2 },
-              { "dmg": 4 },
-              { "dmg": 6, "acc": 15 }
+              {
+                "dmg": 1
+              },
+              {
+                "dmg": 2
+              },
+              {
+                "dmg": 4
+              },
+              {
+                "dmg": 6,
+                "acc": 15
+              }
             ],
             "req": []
           },
