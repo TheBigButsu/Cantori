@@ -203,7 +203,8 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 10
       },
-      "accuracy": 5
+      "accuracy": 5,
+      "rarity": 15
     },
     "mace": {
       "cat": "weapon",
@@ -225,37 +226,37 @@ window.CANTORI_DATA = {
       "cat": "armor",
       "sub": "light",
       "name": "Leather Armor",
-      "def": 1,
       "tier": 1,
       "req": {
         "STR": 0
       },
       "glyph": "[",
-      "color": "#b98a5a"
+      "color": "#b98a5a",
+      "def": 2
     },
     "chain": {
       "cat": "armor",
       "sub": "medium",
       "name": "Chain Mail",
-      "def": 2,
       "tier": 2,
       "glyph": "[",
       "color": "#b9c0c8",
       "req": {
         "STR": 15
-      }
+      },
+      "def": 4
     },
     "plate": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Plate Armor",
-      "def": 3,
       "tier": 3,
       "glyph": "[",
       "color": "#dfe6f0",
       "req": {
         "STR": 40
-      }
+      },
+      "def": 8
     },
     "ring_copper": {
       "cat": "ring",
@@ -298,7 +299,8 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "dmgMin": 4,
       "speed": 0.9,
-      "accuracy": -15
+      "accuracy": -15,
+      "rarity": 15
     },
     "spear": {
       "cat": "weapon",
@@ -314,7 +316,8 @@ window.CANTORI_DATA = {
       "range": 2,
       "glyph": "/",
       "color": "#c8b890",
-      "accuracy": 3
+      "accuracy": 3,
+      "rarity": 15
     },
     "bow": {
       "cat": "weapon",
@@ -330,7 +333,37 @@ window.CANTORI_DATA = {
       "range": 5,
       "glyph": "}",
       "color": "#b08a4a",
-      "accuracy": 5
+      "accuracy": 5,
+      "rarity": 15
+    },
+    "Shitty_dagger": {
+      "cat": "weapon",
+      "name": "Shitty Dagger",
+      "dmgMin": 1,
+      "dmgMax": 2,
+      "accuracy": 5,
+      "tier": 0,
+      "req": {
+        "STR": 0
+      },
+      "glyph": "/",
+      "color": "#cccccc",
+      "sub": "dagger",
+      "speed": 1.2,
+      "rarity": 0
+    },
+    "Shitty_armor": {
+      "cat": "armor",
+      "name": "Shitty armor",
+      "req": {
+        "STR": 0
+      },
+      "glyph": "/",
+      "color": "#cccccc",
+      "sub": "light",
+      "def": 1,
+      "tier": 0,
+      "rarity": 0
     }
   },
   "loot": {
@@ -344,7 +377,7 @@ window.CANTORI_DATA = {
       {
         "key": "green",
         "name": "",
-        "chance": 0.25,
+        "chance": 0.28,
         "color": "#7ec98a"
       },
       {
@@ -356,7 +389,7 @@ window.CANTORI_DATA = {
       {
         "key": "purple",
         "name": "",
-        "chance": 0.05,
+        "chance": 0.02,
         "color": "#b491d6"
       },
       {
@@ -789,7 +822,7 @@ window.CANTORI_DATA = {
         "LCK": 4
       },
       "start": {
-        "weapon": "sword",
+        "weapon": "Shitty_dagger",
         "armor": "leather"
       },
       "baseHp": 13,
