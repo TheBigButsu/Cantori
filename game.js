@@ -19,8 +19,8 @@
   "use strict";
 
   // ---- Map model -----------------------------------------------------------
-  const MAP_W = 41;         // ~50% larger floor than before (33 -> 41)
-  const MAP_H = 41;
+  const MAP_W = 31;         // 25% smaller than 41 → denser, fewer awkward corners
+  const MAP_H = 31;
   const FOV_RADIUS = 40;    // effectively line-of-sight bound: the whole room you're
                             // in lights up (Shattered-Pixel style); only walls block
 
@@ -34,6 +34,7 @@
   let visible = [];
   let explored = [];        // revealed on the map (own eyes OR magic mapping)
   let beenSeen = [];        // actually held in FOV at some point (not just mapped)
+  let genStats = null;      // last level's room/corridor/floor fill breakdown
   let torches = [];            // decorative wall-mounted torches {x, y}
   let depth = 1;
   let dead = false;
@@ -300,6 +301,91 @@
   function vTunnel(y1, y2, x) {
     for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) if (map[y][x] === WALL) map[y][x] = FLOOR;
   }
+  // Corridors are 2 wide — roomier to move through on a phone (no single-tile
+  // pinch points) and enough corridor floor to reach the fill target.
+  const carveFloor = (x, y) => { if (inBounds(x, y) && map[y][x] === WALL) map[y][x] = FLOOR; };
+  function hTunnel2(x1, x2, y) { for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) { carveFloor(x, y); carveFloor(x, y + 1); } }
+  function vTunnel2(y1, y2, x) { for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) { carveFloor(x, y); carveFloor(x + 1, y); } }
+  function carveCorridor(a, b) {
+    if (Math.random() < 0.5) { hTunnel2(a.x, b.x, a.y); vTunnel2(a.y, b.y, b.x); }
+    else { vTunnel2(a.y, b.y, a.x); hTunnel2(a.x, b.x, b.y); }
+  }
+  // Count corridor floor = FLOOR tiles that lie outside every room.
+  function corridorFill(rooms) {
+    const inRoom = blankGrid(false);
+    for (const r of rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) inRoom[y][x] = true;
+    let n = 0;
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === FLOOR && !inRoom[y][x]) n++;
+    return n;
+  }
+  // Connect rooms with distinct corridors: a nearest-neighbour spanning tree for
+  // guaranteed connectivity, then the shortest remaining links until corridors
+  // cover ~15% of the map. Each room pair is carved at most once (no stacking).
+  function connectRooms(rooms) {
+    if (rooms.length < 2) return;
+    const cen = rooms.map(roomCenter);
+    const manh = (a, b) => Math.abs(cen[a].x - cen[b].x) + Math.abs(cen[a].y - cen[b].y);
+    const used = new Set();
+    const link = (a, b) => {
+      const key = Math.min(a, b) + "-" + Math.max(a, b);
+      if (used.has(key)) return; used.add(key);
+      carveCorridor(cen[a], cen[b]);
+    };
+    const inTree = new Set([0]);
+    while (inTree.size < rooms.length) {
+      let best = null;
+      for (const a of inTree) for (let b = 0; b < rooms.length; b++) {
+        if (inTree.has(b)) continue;
+        const d = manh(a, b);
+        if (!best || d < best.d) best = { a, b, d };
+      }
+      link(best.a, best.b); inTree.add(best.b);
+    }
+    const edges = [];
+    for (let a = 0; a < rooms.length; a++) for (let b = a + 1; b < rooms.length; b++) edges.push({ a, b, d: manh(a, b) });
+    edges.sort((p, q) => p.d - q.d);
+    const target = MAP_W * MAP_H * 0.15;
+    for (const e of edges) {
+      if (corridorFill(rooms) >= target) break;
+      link(e.a, e.b);
+    }
+  }
+  // Breakdown of the finished level: how much is room floor vs corridor floor.
+  function computeFill(rooms) {
+    const inRoom = blankGrid(false);
+    for (const r of rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) inRoom[y][x] = true;
+    let room = 0, corridor = 0;
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+      if (inRoom[y][x]) room++;                       // room footprint (trees/thorns inside still count)
+      else if (map[y][x] === FLOOR) corridor++;       // walkable corridor outside rooms
+    }
+    const total = MAP_W * MAP_H;
+    return {
+      total, rooms: rooms.length, roomTiles: room, corridorTiles: corridor, floorTiles: room + corridor,
+      roomPct: +(100 * room / total).toFixed(1), corridorPct: +(100 * corridor / total).toFixed(1), floorPct: +(100 * (room + corridor) / total).toFixed(1),
+    };
+  }
+  // Rooms bigger than 20 tiles sprout obstacle trees (wall pillars) — one, plus
+  // one more for every 5 tiles of area beyond 20 — placed on interior floor so
+  // entrances stay clear. Skips thorn vaults, the player, items and monsters.
+  function placeTrees(rooms, restricted) {
+    for (let i = 0; i < rooms.length; i++) {
+      if (restricted.has(i)) continue;
+      const r = rooms[i]; const area = r.w * r.h;
+      if (area <= 20) continue;
+      const n = 1 + Math.floor((area - 21) / 5);
+      const cen = roomCenter(r);
+      let placed = 0, guard = 0;
+      while (placed < n && guard++ < 60) {
+        const x = randInt(r.x + 1, r.x + r.w - 2), y = randInt(r.y + 1, r.y + r.h - 2);
+        if (map[y][x] !== FLOOR) continue;
+        if (x === cen.x && y === cen.y) continue;                 // keep the corridor target clear
+        if (x === player.x && y === player.y) continue;
+        if (itemAt(x, y) || monsterAt(x, y)) continue;
+        map[y][x] = WALL; placed++;                               // a tree / pillar (rendered per biome)
+      }
+    }
+  }
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
 
@@ -353,20 +439,27 @@
 
   // Seal a small side room behind brambles and hide a choice item inside. Returns a
   // Set of restricted room indices (torches are kept out of them).
+  // Every non-wall cell in a room's perimeter = an opening into it.
+  function roomOpenings(r) {
+    return roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] !== WALL);
+  }
   function makeThornVaults(rooms, last) {
     const restricted = new Set();
-    const candidates = [];
+    let candidates = [];
     for (let i = 1; i < rooms.length; i++) {
       const r = rooms[i];
       if (r === last) continue;
-      const doors = roomDoors(r).length;
-      if (doors >= 1 && doors <= 2 && r.w * r.h <= 12) candidates.push(i);
+      const openings = roomOpenings(r).length;
+      if (openings >= 1 && openings <= 5 && r.w * r.h <= 45) candidates.push({ i, openings });
     }
+    candidates.sort((a, b) => a.openings - b.openings);   // fewest entrances = tidiest vaults
+    candidates = candidates.map((c) => c.i);
     const nVaults = Math.random() < 0.5 ? 1 : 2;
     for (let v = 0; v < nVaults && candidates.length; v++) {
-      const pick = candidates.splice(randInt(0, candidates.length - 1), 1)[0];
+      const pick = candidates.shift();
       const r = rooms[pick];
-      for (const [x, y] of roomDoors(r)) map[y][x] = THORN;   // wall it in with brambles
+      // seal EVERY opening with brambles — thorns become the only way in
+      for (const [x, y] of roomOpenings(r)) map[y][x] = THORN;
       const spot = freeFloorInRoom(r);
       if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, rollVaultLoot(depth)));
       restricted.add(pick);
@@ -406,22 +499,35 @@
     turns = 0;
 
     const rooms = [];
-    // smaller rooms, more of them: same-ish total room area spread over a bigger
-    // map, so there's much more corridor between chambers
-    for (let tries = 0; tries < 240 && rooms.length < 18; tries++) {
-      const w = randInt(3, 5), h = randInt(3, 5);
+    const TOTAL = MAP_W * MAP_H;
+    const roomTarget = TOTAL * 0.35;
+    let roomArea = 0;
+    // Big rooms on a jittered 3×3 grid: even coverage of large chambers (cleaner
+    // geometry, fewer tight corners), each kept a margin inside its cell so a wall
+    // always survives between neighbours — no overlap test needed.
+    const GN = 3;
+    const cellW = Math.floor(MAP_W / GN), cellH = Math.floor(MAP_H / GN);
+    const cells = [];
+    for (let gy = 0; gy < GN; gy++) for (let gx = 0; gx < GN; gx++) cells.push([gx, gy]);
+    for (let i = cells.length - 1; i > 0; i--) { const j = randInt(0, i); const t = cells[i]; cells[i] = cells[j]; cells[j] = t; }
+    for (const [gx, gy] of cells) {
+      if (roomArea >= roomTarget) break;
+      const w = randInt(5, cellW - 2), h = randInt(5, cellH - 2);
+      const x = gx * cellW + randInt(1, cellW - w - 1);
+      const y = gy * cellH + randInt(1, cellH - h - 1);
+      const room = { x, y, w, h };
+      carveRoom(room); roomArea += w * h; rooms.push(room);
+    }
+    // Top up any shortfall with a few smaller rooms tucked into the leftover gaps.
+    for (let tries = 0; tries < 800 && roomArea < roomTarget && rooms.length < 20; tries++) {
+      const w = randInt(4, 6), h = randInt(4, 6);
       const x = randInt(1, MAP_W - w - 2), y = randInt(1, MAP_H - h - 2);
       const room = { x, y, w, h };
       if (rooms.some((r) => overlaps(r, room, 1))) continue;
-      carveRoom(room);
-      if (rooms.length > 0) {
-        const a = roomCenter(rooms[rooms.length - 1]);
-        const b = roomCenter(room);
-        if (Math.random() < 0.5) { hTunnel(a.x, b.x, a.y); vTunnel(a.y, b.y, b.x); }
-        else { vTunnel(a.y, b.y, a.x); hTunnel(a.x, b.x, b.y); }
-      }
-      rooms.push(room);
+      carveRoom(room); roomArea += w * h; rooms.push(room);
     }
+    // Then connect them with unique corridors (toward ~15% fill) — no retraced tunnels.
+    connectRooms(rooms);
 
     biomeIndex = biomeOf(depth);
     biome = DATA.biomes[biomeIndex];
@@ -447,7 +553,9 @@
       spawnMonsters(rooms);
     }
     spawnItems(rooms);
+    placeTrees(rooms, restricted);                     // obstacle trees in the larger rooms
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
+    genStats = computeFill(rooms);
     computeFOV();
     setDepthLabel();
     floaters = [];
@@ -836,7 +944,13 @@
   function canStep(x, y, dx, dy) {
     const nx = x + dx, ny = y + dy;
     if (!passable(nx, ny)) return false;
-    if (dx !== 0 && dy !== 0 && isWall(x + dx, y) && isWall(x, y + dy)) return false;
+    // no diagonal squeeze past a corner flanked by walls OR thorns — so a wall of
+    // brambles can't be slipped around diagonally without stepping through it
+    if (dx !== 0 && dy !== 0) {
+      const blockA = isWall(x + dx, y) || isThorn(x + dx, y);
+      const blockB = isWall(x, y + dy) || isThorn(x, y + dy);
+      if (blockA && blockB) return false;
+    }
     return true;
   }
 
@@ -2317,6 +2431,7 @@
         x: player.x, y: player.y, dead, explored: ex,
         camX, camY, panX, panY,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
+        grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0 })),
