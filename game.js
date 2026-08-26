@@ -111,7 +111,9 @@
   function resetPlayer() { applyClass(player.cls || "warrior"); }
   let monsters = [];
   let items = [];
+  let traps = [];
   let walkPath = [];
+  const trapAt = (x, y) => traps.find((t) => t.x === x && t.y === y) || null;
 
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
   const isWall = (x, y) => !inBounds(x, y) || map[y][x] === WALL;
@@ -269,6 +271,8 @@
   // ---- Loot: potions & scrolls, identified by use (defined in data.js) ----
   const CONSUM = DATA.consumables;
   const CONSUM_KEYS = Object.keys(CONSUM);
+  const TRAPS = DATA.traps || {};
+  const TRAP_KEYS = Object.keys(TRAPS);
   const identified = new Set();
   const defOf = (key) => GEAR[key] || CONSUM[key];
   function displayName(key) {
@@ -301,26 +305,14 @@
   function vTunnel(y1, y2, x) {
     for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) if (map[y][x] === WALL) map[y][x] = FLOOR;
   }
-  // Corridors are 2 wide — roomier to move through on a phone (no single-tile
-  // pinch points) and enough corridor floor to reach the fill target.
-  const carveFloor = (x, y) => { if (inBounds(x, y) && map[y][x] === WALL) map[y][x] = FLOOR; };
-  function hTunnel2(x1, x2, y) { for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) { carveFloor(x, y); carveFloor(x, y + 1); } }
-  function vTunnel2(y1, y2, x) { for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) { carveFloor(x, y); carveFloor(x + 1, y); } }
+  // Corridors are 1-tile-wide hallways connecting room centres.
   function carveCorridor(a, b) {
-    if (Math.random() < 0.5) { hTunnel2(a.x, b.x, a.y); vTunnel2(a.y, b.y, b.x); }
-    else { vTunnel2(a.y, b.y, a.x); hTunnel2(a.x, b.x, b.y); }
+    if (Math.random() < 0.5) { hTunnel(a.x, b.x, a.y); vTunnel(a.y, b.y, b.x); }
+    else { vTunnel(a.y, b.y, a.x); hTunnel(a.x, b.x, b.y); }
   }
-  // Count corridor floor = FLOOR tiles that lie outside every room.
-  function corridorFill(rooms) {
-    const inRoom = blankGrid(false);
-    for (const r of rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) inRoom[y][x] = true;
-    let n = 0;
-    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === FLOOR && !inRoom[y][x]) n++;
-    return n;
-  }
-  // Connect rooms with distinct corridors: a nearest-neighbour spanning tree for
-  // guaranteed connectivity, then the shortest remaining links until corridors
-  // cover ~15% of the map. Each room pair is carved at most once (no stacking).
+  // Connect rooms with distinct 1-wide corridors: a nearest-neighbour spanning
+  // tree for guaranteed connectivity, plus each room's single nearest link for a
+  // few loops. Each room pair is carved at most once (no stacked tunnels).
   function connectRooms(rooms) {
     if (rooms.length < 2) return;
     const cen = rooms.map(roomCenter);
@@ -341,13 +333,10 @@
       }
       link(best.a, best.b); inTree.add(best.b);
     }
-    const edges = [];
-    for (let a = 0; a < rooms.length; a++) for (let b = a + 1; b < rooms.length; b++) edges.push({ a, b, d: manh(a, b) });
-    edges.sort((p, q) => p.d - q.d);
-    const target = MAP_W * MAP_H * 0.15;
-    for (const e of edges) {
-      if (corridorFill(rooms) >= target) break;
-      link(e.a, e.b);
+    for (let a = 0; a < rooms.length; a++) {
+      let nb = -1, nd = Infinity;
+      for (let b = 0; b < rooms.length; b++) { if (b === a) continue; const d = manh(a, b); if (d < nd) { nd = d; nb = b; } }
+      if (nb >= 0) link(a, nb);
     }
   }
   // Breakdown of the finished level: how much is room floor vs corridor floor.
@@ -389,18 +378,86 @@
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
 
-  // A doorway is a 1-tile-wide gap a corridor punched through a room's wall ring.
-  // Turn those choke points into doors so each hall entrance reads as a threshold
-  // (and, closed, blocks sight into the room).
+  // Every corridor opening into a room becomes a door (bush) at the threshold, so a
+  // closed door hides the room (and breaks line of sight) until you reach its mouth.
   function placeDoors(rooms) {
-    // Every corridor opening into a room becomes a door (bush) at the threshold, so
-    // a closed door hides the room until you reach its mouth. 2-wide corridors get
-    // a 2-tile doorway.
     for (const r of rooms) {
       for (const [x, y] of roomRing(r)) {
         if (inBounds(x, y) && map[y][x] === FLOOR) map[y][x] = DOOR;
       }
     }
+  }
+  // ---- Traps: hidden on the floor, sprung when stepped on, spotted by chance ----
+  function pickTrapKey() {
+    if (!TRAP_KEYS.length) return null;
+    let total = 0; for (const k of TRAP_KEYS) total += (TRAPS[k].weight || 1);
+    let r = Math.random() * total;
+    for (const k of TRAP_KEYS) { r -= (TRAPS[k].weight || 1); if (r < 0) return k; }
+    return TRAP_KEYS[0];
+  }
+  function placeTraps() {
+    if (!TRAP_KEYS.length) return;
+    const n = randInt(2, 4) + Math.floor(depth / 3);
+    for (let i = 0; i < n; i++) {
+      let spot = null;
+      for (let t = 0; t < 60; t++) {
+        const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+        const c = map[y][x];
+        if (c !== FLOOR) continue;                                   // corridors & room floor only
+        if (cheb(x, y, player.x, player.y) < 3) continue;            // never right under the player
+        if (map[y][x] === STAIRS || itemAt(x, y) || trapAt(x, y)) continue;
+        spot = { x, y }; break;
+      }
+      if (!spot) continue;
+      const key = pickTrapKey();
+      if (key) traps.push({ x: spot.x, y: spot.y, key, revealed: false, sprung: false });
+    }
+  }
+  // Each turn, a chance to notice hidden traps on adjacent tiles (Luck helps).
+  function searchForTraps() {
+    const chance = 0.25 + Math.min(0.4, eff("LCK") * 0.02);
+    for (const [dx, dy] of DIRS8) {
+      const t = trapAt(player.x + dx, player.y + dy);
+      if (t && !t.revealed && !t.sprung && Math.random() < chance) {
+        t.revealed = true;
+        floatText(t.x, t.y, "!", "#ffd98a");
+        log("You spot a " + (TRAPS[t.key].name || "trap") + " nearby.");
+      }
+    }
+  }
+  function triggerTrap(t) {
+    t.revealed = true; t.sprung = true;
+    const def = TRAPS[t.key] || {};
+    flash(player); floatText(player.x, player.y, "TRAP!", "#e0685a");
+    log("You trigger a " + (def.name || "trap") + "!", "hurt");
+    if (def.effect === "teleport_far") teleportToFurthestMonster();
+    else applyEffect(def.effect);              // any consumable effect works as a trap effect too
+  }
+  // Teleport-trap: fling the player next to the monster that is currently furthest away.
+  function teleportToFurthestMonster() {
+    const live = monsters.filter((m) => m.hp > 0);
+    if (!live.length) { applyEffect("teleport"); return; }   // nothing to yank toward → random blink
+    let far = live[0], fd = -1;
+    for (const m of live) { const d = cheb(m.x, m.y, player.x, player.y); if (d > fd) { fd = d; far = m; } }
+    const spot = nearestFreeFloor(far.x, far.y);
+    if (spot) { player.x = spot.x; player.y = spot.y; computeFOV(); snapPlayer(); }
+    log("The trap flings you across the dungeon — a foe looms.", "hurt");
+  }
+  // BFS out from (tx,ty) for the closest passable, unoccupied floor tile.
+  function nearestFreeFloor(tx, ty) {
+    const seen = new Set([ty * MAP_W + tx]);
+    const q = [[tx, ty]];
+    while (q.length) {
+      const [x, y] = q.shift();
+      if (passable(x, y) && !(x === tx && y === ty && monsterAt(x, y)) && !monsterAt(x, y) && !(x === player.x && y === player.y)) return { x, y };
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx, ny = y + dy, k = ny * MAP_W + nx;
+        if (!inBounds(nx, ny) || seen.has(k)) continue;
+        seen.add(k);
+        if (passable(nx, ny)) q.push([nx, ny]);
+      }
+    }
+    return null;
   }
 
   // The wall-ring cells of a room (its perimeter), as [x, y] pairs.
@@ -491,6 +548,7 @@
     walkPath = [];
     monsters = [];
     items = [];
+    traps = [];
     turns = 0;
 
     const rooms = [];
@@ -507,13 +565,15 @@
     for (let i = cells.length - 1; i > 0; i--) { const j = randInt(0, i); const t = cells[i]; cells[i] = cells[j]; cells[j] = t; }
     for (const [gx, gy] of cells) {
       if (roomArea >= roomTarget) break;
+      // Roomy chambers filling most of each cell (dense map), connected by 1-wide
+      // halls and bush-gated doorways.
       const w = randInt(5, cellW - 2), h = randInt(5, cellH - 2);
       const x = gx * cellW + randInt(1, cellW - w - 1);
       const y = gy * cellH + randInt(1, cellH - h - 1);
       const room = { x, y, w, h };
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
-    // Top up any shortfall with a few smaller rooms tucked into the leftover gaps.
+    // Top up with a couple more small rooms in the leftover gaps.
     for (let tries = 0; tries < 800 && roomArea < roomTarget && rooms.length < 20; tries++) {
       const w = randInt(4, 6), h = randInt(4, 6);
       const x = randInt(1, MAP_W - w - 2), y = randInt(1, MAP_H - h - 2);
@@ -521,7 +581,7 @@
       if (rooms.some((r) => overlaps(r, room, 1))) continue;
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
-    // Then connect them with unique corridors (toward ~15% fill) — no retraced tunnels.
+    // Then connect them with distinct 1-wide corridors — no retraced tunnels.
     connectRooms(rooms);
 
     biomeIndex = biomeOf(depth);
@@ -549,6 +609,7 @@
     }
     spawnItems(rooms);
     placeTrees(rooms, restricted);                     // obstacle trees in the larger rooms
+    if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
     computeFOV();
@@ -972,13 +1033,34 @@
       }
       computeFOV();
       pickUp();
-      if (map[ny][nx] === STAIRS) { descend(); return true; }  // fresh level, no world turn
+      const tr = trapAt(player.x, player.y);
+      if (tr && !tr.sprung) { triggerTrap(tr); if (dead) return true; }
+      if (map[player.y][player.x] === STAIRS) { descend(); return true; }  // fresh level, no world turn
       worldTurn();
       return true;
     }
     return false;
   }
 
+  const INV_MAX = 25;                          // 5×5 grid of slots
+  // Add an item entry to the pack. Consumables stack by key into a single slot;
+  // gear takes its own slot. Returns false when the pack is full.
+  function invAdd(entry) {
+    if (!isGear(entry)) {
+      const ex = player.inv.find((e) => !isGear(e) && e.key === entry.key);
+      if (ex) { ex.count = (ex.count || 1) + (entry.count || 1); return true; }
+    }
+    if (player.inv.length >= INV_MAX) return false;
+    player.inv.push(entry);
+    return true;
+  }
+  // Remove one unit from the entry at idx; returns a single-unit entry (for drop/throw).
+  function takeOne(idx) {
+    const e = player.inv[idx]; if (!e) return null;
+    if (!isGear(e) && (e.count || 1) > 1) { e.count -= 1; return { key: e.key }; }
+    player.inv.splice(idx, 1);
+    return isGear(e) ? e : { key: e.key };
+  }
   function pickUp() {
     const it = itemAt(player.x, player.y);
     if (!it) return;
@@ -988,9 +1070,9 @@
       log("You find " + it.amount + " gold.");
       return;
     }
-    if (player.inv.length >= 12) { log("Your pack is full."); return; }
     // carry the item minus its map position (gear keeps its rolled affixes + id progress)
-    player.inv.push(isGear(it) ? stripPos(it) : { key: it.key });
+    const entry = isGear(it) ? stripPos(it) : { key: it.key, count: it.count || 1 };
+    if (!invAdd(entry)) { log("Your pack is full."); return; }
     items = items.filter((x) => x !== it);
     log("You pick up the " + itemName(it) + ".");
   }
@@ -1217,7 +1299,7 @@
     cost = cost == null ? 1 : cost;
     turns++;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
-    panX = 0; panY = 0; enemyFocusIdx = -1;    // any action recenters the camera on you
+    panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
@@ -1228,6 +1310,7 @@
       if (dead) return;
     }
     regenTick();
+    searchForTraps();
     maybeReinforce();
     updateHotbar();
     updateHUD();      // refresh vitals + enemy-in-sight counter every turn
@@ -1278,6 +1361,7 @@
   function walkTo(tx, ty) {
     if (dead) return;
     if (examineMode) { describeTile(tx, ty); toggleExamine(false); updateHotbar(); return; }
+    if (pendingThrow != null) { const idx = pendingThrow; executeThrow(idx, tx, ty); return; }
     if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "rush") {
       const dir = [Math.sign(tx - player.x), Math.sign(ty - player.y)];
       if (dir[0] || dir[1]) executeRush(pendingSkill, dir); else { pendingSkill = null; updateHotbar(); }
@@ -1310,9 +1394,8 @@
     if (adjacent) stepToward(tx, ty);
   }
   function takeTorch(t) {
-    if (player.inv.length >= 12) { log("Your pack is full."); return; }
+    if (!invAdd({ key: "torch" })) { log("Your pack is full."); return; }
     torches = torches.filter((x) => x !== t);
-    player.inv.push({ key: "torch" });
     log("You lift the torch from its bracket.");
     updateHUD();
     worldTurn();
@@ -1700,6 +1783,18 @@
       ctx.fillRect(px + (tile - sz) / 2, py + (tile - sz) / 2, sz, sz);
     }
 
+    // revealed traps (hidden ones stay invisible until spotted or sprung)
+    for (const t of traps) {
+      if (!t.revealed || !inBounds(t.x, t.y) || !visible[t.y][t.x]) continue;
+      const px = SX(t.x), py = SY(t.y);
+      const def = TRAPS[t.key] || {};
+      ctx.fillStyle = t.sprung ? "#5a4a63" : (def.color || "#b491d6");
+      ctx.font = `bold ${Math.floor(tile * 0.62)}px ${bodyFont()}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(def.glyph || "^", px + tile / 2, py + tile / 2);
+      dim(px, py, (1 - litBright(t.x, t.y)) * 0.8);
+    }
+
     // floor items
     for (const it of items) {
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
@@ -1838,7 +1933,7 @@
   let invOpen = false;
   function toggleInv(force) {
     invOpen = force === undefined ? !invOpen : force;
-    if (invOpen) { toggleMap(false); toggleChar(false); toggleExamine(false); renderInv(); }
+    if (invOpen) { selectedInvIdx = -1; toggleMap(false); toggleChar(false); toggleExamine(false); renderInv(); }
     document.getElementById("inv").hidden = !invOpen;
     document.getElementById("btnBag").classList.toggle("on", invOpen);
   }
@@ -1852,6 +1947,13 @@
     const aff = itemAffixText(inst);
     return `<b style="color:${itemColor(inst)}">${itemName(inst)}</b>` + (aff ? ` <span style="opacity:.7">(${aff})</span>` : "");
   }
+  // ---- Inventory: a 5×5 grid; consumables stack; each item has actions ---------
+  let selectedInvIdx = -1;
+  let pendingThrow = null;
+  const entryDef = (e) => (isGear(e) ? GEAR[e.key] : CONSUM[e.key]);
+  const entryGlyph = (e) => { const d = entryDef(e); return (d && d.glyph) || "?"; };
+  const entryColor = (e) => (isGear(e) ? itemColor(e) : ((CONSUM[e.key] && CONSUM[e.key].color) || "#cfc3a0"));
+  const entryName = (e) => (isGear(e) ? itemName(e) : displayName(e.key));
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
     const df = armorDef() + vitResist();
@@ -1867,51 +1969,63 @@
       slotRow("Weapon", player.weapon) + slotRow("Armor", player.armor) +
       slotRow("Ring", player.ring1) + slotRow("Ring", player.ring2) +
       slotRow("Trinket", player.trinket) + slotRow("Necklace", player.necklace);
-    const ul = document.getElementById("invList");
-    ul.innerHTML = "";
-    if (player.inv.length === 0) {
-      const li = document.createElement("li");
-      li.className = "empty";
-      li.textContent = "(nothing carried)";
-      ul.appendChild(li);
-      return;
-    }
-    player.inv.forEach((it, idx) => {
-      const def = defOf(it.key);
-      const li = document.createElement("li");
-      let tag, nameHtml;
-      if (isGear(it)) {
-        tag = def.cat === "weapon" ? "dmg " + dDmgMin(it) + "–" + dDmgMax(it) : def.cat === "armor" ? "def " + dDef(it) : def.cat;
-        if (!itemIdentified(it)) tag = "id " + idPct(it) + "%";
-        const aff = itemAffixText(it);
-        nameHtml = `<span class="i-name" style="color:${itemColor(it)}">${itemName(it)}</span>` +
-                   (aff ? `<br><span style="font-size:10px;opacity:.7">${aff}</span>` : "");
-      } else {
-        if (def.cat === "tool") tag = "burn thorns";
-        else tag = identified.has(it.key) ? "use" : "use · ?";
-        nameHtml = '<span class="i-name">' + displayName(it.key) + "</span>";
+    if (selectedInvIdx >= player.inv.length) selectedInvIdx = -1;
+    const grid = document.getElementById("invGrid");
+    grid.innerHTML = "";
+    for (let i = 0; i < INV_MAX; i++) {
+      const e = player.inv[i];
+      const slot = document.createElement("div");
+      slot.className = "inv-slot" + (e ? "" : " empty") + (i === selectedInvIdx ? " sel" : "");
+      if (e) {
+        const g = document.createElement("span"); g.className = "i-glyph"; g.textContent = entryGlyph(e); g.style.color = entryColor(e); slot.appendChild(g);
+        const cnt = e.count || 1;
+        if (cnt > 1) { const c = document.createElement("span"); c.className = "i-count"; c.textContent = cnt; slot.appendChild(c); }
+        slot.addEventListener("click", () => { selectedInvIdx = (selectedInvIdx === i ? -1 : i); renderInv(); });
       }
-      li.innerHTML = nameHtml + "<span class=\"i-tag\">" + tag + "</span>";
-      li.addEventListener("click", () => actItem(idx));
-      ul.appendChild(li);
-    });
+      grid.appendChild(slot);
+    }
+    renderInvDetail();
+  }
+  function renderInvDetail() {
+    const d = document.getElementById("invDetail");
+    const e = player.inv[selectedInvIdx];
+    if (!e) { d.innerHTML = '<div class="d-empty">Tap a slot to see its actions.</div>'; return; }
+    const def = entryDef(e) || {};
+    let sub;
+    if (isGear(e)) {
+      const cat = GEAR[e.key].cat;
+      sub = cat === "weapon" ? ("dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1)) : cat === "armor" ? ("def " + dDef(e)) : cat;
+      if (!itemIdentified(e)) sub += " · unidentified (" + idPct(e) + "%)";
+      else { const aff = itemAffixText(e); if (aff && aff !== "unidentified") sub += " · " + aff; }
+    } else {
+      sub = identified.has(e.key) ? (def.cat || "item") : "unidentified " + (def.cat || "item");
+      if ((e.count || 1) > 1) sub += " · ×" + e.count;
+    }
+    d.innerHTML = `<div class="d-name" style="color:${entryColor(e)}">${entryName(e)}</div><div class="d-sub">${sub}</div>`;
+    const acts = document.createElement("div"); acts.className = "inv-actions";
+    const mk = (label, cls, fn) => { const b = document.createElement("button"); if (cls) b.className = cls; b.textContent = label; b.addEventListener("click", fn); return b; };
+    const other = isGear(e) ? "Equip" : def.cat === "potion" ? "Drink" : def.cat === "scroll" ? "Read" : "Use";
+    acts.appendChild(mk(other, "primary", () => actItem(selectedInvIdx)));
+    acts.appendChild(mk("Throw", "", () => beginThrow(selectedInvIdx)));
+    acts.appendChild(mk("Drop", "danger", () => dropItem(selectedInvIdx)));
+    d.appendChild(acts);
   }
   function actItem(idx) {
     const it = player.inv[idx];
     if (!it) return;
-    if (GEAR[it.key]) equipItem(idx);
+    if (isGear(it)) equipItem(idx);
     else useConsumable(idx);
   }
   function equipItem(idx) {
     const it = player.inv[idx];
-    if (!it) return;
+    if (!it || !isGear(it)) return;
     const cat = GEAR[it.key].cat;
     const slots = EQUIP_SLOTS[cat] || ["weapon"];
-    // fill the first empty slot for this cat, else swap out the first one
-    const slot = slots.find((s) => !player[s]) || slots[0];
+    const slot = slots.find((s) => !player[s]) || slots[0];   // first empty slot, else swap the first
     player.inv.splice(idx, 1);
     if (player[slot]) player.inv.push(player[slot]);
     player[slot] = it;
+    selectedInvIdx = -1;
     const verb = cat === "weapon" ? "You wield the " : cat === "armor" ? "You don the " : "You equip the ";
     log(verb + itemName(it) + ".");
     player.maxHp = computeMaxHp();               // VIT affixes can change max HP
@@ -1927,22 +2041,76 @@
     const def = CONSUM[it.key];
     if (def.effect === "burn") {                 // a torch: only spent if there are thorns to burn
       if (!adjacentThorns().length) { log("No thorns within reach to burn."); return; }
-      player.inv.splice(idx, 1);
+      takeOne(idx); selectedInvIdx = -1;
       burnThorns();
-      updateHUD();
-      worldTurn();
+      updateHUD(); worldTurn();
       if (dead) { toggleInv(false); return; }
       renderInv();
       return;
     }
     identified.add(it.key);      // using an item reveals what it is
-    player.inv.splice(idx, 1);
+    takeOne(idx); selectedInvIdx = -1;
     applyEffect(def.effect);
     updateHUD();
     if (dead) { toggleInv(false); return; }
     worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
+  }
+  // Drop one unit onto the floor at (or beside) the player.
+  function dropSpot() {
+    if (passable(player.x, player.y) && !itemAt(player.x, player.y)) return { x: player.x, y: player.y };
+    for (const [dx, dy] of DIRS8) {
+      const x = player.x + dx, y = player.y + dy;
+      if (passable(x, y) && map[y][x] !== THORN && !itemAt(x, y)) return { x, y };
+    }
+    return null;
+  }
+  function dropItem(idx) {
+    const e = player.inv[idx]; if (!e) return;
+    const spot = dropSpot();
+    if (!spot) { log("Nowhere to drop it here."); return; }
+    const one = takeOne(idx); selectedInvIdx = -1;
+    items.push(Object.assign({ x: spot.x, y: spot.y }, one));
+    log("You drop the " + entryName(one) + ".");
+    updateHUD(); worldTurn();
+    if (dead) { toggleInv(false); return; }
+    renderInv();
+  }
+  function beginThrow(idx) {
+    if (!player.inv[idx]) return;
+    pendingThrow = idx;
+    toggleInv(false);
+    log("Throw — tap a tile within sight.");
+    updateHotbar();
+  }
+  function executeThrow(idx, tx, ty) {
+    const e = player.inv[idx];
+    if (!e) { pendingThrow = null; return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx] || cheb(player.x, player.y, tx, ty) > 6) { log("Too far to throw there."); pendingThrow = null; updateHotbar(); return; }
+    const one = takeOne(idx); selectedInvIdx = -1;
+    const nm = entryName(one);
+    const isPotion = !isGear(one) && CONSUM[one.key] && CONSUM[one.key].cat === "potion";
+    if (isPotion) {
+      identified.add(one.key);
+      floatText(tx, ty, "✸", CONSUM[one.key].color || "#cfe6b0");
+      const m = monsterAt(tx, ty);
+      if (m && CONSUM[one.key].effect === "poison") {
+        const d = randInt(3, 6); m.hp -= d; flash(m); floatText(m.x, m.y, "☠-" + d, "#9ad06a");
+        addDot(m, { tag: "poison", dmg: 2, rounds: 5, icon: "☠", color: "#9ad06a" }, true);
+        log("The " + nm + " bursts over the " + monName(m) + "!", "hit");
+        if (m.hp <= 0) killMonster(m, "succumbs to poison");
+      } else {
+        log("The " + nm + " shatters, its magic wasted.");
+      }
+    } else {
+      const spot = passable(tx, ty) ? { x: tx, y: ty } : nearestFreeFloor(tx, ty);
+      if (spot) { items.push(Object.assign({ x: spot.x, y: spot.y }, one)); log("You throw the " + nm + "."); }
+    }
+    pendingThrow = null;
+    updateHUD(); worldTurn();
+    if (dead) return;
+    updateHotbar();
   }
   function adjacentThorns() {
     const out = [];
@@ -2140,6 +2308,13 @@
       log("You — " + ((DATA.classes[player.cls] || {}).name || "Adventurer") + ", HP " + player.hp + "/" + player.maxHp);
       return;
     }
+    const tr = trapAt(x, y);
+    if (tr && visible[y][x]) {
+      tr.revealed = true;                       // examining a tile uncovers a trap on it
+      const def = TRAPS[tr.key] || {};
+      log((def.name || "Trap") + (tr.sprung ? " (already sprung)" : " — step carefully around it."));
+      return;
+    }
     const it = items.find((i) => i.x === x && i.y === y);
     if (it && visible[y][x]) {
       if (it.key === "gold") { log(it.amount + " gold"); return; }
@@ -2302,7 +2477,7 @@
     if (key === "m") { e.preventDefault(); toggleMap(); return; }
     if (mapOpen) { if (e.key === "Escape") toggleMap(false); return; }
     if (key === "x") { e.preventDefault(); toggleExamine(); return; }
-    if (e.key === "Escape" && (examineMode || pendingSkill)) { examineMode = false; pendingSkill = null; toggleExamine(false); updateHotbar(); return; }
+    if (e.key === "Escape" && (examineMode || pendingSkill || pendingThrow != null)) { examineMode = false; pendingSkill = null; pendingThrow = null; toggleExamine(false); updateHotbar(); return; }
     if (key === "z" || e.key === "." || e.code === "Numpad5") { e.preventDefault(); waitTurn(); return; }
     if (key >= "1" && key <= "9") {                        // number keys → learned active skills, in order
       const actives = Object.keys(classSkills()).filter((k) => { const d = classSkills()[k]; return d.kind !== "passive" && player.skills[k] && player.skills[k].rank >= 1; });
@@ -2421,7 +2596,7 @@
   window.cantori = {
     descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart,
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
-    give: (k) => { if (GEAR[k]) player.inv.push(rollItem(k, depth)); else if (defOf(k)) player.inv.push({ key: k }); },
+    give: (k) => { if (GEAR[k]) invAdd(rollItem(k, depth)); else if (defOf(k)) invAdd({ key: k }); },
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
     rollItem: (k, f) => rollItem(k, f != null ? f : depth),
@@ -2454,6 +2629,7 @@
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0 })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
+        traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
       };
     },

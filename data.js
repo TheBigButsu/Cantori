@@ -520,6 +520,15 @@ window.CANTORI_DATA = {
       "color": "#f6b845"
     }
   },
+  "traps": {
+    "teleport": {
+      "name": "Teleport Trap",
+      "effect": "teleport_far",
+      "weight": 1,
+      "glyph": "^",
+      "color": "#b491d6"
+    }
+  },
   "bosses": {
     "piper": {
       "name": "The Pied Piper",
