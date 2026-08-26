@@ -415,10 +415,15 @@
   }
   // Each turn, a chance to notice hidden traps on adjacent tiles (Luck helps).
   function searchForTraps() {
-    const chance = 0.25 + Math.min(0.4, eff("LCK") * 0.02);
-    for (const [dx, dy] of DIRS8) {
-      const t = trapAt(player.x + dx, player.y + dy);
-      if (t && !t.revealed && !t.sprung && Math.random() < chance) {
+    // Notice radius = 1 + LCK/5 tiles. Per-turn chance = 10%·(INT/10) + LCK% = INT + LCK (in %).
+    const radius = 1 + Math.floor(eff("LCK") / 5);
+    const chance = (eff("INT") + eff("LCK")) / 100;
+    if (chance <= 0) return;
+    for (const t of traps) {
+      if (t.revealed || t.sprung) continue;
+      if (cheb(t.x, t.y, player.x, player.y) > radius) continue;
+      if (!lineOfSight(player.x, player.y, t.x, t.y)) continue;   // must have a clear line to spot it
+      if (Math.random() < chance) {
         t.revealed = true;
         floatText(t.x, t.y, "!", "#ffd98a");
         log("You spot a " + (TRAPS[t.key].name || "trap") + " nearby.");
@@ -501,6 +506,23 @@
   function roomOpenings(r) {
     return roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] !== WALL);
   }
+  // Tiles reachable from (sx,sy) by real movement (8-dir + corner rule). When
+  // blockThorns is true, brambles count as walls — i.e. reachable WITHOUT a torch.
+  function floodReach(sx, sy, blockThorns) {
+    const seen = new Set([sy * MAP_W + sx]);
+    const q = [[sx, sy]];
+    const blocked = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (blockThorns && map[y][x] === THORN);
+    while (q.length) {
+      const [x, y] = q.shift();
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx, ny = y + dy, k = ny * MAP_W + nx;
+        if (blocked(nx, ny) || seen.has(k)) continue;
+        if (dx && dy && blocked(x + dx, y) && blocked(x, y + dy)) continue;   // no diagonal corner-cut
+        seen.add(k); q.push([nx, ny]);
+      }
+    }
+    return seen;
+  }
   function makeThornVaults(rooms, last) {
     const restricted = new Set();
     let candidates = [];
@@ -514,11 +536,28 @@
     candidates = candidates.map((c) => c.i);
     const nVaults = Math.random() < 0.5 ? 1 : 2;
     for (let v = 0; v < nVaults && candidates.length; v++) {
-      const pick = candidates.shift();
-      const r = rooms[pick];
-      // seal EVERY opening with brambles — thorns become the only way in
-      for (const [x, y] of roomOpenings(r)) map[y][x] = THORN;
-      const spot = freeFloorInRoom(r);
+      // Only seal a room if EVERY other room stays reachable from the start without
+      // crossing thorns — so a vault is always optional and can never wall the
+      // player in. (Torches sit on non-vault walls, all in that reachable region,
+      // so a torch always "precedes" the brambles.)
+      let pick = -1;
+      while (candidates.length) {
+        const cand = candidates.shift();
+        const openings = roomOpenings(rooms[cand]);
+        const saved = openings.map(([x, y]) => map[y][x]);
+        for (const [x, y] of openings) map[y][x] = THORN;                 // tentative seal
+        const reach = floodReach(player.x, player.y, true);              // reachable torch-free
+        let safe = true;
+        for (let j = 0; j < rooms.length && safe; j++) {
+          if (j === cand) continue;
+          const c = roomCenter(rooms[j]);
+          if (!reach.has(c.y * MAP_W + c.x)) safe = false;
+        }
+        if (safe) { pick = cand; break; }
+        openings.forEach(([x, y], o) => { map[y][x] = saved[o]; });      // revert an unsafe seal
+      }
+      if (pick < 0) break;
+      const spot = freeFloorInRoom(rooms[pick]);
       if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, rollVaultLoot(depth)));
       restricted.add(pick);
     }
