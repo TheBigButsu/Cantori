@@ -1026,10 +1026,18 @@
     if (canStep(player.x, player.y, dx, dy)) {
       player.x = nx; player.y = ny;
       if (map[ny][nx] === THORN) {
-        const d = randInt(5, 10);
-        player.hp -= d; flash(player); floatText(player.x, player.y, "-" + d, "#ff8f84");
-        log("The thorns tear at you! (-" + d + ")", "hurt");
-        if (player.hp <= 0) { updateHUD(); computeFOV(); die(); return true; }
+        const ti = player.inv.findIndex((i) => i.key === "torch");
+        if (ti >= 0) {                             // carrying a torch → burn through, no bleeding
+          takeOne(ti);
+          const cells = [[player.x, player.y]].concat(adjacentThorns());
+          for (const [x, y] of cells) { map[y][x] = FLOOR; floatText(x, y, "🔥", "#f6b845"); }
+          log(cells.length === 1 ? "Your torch burns the brambles away." : "Your torch sets the brambles ablaze — " + cells.length + " burn away.", "hit");
+        } else {
+          const d = randInt(5, 10);
+          player.hp -= d; flash(player); floatText(player.x, player.y, "-" + d, "#ff8f84");
+          log("The thorns tear at you! (-" + d + ")", "hurt");
+          if (player.hp <= 0) { updateHUD(); computeFOV(); die(); return true; }
+        }
       }
       computeFOV();
       pickUp();
