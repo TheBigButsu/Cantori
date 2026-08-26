@@ -47,7 +47,7 @@
       { f: "dmgMin", label: "dmg min", type: "num" }, { f: "dmgMax", label: "dmg max", type: "num" },
       { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
       { f: "range", type: "num" },
-      { f: "def", type: "num" },
+      { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
@@ -76,6 +76,8 @@
   // Editing state: table rows as [{key,obj}], json collections as text + parsed cache.
   const rows = {};
   for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+  const sortState = {};   // per-table { f, dir } — click a header to sort by that column
+  const filterText = {};  // per-table search string — type to filter rows
   const jsonText = {}, jsonOk = {};
   for (const c of JSON_COLLS) {
     let src = source[c] != null ? source[c] : {};
@@ -208,41 +210,99 @@
     setStatus("");
   }
 
+  // Value shown in a column for a row (handles the key column + reqSTR mapping).
+  function cellValue(row, col) {
+    if (col.f === "__key") return row.key || "";
+    return getField(row.obj, col.f);   // "" when missing
+  }
+  // Does a row match the filter text? (any column contains the string)
+  function rowMatches(coll, row, q) {
+    for (const col of SPECS[coll]) {
+      const v = cellValue(row, col);
+      if (v != null && String(v).toLowerCase().indexOf(q) >= 0) return true;
+    }
+    return false;
+  }
+  // Compare two rows on a column; blanks always sink to the bottom.
+  function cmpRows(a, b, col, dir) {
+    const av = cellValue(a, col), bv = cellValue(b, col);
+    const aE = (av === "" || av == null), bE = (bv === "" || bv == null);
+    if (aE && bE) return 0;
+    if (aE) return 1;
+    if (bE) return -1;
+    let r;
+    if (col.type === "num") r = Number(av) - Number(bv);
+    else r = String(av).localeCompare(String(bv), undefined, { numeric: true });
+    return dir === "desc" ? -r : r;
+  }
+
   function renderTable(coll) {
     const wrap = document.createElement("div");
     const spec = SPECS[coll];
+
     const bar = document.createElement("div"); bar.className = "collbar";
-    const h = document.createElement("h2"); h.textContent = coll + " — " + rows[coll].length + " entries";
-    bar.appendChild(h); wrap.appendChild(bar);
+    const h = document.createElement("h2"); bar.appendChild(h);
+    const filt = document.createElement("input");
+    filt.type = "text"; filt.className = "filter"; filt.placeholder = "filter…"; filt.value = filterText[coll] || "";
+    bar.appendChild(filt);
+    wrap.appendChild(bar);
 
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = tableHint(coll);
+    note.textContent = "Click a column header to sort by it (again to reverse); type in the filter box to narrow the list. " + tableHint(coll);
     wrap.appendChild(note);
 
     const tw = document.createElement("div"); tw.className = "tablewrap";
     const table = document.createElement("table");
     const thead = document.createElement("thead");
     const htr = document.createElement("tr");
-    for (const col of spec) { const th = document.createElement("th"); th.textContent = col.label || col.f; htr.appendChild(th); }
-    htr.appendChild(document.createElement("th"));
+    for (const col of spec) {
+      const th = document.createElement("th"); th.className = "sortable"; th.dataset.f = col.f;
+      th.onclick = () => {
+        const s = sortState[coll];
+        if (s && s.f === col.f) s.dir = (s.dir === "asc" ? "desc" : "asc");
+        else sortState[coll] = { f: col.f, dir: "asc" };
+        rebuild();
+      };
+      htr.appendChild(th);
+    }
+    htr.appendChild(document.createElement("th"));   // delete column (not sortable)
     thead.appendChild(htr); table.appendChild(thead);
-
     const tbody = document.createElement("tbody");
-    rows[coll].forEach((row, i) => tbody.appendChild(renderRow(coll, row, i)));
     table.appendChild(tbody);
     tw.appendChild(table); wrap.appendChild(tw);
 
     const add = document.createElement("div"); add.className = "addrow";
     const btn = document.createElement("button"); btn.textContent = "+ Add " + coll.replace(/s$/, "");
     btn.onclick = () => {
+      filterText[coll] = "";   // clear the filter so the new row is visible
       rows[coll].push({ key: uniqueKey(coll, "new_" + coll.replace(/s$/, "")), obj: clone(TEMPLATES[coll]) });
       render();
     };
     add.appendChild(btn); wrap.appendChild(add);
+
+    // Recompute the filtered/sorted view and repaint just the header labels +
+    // body (so typing in the filter box keeps focus).
+    function rebuild() {
+      const q = (filterText[coll] || "").trim().toLowerCase();
+      let view = q ? rows[coll].filter((row) => rowMatches(coll, row, q)) : rows[coll].slice();
+      const st = sortState[coll];
+      if (st) { const col = spec.find((c) => c.f === st.f); if (col) view.sort((a, b) => cmpRows(a, b, col, st.dir)); }
+      h.textContent = coll + " — " + (q ? view.length + " of " + rows[coll].length : rows[coll].length + " entries");
+      const ths = thead.querySelectorAll("th");
+      spec.forEach((col, idx) => {
+        const on = st && st.f === col.f;
+        ths[idx].textContent = (col.label || col.f) + (on ? (st.dir === "asc" ? " ▲" : " ▼") : "");
+        ths[idx].classList.toggle("on", !!on);
+      });
+      tbody.innerHTML = "";
+      view.forEach((row) => tbody.appendChild(renderRow(coll, row)));
+    }
+    filt.oninput = () => { filterText[coll] = filt.value; rebuild(); };
+    rebuild();
     return wrap;
   }
 
-  function renderRow(coll, row, i) {
+  function renderRow(coll, row) {
     const spec = SPECS[coll];
     const tr = document.createElement("tr");
     for (const col of spec) {
@@ -253,7 +313,7 @@
     const td = document.createElement("td");
     const del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
     del.title = "delete";
-    del.onclick = () => { rows[coll].splice(i, 1); render(); };
+    del.onclick = () => { const idx = rows[coll].indexOf(row); if (idx >= 0) rows[coll].splice(idx, 1); render(); };
     td.appendChild(del); tr.appendChild(td);
     return tr;
   }
@@ -908,7 +968,7 @@
   function tableHint(coll) {
     return ({
       monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
-      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype nudges evasion: light +2, medium 0, heavy −3. tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
+      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range); JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype nudges evasion: light +2, medium 0, heavy −3. tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
     })[coll] || "";

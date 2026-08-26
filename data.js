@@ -232,7 +232,8 @@ window.CANTORI_DATA = {
       },
       "glyph": "[",
       "color": "#b98a5a",
-      "def": 2
+      "defMin": 1,
+      "defMax": 3
     },
     "chain": {
       "cat": "armor",
@@ -244,7 +245,8 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 15
       },
-      "def": 4
+      "defMin": 3,
+      "defMax": 5
     },
     "plate": {
       "cat": "armor",
@@ -256,7 +258,8 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 40
       },
-      "def": 8
+      "defMin": 6,
+      "defMax": 10
     },
     "ring_copper": {
       "cat": "ring",
@@ -361,7 +364,8 @@ window.CANTORI_DATA = {
       "glyph": "/",
       "color": "#cccccc",
       "sub": "light",
-      "def": 1,
+      "defMin": 0,
+      "defMax": 1,
       "tier": 0,
       "rarity": 0
     }

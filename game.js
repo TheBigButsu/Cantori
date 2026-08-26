@@ -187,7 +187,13 @@
   // Effective numbers for an instance (base + plus).
   const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (inst.plus || 0);
   const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + (inst.plus || 0);
-  const gDef = (inst) => (GEAR[inst.key].def || 0) + (inst.plus || 0);
+  // Armor blocks a random amount each hit, rolled between defMin and defMax. A
+  // legacy flat `def` still works — it becomes both ends of the range.
+  const baseDefMin = (key) => { const g = GEAR[key]; return g.defMin != null ? g.defMin : (g.def || 0); };
+  const baseDefMax = (key) => { const g = GEAR[key]; return g.defMax != null ? g.defMax : (g.def != null ? g.def : (g.defMin || 0)); };
+  const gDefMin = (inst) => baseDefMin(inst.key) + (inst.plus || 0);
+  const gDefMax = (inst) => baseDefMax(inst.key) + (inst.plus || 0);
+  const gDef = (inst) => gDefMax(inst);   // top-end block (enchant power, parallels weapon dmgMax)
   const gStatBonus = (inst, statKey) => {
     let n = 0;
     for (const s of inst.stats || []) if (s.stat === statKey) n += s.val + (inst.plus || 0);
@@ -200,7 +206,11 @@
     return n;
   }
   const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
-  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorSubMit();
+  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorSubMit();          // top-end block (display/peek)
+  const armorDefMin = () => (player.armor ? gDefMin(player.armor) : 0) + armorSubMit();
+  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorSubMit();
+  // The actual mitigation applied on a hit: roll a fresh block within the range.
+  const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorSubMit();
   // Weapon combat numbers (unarmed falls back to the base 2–3 fists).
   const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin);
   const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax);
@@ -248,7 +258,11 @@
   // Display damage/def hide the +X until identified (combat still uses the real gDmg*/gDef).
   const dDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + dispPlus(inst);
   const dDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + dispPlus(inst);
-  const dDef = (inst) => (GEAR[inst.key].def || 0) + dispPlus(inst);
+  const dDefMin = (inst) => baseDefMin(inst.key) + dispPlus(inst);
+  const dDefMax = (inst) => baseDefMax(inst.key) + dispPlus(inst);
+  const dDef = (inst) => dDefMax(inst);
+  // "3" if the block is fixed, "1–3" if it's a range — for gear labels.
+  const defRange = (lo, hi) => (lo === hi ? "" + lo : lo + "–" + hi);
   const idPct = (inst) => (itemIdentified(inst) ? 100 : Math.min(99, Math.floor(((inst.idXp || 0) / Math.max(1, inst.idNeed || 1)) * 100)));
 
   // Display: colored name, +X prefix (only if known), and an affix summary line.
@@ -967,7 +981,7 @@
         return;
       }
       let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
-      dmg = Math.max(1, dmg - armorDef() - vitResist());
+      dmg = Math.max(1, dmg - armorBlock() - vitResist());
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
@@ -2190,7 +2204,7 @@
   const entryName = (e) => (isGear(e) ? itemName(e) : displayName(e.key));
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
-    const df = armorDef() + vitResist();
+    const df = defRange(armorDefMin() + vitResist(), armorDefMax() + vitResist());
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const withGear = (k) => { const g = equipStat(k); return eff(k) + (g ? `<span style="color:#7ec98a">(+${g})</span>` : ""); };
     const statLine = `STR ${withGear("STR")} · VIT ${withGear("VIT")} · DEX ${withGear("DEX")} · INT ${withGear("INT")} · RES ${withGear("RES")} · LCK ${withGear("LCK")}`;
@@ -2228,7 +2242,7 @@
     let sub;
     if (isGear(e)) {
       const cat = GEAR[e.key].cat;
-      sub = cat === "weapon" ? ("dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1)) : cat === "armor" ? ("def " + dDef(e)) : cat;
+      sub = cat === "weapon" ? ("dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1)) : cat === "armor" ? ("def " + defRange(dDefMin(e), dDefMax(e))) : cat;
       if (!itemIdentified(e)) sub += " · unidentified (" + idPct(e) + "%)";
       else { const aff = itemAffixText(e); if (aff && aff !== "unidentified") sub += " · " + aff; }
     } else {
@@ -2591,7 +2605,7 @@
   }
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
-    const df = armorDef() + vitResist();
+    const df = defRange(armorDefMin() + vitResist(), armorDefMax() + vitResist());
     const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: Math.round(critChance() * 100) + "% crit" };
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
       const g = equipStat(k);
@@ -2859,7 +2873,7 @@
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
-        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: armorDef(),
+        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex,
         camX, camY, panX, panY,

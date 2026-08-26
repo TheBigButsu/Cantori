@@ -44,6 +44,10 @@
     table{border-collapse:collapse;width:100%;min-width:640px}
     th,td{border-bottom:1px solid var(--line);padding:6px 7px;text-align:left;white-space:nowrap}
     th{background:var(--panel2);color:var(--ink-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0}
+    th.sortable{cursor:pointer;user-select:none}
+    th.sortable:hover{color:var(--amber)}
+    th.on{color:var(--amber)}
+    input.filter{width:auto;min-width:130px;max-width:220px;margin-left:auto}
     tr:hover td{background:rgba(240,168,56,0.03)}
     input[type=text],input[type=number]{
       background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;
@@ -205,7 +209,7 @@
           <tr><td>Hit chance</td><td><code>50% + (acc − eva) × 3%</code>, clamped to 10%–95% (even acc/eva = 50%; each point of accuracy over evasion = +3%). A target that hasn't noticed you is auto-hit for <code>×1.5</code> damage (surprise).</td></tr>
           <tr><td>Your accuracy</td><td><code>base + DEX + weapon acc + level acc</code></td></tr>
           <tr><td>Your evasion</td><td><code>base + DEX + level eva + armor subtype</code> (light +2, medium 0, heavy −3)</td></tr>
-          <tr><td>Damage dealt</td><td><code>roll(dmgMin..dmgMax) + STR bonus + bonuses − armor def − VIT resist</code>, minimum 1</td></tr>
+          <tr><td>Damage dealt</td><td><code>roll(dmgMin..dmgMax) + STR bonus + bonuses − armor block − VIT resist</code>, minimum 1. Armor block is itself a fresh roll of <code>defMin..defMax</code> each hit, so heavier armor absorbs a variable amount.</td></tr>
           <tr><td>Critical hit</td><td>Base <code>5%</code> chance for <code>200%</code> damage, each raised by the class's per-level <code>crit</code> / <code>critDmg</code> gains (added, not multiplied).</td></tr>
           <tr><td>Attack cost (time)</td><td><code>1 / (weapon speed × (1 + haste))</code> — lower is faster. Monsters bank <code>speed</code> energy per turn and act once per whole point.</td></tr>
           <tr><td>Weapon range</td><td><code>1</code> = melee (adjacent). <code>2+</code> = tap a monster within reach + line of sight to strike (spear 2, bow 5).</td></tr>
@@ -283,7 +287,7 @@
     </div>
   </dialog>
 
-  <script src="./data.js?v=43"></script>
-  <script src="./editor.js?v=43"></script>
+  <script src="./data.js?v=45"></script>
+  <script src="./editor.js?v=45"></script>
 </body>
 </html>
