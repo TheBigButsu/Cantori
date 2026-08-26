@@ -21,10 +21,10 @@ window.CANTORI_DATA = {
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
-      "hp": 8,
+      "hp": 5,
       "speed": 1.5,
       "acc": 9,
-      "eva": 12
+      "eva": 20
     },
     "snake": {
       "name": "Snake",
@@ -36,7 +36,7 @@ window.CANTORI_DATA = {
       "minFloor": 2,
       "speed": 1,
       "acc": 10,
-      "eva": 18
+      "eva": 25
     },
     "spider": {
       "name": "Spider",
@@ -592,6 +592,13 @@ window.CANTORI_DATA = {
       "noDrop": true,
       "glyph": "|",
       "color": "#f6b845"
+    },
+    "Vitality": {
+      "cat": "potion",
+      "name": "Potion of Vitality",
+      "effect": "Vitality",
+      "glyph": "!",
+      "color": "#cccccc"
     }
   },
   "traps": {
@@ -823,11 +830,11 @@ window.CANTORI_DATA = {
       },
       "start": {
         "weapon": "Shitty_dagger",
-        "armor": "leather"
+        "armor": "Shitty_armor"
       },
-      "baseHp": 13,
+      "baseHp": 18,
       "baseMp": 5,
-      "regenTurns": 400,
+      "regenTurns": 300,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
