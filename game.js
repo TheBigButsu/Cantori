@@ -440,7 +440,13 @@
     let far = live[0], fd = -1;
     for (const m of live) { const d = cheb(m.x, m.y, player.x, player.y); if (d > fd) { fd = d; far = m; } }
     const spot = nearestFreeFloor(far.x, far.y);
-    if (spot) { player.x = spot.x; player.y = spot.y; computeFOV(); snapPlayer(); }
+    if (spot) {
+      spawnBurst(player.x, player.y, "#c79bff");            // implode at the launch point
+      player.x = spot.x; player.y = spot.y; computeFOV(); snapPlayer();
+      flashScreen("#7a4fb0", 460);                          // teleport whoosh
+      spawnBurst(player.x, player.y, "#c79bff");            // materialise at the landing
+      floatText(player.x, player.y, "✦", "#e0c6ff");
+    }
     log("The trap flings you across the dungeon — a foe looms.", "hurt");
   }
   // BFS out from (tx,ty) for the closest passable, unoccupied floor tile.
@@ -616,6 +622,8 @@
     setDepthLabel();
     floaters = [];
     projectiles = [];
+    bursts = [];
+    screenFlash = null;
     snapPlayer();
     updateHUD();       // vitals + enemy counter reflect the new floor at once
   }
@@ -1728,8 +1736,19 @@
   function spawnProjectile(x0, y0, x1, y1, color) {
     if (reduceMotion) return;
     const dist = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-    projectiles.push({ x0, y0, x1, y1, color: color || "#ffe08a", at: performance.now(), dur: Math.min(320, 90 + dist * 30) });
+    projectiles.push({ x0, y0, x1, y1, color: color || "#ffe08a", at: performance.now(), dur: Math.min(750, 220 + dist * 90) });
   }
+  // An expanding ring + radiating sparks at a tile (teleports, big impacts).
+  let bursts = [];
+  function spawnBurst(x, y, color) {
+    if (reduceMotion) return;
+    const parts = [];
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 + Math.random() * 0.3; parts.push({ dx: Math.cos(a), dy: Math.sin(a), r: 0.8 + Math.random() * 0.6 }); }
+    bursts.push({ x, y, color: color || "#b491d6", at: performance.now(), dur: 560, parts });
+  }
+  // A brief full-view colour wash (teleport whoosh).
+  let screenFlash = null;
+  function flashScreen(color, dur) { if (!reduceMotion) screenFlash = { color: color || "#b491d6", at: performance.now(), dur: dur || 420 }; }
   function snapPlayer() {
     player.rx = player.x; player.ry = player.y;
     player.lx = player.x; player.ly = player.y;
@@ -1740,6 +1759,8 @@
     for (const m of monsters) animEntity(m, now);
     floaters = floaters.filter((f) => now - f.at < FLOAT_MS);
     projectiles = projectiles.filter((p) => now - p.at < p.dur);
+    bursts = bursts.filter((bt) => now - bt.at < bt.dur);
+    if (screenFlash && now - screenFlash.at >= screenFlash.dur) screenFlash = null;
   }
 
   // ---- Draw: dungeon view --------------------------------------------------
@@ -1868,7 +1889,23 @@
       ctx.globalAlpha = 0.35;
       ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, tile * 0.22), 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, tile * 0.12), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, tile * 0.14), 0, Math.PI * 2); ctx.fill();
+    }
+
+    // bursts: an expanding ring plus sparks flung outward (teleports etc.)
+    for (const bt of bursts) {
+      const p = Math.min(1, (now - bt.at) / bt.dur);
+      const cx = SX(bt.x) + tile / 2, cy = SY(bt.y) + tile / 2;
+      ctx.strokeStyle = bt.color; ctx.lineWidth = Math.max(1.5, tile * 0.08);
+      ctx.globalAlpha = Math.max(0, 1 - p);
+      ctx.beginPath(); ctx.arc(cx, cy, tile * (0.15 + p * 1.1), 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = bt.color;
+      for (const q of bt.parts) {
+        const d = p * q.r * tile * 1.3;
+        const r = Math.max(1.5, tile * 0.11 * (1 - p));
+        ctx.beginPath(); ctx.arc(cx + q.dx * d, cy + q.dy * d, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
 
     // floating damage numbers
@@ -1887,6 +1924,15 @@
     // boss health banner
     const bosses = monsters.filter((m) => m.boss && inBounds(m.x, m.y) && visible[m.y][m.x]);
     if (bosses.length) drawBossBar(bosses);
+
+    // teleport whoosh: a brief full-view colour wash
+    if (screenFlash) {
+      const p = Math.min(1, (now - screenFlash.at) / screenFlash.dur);
+      ctx.globalAlpha = Math.max(0, 0.55 * (1 - p));
+      ctx.fillStyle = screenFlash.color;
+      ctx.fillRect(0, 0, viewCols * tile, viewRows * tile);
+      ctx.globalAlpha = 1;
+    }
   }
 
   function drawBossBar(bosses) {
@@ -2172,7 +2218,14 @@
     } else if (effect === "teleport") {
       for (let t = 0; t < 400; t++) {
         const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
-        if (passable(x, y) && !monsterAt(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); break; }
+        if (passable(x, y) && !monsterAt(x, y)) {
+          spawnBurst(player.x, player.y, "#9ad0ff");
+          player.x = x; player.y = y; computeFOV(); snapPlayer();
+          flashScreen("#4f77b0", 400);
+          spawnBurst(player.x, player.y, "#9ad0ff");
+          floatText(player.x, player.y, "✦", "#cfeaff");
+          break;
+        }
       }
       log("Reality lurches — you stand somewhere new.");
     }
