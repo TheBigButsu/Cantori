@@ -21,8 +21,8 @@
   // ---- Map model -----------------------------------------------------------
   const MAP_W = 31;         // 25% smaller than 41 → denser, fewer awkward corners
   const MAP_H = 31;
-  const FOV_RADIUS = 40;    // effectively line-of-sight bound: the whole room you're
-                            // in lights up (Shattered-Pixel style); only walls block
+  const FOV_RADIUS = 8;     // max line of sight: you see 8 tiles out (walls/closed
+                            // doors block); rooms reveal as you move into them
 
   const WALL = 0;
   const FLOOR = 1;
@@ -356,8 +356,8 @@
     for (const r of rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) inRoom[y][x] = true;
     let room = 0, corridor = 0;
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
-      if (inRoom[y][x]) room++;                       // room footprint (trees/thorns inside still count)
-      else if (map[y][x] === FLOOR) corridor++;       // walkable corridor outside rooms
+      if (inRoom[y][x]) room++;                                    // room footprint (trees/thorns inside still count)
+      else if (map[y][x] === FLOOR || map[y][x] === DOOR) corridor++;  // walkable corridor/threshold outside rooms
     }
     const total = MAP_W * MAP_H;
     return {
@@ -393,17 +393,12 @@
   // Turn those choke points into doors so each hall entrance reads as a threshold
   // (and, closed, blocks sight into the room).
   function placeDoors(rooms) {
+    // Every corridor opening into a room becomes a door (bush) at the threshold, so
+    // a closed door hides the room until you reach its mouth. 2-wide corridors get
+    // a 2-tile doorway.
     for (const r of rooms) {
-      const ring = [];
-      for (let x = r.x; x < r.x + r.w; x++) { ring.push([x, r.y - 1]); ring.push([x, r.y + r.h]); }
-      for (let y = r.y; y < r.y + r.h; y++) { ring.push([r.x - 1, y]); ring.push([r.x + r.w, y]); }
-      for (const [x, y] of ring) {
-        if (!inBounds(x, y) || map[y][x] !== FLOOR) continue;
-        const horiz = isWall(x - 1, y) && isWall(x + 1, y);   // corridor pierces a top/bottom wall
-        const vert = isWall(x, y - 1) && isWall(x, y + 1);    // corridor pierces a side wall
-        if (horiz === vert) continue;                          // not a clean 1-wide choke
-        if (isDoor(x - 1, y) || isDoor(x + 1, y) || isDoor(x, y - 1) || isDoor(x, y + 1)) continue; // no clusters
-        map[y][x] = DOOR;
+      for (const [x, y] of roomRing(r)) {
+        if (inBounds(x, y) && map[y][x] === FLOOR) map[y][x] = DOOR;
       }
     }
   }
@@ -1222,7 +1217,7 @@
     cost = cost == null ? 1 : cost;
     turns++;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
-    panX = 0; panY = 0;                        // any action recenters the camera on you
+    panX = 0; panY = 0; enemyFocusIdx = -1;    // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
@@ -1386,6 +1381,27 @@
     panY += dyPx / (rect.height / viewRows);
     panX = Math.max(-MAP_W, Math.min(MAP_W, panX));
     panY = Math.max(-MAP_H, Math.min(MAP_H, panY));
+  }
+
+  // ---- Monster-sighting tool (tap the ☠ counter) ---------------------------
+  // Cycle the view through every foe currently in line of sight, snapping the
+  // camera to centre on each in turn — like Shattered Pixel Dungeon's mob indicator.
+  let enemyFocusIdx = -1;
+  function visibleEnemies() {
+    return monsters
+      .filter((m) => m.hp > 0 && visible[m.y] && visible[m.y][m.x])
+      .sort((a, b) => cheb(a.x, a.y, player.x, player.y) - cheb(b.x, b.y, player.x, player.y));
+  }
+  function cycleEnemyFocus() {
+    if (dead || mapOpen || invOpen || charOpen) return;
+    const list = visibleEnemies();
+    if (!list.length) { enemyFocusIdx = -1; log("No enemies in sight."); return; }
+    enemyFocusIdx = (enemyFocusIdx + 1) % list.length;
+    const m = list[enemyFocusIdx];
+    panX = m.x - player.x;                 // centre the free-look camera on this foe
+    panY = m.y - player.y;
+    flash(m); floatText(m.x, m.y, "◎", "#ffd98a");
+    log("Foe " + (enemyFocusIdx + 1) + "/" + list.length + ": " + monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp);
   }
 
   // ---- Colours & lighting --------------------------------------------------
@@ -2306,6 +2322,7 @@
   // ---- Buttons -------------------------------------------------------------
   document.getElementById("btnMap").addEventListener("click", () => toggleMap());
   document.getElementById("btnBag").addEventListener("click", () => toggleInv());
+  { const en = document.getElementById("enemies"); if (en) en.addEventListener("click", cycleEnemyFocus); }
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
   function waitTurn() { if (dead || mapOpen || invOpen || charOpen) return; walkPath = []; worldTurn(); }
