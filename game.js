@@ -615,6 +615,7 @@
     computeFOV();
     setDepthLabel();
     floaters = [];
+    projectiles = [];
     snapPlayer();
     updateHUD();       // vitals + enemy counter reflect the new floor at once
   }
@@ -1275,7 +1276,7 @@
     if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }  // spotted: remember where
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
-    if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { attack(m, player); return; }
+    if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
     if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
     if (canSee(m)) { stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in directly
     if (m.lastSeen) {                            // lost sight → head to where you were last seen
@@ -1391,7 +1392,7 @@
     if (reach > 1 && !adjacent) {
       const tgt = monsterAt(tx, ty);
       if (tgt && tgt.hp > 0 && cheb(player.x, player.y, tx, ty) <= reach && lineOfSight(player.x, player.y, tx, ty)) {
-        attack(player, tgt); worldTurn(1 / playerActSpeed()); return;
+        spawnProjectile(player.x, player.y, tx, ty, "#ffe08a"); attack(player, tgt); worldTurn(1 / playerActSpeed()); return;
       }
     }
     if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
@@ -1722,6 +1723,13 @@
   }
   const flash = (e) => { e.hitAt = performance.now(); };
   const floatText = (x, y, text, color) => floaters.push({ x, y, text, color, at: performance.now() });
+  // A little projectile that flies tile-to-tile (ranged attacks). Purely visual.
+  let projectiles = [];
+  function spawnProjectile(x0, y0, x1, y1, color) {
+    if (reduceMotion) return;
+    const dist = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    projectiles.push({ x0, y0, x1, y1, color: color || "#ffe08a", at: performance.now(), dur: Math.min(320, 90 + dist * 30) });
+  }
   function snapPlayer() {
     player.rx = player.x; player.ry = player.y;
     player.lx = player.x; player.ly = player.y;
@@ -1731,6 +1739,7 @@
     animEntity(player, now);
     for (const m of monsters) animEntity(m, now);
     floaters = floaters.filter((f) => now - f.at < FLOAT_MS);
+    projectiles = projectiles.filter((p) => now - p.at < p.dur);
   }
 
   // ---- Draw: dungeon view --------------------------------------------------
@@ -1849,6 +1858,18 @@
       ctx.fillText("@", cx, cy);
     }
     hitFlash(player, px, py, now);
+
+    // ranged projectiles (a small glowing bolt travelling tile-to-tile)
+    for (const pr of projectiles) {
+      const p = Math.min(1, (now - pr.at) / pr.dur);
+      const x = pr.x0 + (pr.x1 - pr.x0) * p, y = pr.y0 + (pr.y1 - pr.y0) * p;
+      const cx = SX(x) + tile / 2, cy = SY(y) + tile / 2;
+      ctx.fillStyle = pr.color;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, tile * 0.22), 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, tile * 0.12), 0, Math.PI * 2); ctx.fill();
+    }
 
     // floating damage numbers
     ctx.textAlign = "center";
