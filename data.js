@@ -707,7 +707,7 @@ window.CANTORI_DATA = {
     },
     "ourn": {
       "name": "Ourn Blinks",
-      "desc": "Each new floor begins with time stilled — all monsters frozen for 5 turns.",
+      "desc": "Gain Ourn's Blink — an activated skill that freezes every monster for 5 turns. Cooldown 200 − INT×2.",
       "icon": "⏳",
       "color": "#9ad0ff"
     }

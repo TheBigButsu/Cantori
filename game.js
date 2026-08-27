@@ -857,12 +857,6 @@
     spirals = [];
     screenFlash = null;
     snapPlayer();
-    // Ourn Blinks boon: every floor opens with time stilled — a 5-turn head start.
-    if (player.boons && player.boons.has("ourn") && monsters.length) {
-      for (const m of monsters) m.stun = Math.max(m.stun || 0, 5);
-      floatText(player.x, player.y, "⏳", "#9ad0ff");
-      log("Ourn stills time — the floor's creatures stand frozen.");
-    }
     updateHUD();       // vitals + enemy counter reflect the new floor at once
   }
 
@@ -1243,7 +1237,8 @@
     const g = (DATA.boons || {})[key] || {};
     log("You accept " + (g.name || "a boon") + ".", "hit");
     if (key === "kethara") grantPurpleArmor();
-    updateHUD();
+    if (key === "ourn") { player.skills[OURN_KEY] = { rank: 1, cd: 0 }; log("You gain Ourn's Blink — an activated skill (freeze time).", "hit"); }
+    updateHUD(); updateHotbar();
     if (charOpen) renderChar();
   }
   // Kethara's Gift: a purple armor of a random tier, straight into your pack.
@@ -2935,7 +2930,18 @@
     _skillCache = { cls, skills, byPos };
     return _skillCache;
   }
-  function classSkills() { return treeSkills(player.cls).skills; }
+  // Ourn's Blink — an active skill granted by the "ourn" boon (not a class-tree
+  // skill). It freezes every monster for 5 turns; cooldown scales with Intelligence.
+  const OURN_KEY = "ourn_blink";
+  const OURN_SKILL = { name: "Ourn's Blink", icon: "⏳", kind: "freeze", max: 1, ranks: [{ freeze: 5 }],
+    levels: ["Freeze every monster for 5 turns (free action). Cooldown 200 − INT×2."],
+    desc: "Still time — every monster freezes for 5 turns." };
+  const ournCooldown = () => Math.max(10, 200 - eff("INT") * 2);   // 200 − INT×2
+  function classSkills() {
+    const base = treeSkills(player.cls).skills;
+    if (player.boons && player.boons.has("ourn")) return Object.assign({}, base, { [OURN_KEY]: OURN_SKILL });
+    return base;
+  }
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
   function skillAtPos(t, s) { return treeSkills(player.cls).byPos[t + "," + s]; }
@@ -2975,6 +2981,18 @@
     if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
+    else if (d.kind === "freeze") executeOurn(key);
+  }
+  // Ourn's Blink: stop time — freeze every living monster for 5 turns. A free
+  // action (the clock doesn't advance), so you get the full head start.
+  function executeOurn(key) {
+    const cur = skillCur(key) || { freeze: 5 };
+    let n = 0;
+    for (const m of monsters) if (m.hp > 0) { m.stun = Math.max(m.stun || 0, cur.freeze || 5); n++; }
+    flashScreen("#2f4f6a", 320); floatText(player.x, player.y, "⏳", "#9ad0ff");
+    log(n ? "Ourn stills time — every foe freezes for " + (cur.freeze || 5) + " turns." : "Ourn stills time, but nothing stirs here.", "hit");
+    player.skills[key].cd = ournCooldown();
+    updateHotbar(); updateHUD();
   }
   function beginRush(key) {
     pendingSkill = pendingSkill === key ? null : key;
@@ -3361,7 +3379,7 @@
     rollTrinket: (f) => rollTrinket(f != null ? f : depth),
     costs: () => ({ walk: walkCost(), attack: attackCost() }),
     offerBoons, pickBoon,
-    giveBoon: (k) => { if (!player.boons) player.boons = new Set(); player.boons.add(k); if (k === "kethara") grantPurpleArmor(); updateHUD(); },
+    giveBoon: (k) => { if (!player.boons) player.boons = new Set(); player.boons.add(k); if (k === "kethara") grantPurpleArmor(); if (k === "ourn") player.skills[OURN_KEY] = { rank: 1, cd: 0 }; updateHUD(); updateHotbar(); },
     addTrap: (key, x, y) => { traps.push({ x, y, key, revealed: true, sprung: false }); },
     springTrap: (i) => { if (traps[i]) triggerTrap(traps[i]); },
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
