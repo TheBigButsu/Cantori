@@ -180,6 +180,7 @@
   const maxPlusForFloor = _loot.maxPlusForFloor;
   const rollItem = _loot.rollItem;
   const rollGearDrop = _loot.rollGearDrop;
+  const rollTrinket = _loot.rollTrinket;
 
   // A plain, already-known base item (starting kit, gold/authored items).
   const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [], idNeed: 0, idXp: 0, identified: true });
@@ -260,6 +261,12 @@
     return h;
   }
   const playerActSpeed = () => weaponSpeed() * (1 + wornHaste());
+  // The Metrognome trinket: a worn one grants +1 to EITHER walk speed or attack
+  // speed (its rolled variant), never both. Lower action-cost = you act more often
+  // relative to monsters.
+  const metroMode = () => (player.trinket && player.trinket.key === "metrognome" ? player.trinket.variant : null);
+  const walkCost = () => (metroMode() === "walk" ? 0.5 : 1);                       // +1 walk speed → half the cost
+  const attackCost = () => 1 / (playerActSpeed() + (metroMode() === "attack" ? 1 : 0));
   // The "power" an item's enchant procs at: weapon top-end damage, armor defense,
   // or (for jewelry) its tier + plus.
   function itemPower(inst) {
@@ -301,6 +308,8 @@
       if (g.accuracy) parts.push("acc " + (g.accuracy > 0 ? "+" : "") + g.accuracy);
     }
     if (!itemIdentified(inst)) { parts.push("unidentified"); return parts.join(", "); }
+    if (inst.variant === "walk") parts.push("+1 walk speed");
+    else if (inst.variant === "attack") parts.push("+1 attack speed");
     for (const s of inst.stats || []) parts.push("+" + (s.val + (inst.plus || 0)) + " " + s.stat);
     for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
     return parts.join(", ");
@@ -352,7 +361,14 @@
   }
   function weightedConsumKey() {
     const pool = CONSUM_KEYS.filter((k) => !CONSUM[k].noDrop);   // torch etc. never drop as loot
-    return pool.length ? pool[randInt(0, pool.length - 1)] : CONSUM_KEYS[0];
+    if (!pool.length) return CONSUM_KEYS[0];
+    // Honour each consumable's `weight` (default 1) so authored rarity matters —
+    // e.g. healing common, the newer specialty potions rarer.
+    let total = 0; for (const k of pool) total += Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1);
+    if (total <= 0) return pool[randInt(0, pool.length - 1)];
+    let r = Math.random() * total;
+    for (const k of pool) { r -= Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1); if (r <= 0) return k; }
+    return pool[pool.length - 1];
   }
 
   // ---- Dungeon generation --------------------------------------------------
@@ -834,13 +850,17 @@
   function spawnItems(rooms) {
     let count = randInt(2, 4);
     if (Math.random() < 0.10 * count) count += 1;     // ~+10% loot per floor
+    // Drop-type mix (gold / gear / consumable) is data-driven so it's tunable in
+    // the editor. Default favours gear so weapons & armor aren't drowned out by potions.
+    const dw = (LOOT.dropWeights || { gold: 20, gear: 55, consumable: 25 });
+    const dwTotal = Math.max(1, (dw.gold || 0) + (dw.gear || 0) + (dw.consumable || 0));
     for (let i = 0; i < count; i++) {
       const spot = freeFloorSpot(rooms);
       if (!spot) continue;
-      const r = Math.random();
-      if (r < 0.34) {
+      let r = Math.random() * dwTotal;
+      if ((r -= (dw.gold || 0)) < 0) {
         items.push({ x: spot.x, y: spot.y, key: "gold", amount: randInt(2, 12) + depth * 2 });
-      } else if (r < 0.67) {
+      } else if ((r -= (dw.gear || 0)) < 0) {
         items.push(Object.assign({ x: spot.x, y: spot.y }, rollGearDrop(depth)));
       } else {
         items.push({ x: spot.x, y: spot.y, key: weightedConsumKey() });
@@ -1110,7 +1130,14 @@
     map[y][x] = STAIRS;             // the way down opens where the boss fell
     explored[y][x] = true;
     player.statPoints += 3;         // boss reward: 3 points to spend later
-    log("The " + bossName + " falls — the way opens. (+3 stat points)", "hit");
+    // Bosses are the only source of trinkets — always at least blue.
+    const trink = rollTrinket(depth);
+    if (trink) {
+      const spot = nearestFreeFloor(x, y) || { x, y };
+      items.push(Object.assign({ x: spot.x, y: spot.y }, trink));
+      floatText(spot.x, spot.y, "✦", "#9ad0ff");
+    }
+    log("The " + bossName + " falls — the way opens. (+3 stat points" + (trink ? ", a trinket glints nearby" : "") + ")", "hit");
   }
 
   function win() {
@@ -1186,7 +1213,7 @@
     const nx = player.x + dx, ny = player.y + dy;
 
     const mon = monsterAt(nx, ny);
-    if (mon) { attack(player, mon); worldTurn(1 / playerActSpeed()); return true; }   // weapon speed (+haste) → attack cost
+    if (mon) { attack(player, mon); worldTurn(attackCost()); return true; }   // weapon speed (+haste, +Metrognome) → attack cost
 
     if (!canStep(player.x, player.y, dx, dy)) {          // walking into a wall-mounted torch lifts it off
       const torchThere = torches.find((t) => t.x === nx && t.y === ny);
@@ -1214,7 +1241,7 @@
       const tr = trapAt(player.x, player.y);
       if (tr && !tr.sprung) { triggerTrap(tr); if (dead) return true; }
       if (map[player.y][player.x] === STAIRS) { descend(); return true; }  // fresh level, no world turn
-      worldTurn();
+      worldTurn(walkCost());     // Metrognome (walk) → you cover ground faster than your foes
       return true;
     }
     return false;
@@ -1669,7 +1696,7 @@
     if (reach > 1 && !adjacent) {
       const tgt = monsterAt(tx, ty);
       if (tgt && tgt.hp > 0 && cheb(player.x, player.y, tx, ty) <= reach && lineOfSight(player.x, player.y, tx, ty)) {
-        spawnProjectile(player.x, player.y, tx, ty, "#ffe08a"); attack(player, tgt); worldTurn(1 / playerActSpeed()); return;
+        spawnProjectile(player.x, player.y, tx, ty, "#ffe08a"); attack(player, tgt); worldTurn(attackCost()); return;
       }
     }
     if (anyMonsterVisible()) { stepToward(tx, ty); return; }   // stay in control near danger
@@ -3086,6 +3113,8 @@
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
     rollItem: (k, f) => rollItem(k, f != null ? f : depth),
     rollGear: (f) => rollGearDrop(f != null ? f : depth),
+    rollTrinket: (f) => rollTrinket(f != null ? f : depth),
+    costs: () => ({ walk: walkCost(), attack: attackCost() }),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
@@ -3112,7 +3141,7 @@
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null })),
-        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, vault: !!it.vault })),
+        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),

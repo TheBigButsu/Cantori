@@ -978,7 +978,7 @@
     return ({
       biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitStyle/exitSprite, door (\"bush\"/\"door\"), final.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
-      loot: "Rarity table, stat pool, category weights, and tier-by-floor bands. (Enchants have their own tab.)",
+      loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",
       gods: "Design reference for the boon gods (boons not yet wired in).",
     })[coll] || "Raw JSON for this section.";

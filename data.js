@@ -282,6 +282,17 @@ window.CANTORI_DATA = {
       "glyph": "*",
       "color": "#d8cfb0"
     },
+    "metrognome": {
+      "cat": "trinket",
+      "name": "Metrognome",
+      "tier": 3,
+      "glyph": "*",
+      "color": "#9ad0ff",
+      "variants": [
+        "walk",
+        "attack"
+      ]
+    },
     "amulet_jade": {
       "cat": "necklace",
       "name": "Jade Amulet",
@@ -412,12 +423,21 @@ window.CANTORI_DATA = {
       "LCK"
     ],
     "purpleSecondStatChance": 0.75,
+    "dropWeights": {
+      "gold": 18,
+      "gear": 62,
+      "consumable": 20
+    },
     "categoryWeights": {
-      "weapon": 40,
-      "armor": 30,
+      "weapon": 45,
+      "armor": 33,
       "ring": 12,
-      "trinket": 9,
-      "necklace": 9
+      "necklace": 10
+    },
+    "trinketRarity": {
+      "blue": 40,
+      "purple": 40,
+      "gold": 20
     },
     "tierBands": [
       {
