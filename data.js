@@ -670,6 +670,46 @@ window.CANTORI_DATA = {
       "weight": 1,
       "glyph": "^",
       "color": "#b491d6"
+    },
+    "arrow": {
+      "name": "Arrow Trap",
+      "effect": "arrow",
+      "weight": 1,
+      "glyph": "↑",
+      "color": "#c9a24a"
+    },
+    "bomb": {
+      "name": "Bomb Trap",
+      "effect": "bomb",
+      "weight": 1,
+      "glyph": "◉",
+      "color": "#e0685a"
+    }
+  },
+  "boons": {
+    "guild": {
+      "name": "Blessing of the Guild",
+      "desc": "On-hit effects gain +1% chance to fire per character level.",
+      "icon": "⚒",
+      "color": "#f0c14b"
+    },
+    "kethara": {
+      "name": "Kethara's Gift",
+      "desc": "Conjure a purple armor of a random tier — granted at once.",
+      "icon": "🛡",
+      "color": "#b491d6"
+    },
+    "maelon": {
+      "name": "Maelon's Grace",
+      "desc": "Regain 2 + (level ÷ 5) HP on every kill.",
+      "icon": "✚",
+      "color": "#e0685a"
+    },
+    "ourn": {
+      "name": "Ourn Blinks",
+      "desc": "Each new floor begins with time stilled — all monsters frozen for 5 turns.",
+      "icon": "⏳",
+      "color": "#9ad0ff"
     }
   },
   "bosses": {

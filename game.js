@@ -101,6 +101,7 @@
     player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
+    player.boons = new Set();                  // boons are earned fresh each run
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
     player.skills = {};
@@ -517,12 +518,69 @@
     }
   }
   function triggerTrap(t) {
-    t.revealed = true; t.sprung = true;
+    t.revealed = true;
     const def = TRAPS[t.key] || {};
+    if (def.effect === "bomb") {                // arms a fuse instead of firing now
+      t.sprung = true; t.armed = 2;             // explodes 2 of the player's turns later
+      flash(player); floatText(t.x, t.y, "TICK!", "#e0685a");
+      log("A bomb trap clicks to life — it blows in 2 turns. Get clear of the blast!", "hurt");
+      return;
+    }
+    t.sprung = true;
     flash(player); floatText(player.x, player.y, "TRAP!", "#e0685a");
     log("You trigger a " + (def.name || "trap") + "!", "hurt");
-    if (def.effect === "teleport_far") teleportToFurthestMonster();
+    if (def.effect === "teleport_far") { spawnSpiral(t.x, t.y, "#c79bff", 640); teleportToFurthestMonster(); }
+    else if (def.effect === "arrow") arrowTrap(t);
     else applyEffect(def.effect);              // any consumable effect works as a trap effect too
+  }
+  // Arrow trap: a bolt flies at the nearest mobile character to the trap (usually
+  // whoever tripped it, but a closer monster catches it instead). Damage scales
+  // with depth: (1..3)×floor, capped at (player level + floor).
+  function arrowTrap(t) {
+    const floor = depth;
+    const dmg = Math.max(1, Math.min(player.level + floor, randInt(1, 3) * floor));
+    let tgt = { kind: "player", x: player.x, y: player.y }, td = cheb(t.x, t.y, player.x, player.y);
+    for (const m of monsters) {
+      if (m.hp <= 0) continue;
+      const dd = cheb(t.x, t.y, m.x, m.y);
+      if (dd < td) { td = dd; tgt = { kind: "mon", m, x: m.x, y: m.y }; }
+    }
+    spawnProjectile(t.x, t.y, tgt.x, tgt.y, "#e8d08a");
+    spawnStreak(t.x, t.y, tgt.x, tgt.y, "#c9a24a", 240);
+    if (tgt.kind === "player") {
+      player.hp -= dmg; flash(player); floatText(player.x, player.y, "➶-" + dmg, "#ff8f84");
+      log("A hidden arrow strikes you! (-" + dmg + ")", "hurt");
+      if (player.hp <= 0) { updateHUD(); die(); return; }
+    } else {
+      const m = tgt.m; m.hp -= dmg; flash(m); floatText(m.x, m.y, "➶-" + dmg, "#e8d08a");
+      log("A hidden arrow skewers the " + monName(m) + "! (-" + dmg + ")");
+      if (m.hp <= 0) killMonster(m, "is shot down");
+    }
+    updateHUD();
+  }
+  // Tick armed bomb traps once per player action; detonate at zero.
+  function tickBombs() {
+    for (const t of traps) {
+      if (!t.armed || t.armed <= 0) continue;
+      if (--t.armed <= 0) explodeBomb(t);
+      if (dead) return;
+    }
+  }
+  function explodeBomb(t) {
+    const dmg = randInt(8, 15);
+    spawnBurst(t.x, t.y, "#ff8f4a"); flashScreen("#7a2e1e", 260);
+    for (let yy = t.y - 1; yy <= t.y + 1; yy++) for (let xx = t.x - 1; xx <= t.x + 1; xx++) {
+      if (!inBounds(xx, yy)) continue;
+      floatText(xx, yy, "✸", "#ffb26a");
+      const mm = monsterAt(xx, yy);
+      if (mm && mm.hp > 0) { mm.hp -= dmg; flash(mm); floatText(mm.x, mm.y, "-" + dmg, "#ff8f4a"); if (mm.hp <= 0) killMonster(mm, "is blown apart"); }
+    }
+    if (cheb(t.x, t.y, player.x, player.y) <= 1) {   // player caught in the 3×3
+      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+      log("The bomb erupts — you're caught in the blast! (-" + dmg + ")", "hurt");
+      if (player.hp <= 0) { updateHUD(); die(); return; }
+    } else log("The bomb erupts in a gout of fire.");
+    updateHUD();
   }
   // Teleport-trap: fling the player next to the monster that is currently furthest away.
   function teleportToFurthestMonster() {
@@ -795,8 +853,16 @@
     speeches = [];
     projectiles = [];
     bursts = [];
+    streaks = [];
+    spirals = [];
     screenFlash = null;
     snapPlayer();
+    // Ourn Blinks boon: every floor opens with time stilled — a 5-turn head start.
+    if (player.boons && player.boons.has("ourn") && monsters.length) {
+      for (const m of monsters) m.stun = Math.max(m.stun || 0, 5);
+      floatText(player.x, player.y, "⏳", "#9ad0ff");
+      log("Ourn stills time — the floor's creatures stand frozen.");
+    }
     updateHUD();       // vitals + enemy counter reflect the new floor at once
   }
 
@@ -1009,6 +1075,10 @@
     if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
     gainXP(xp);
+    if (player.boons && player.boons.has("maelon")) {     // Maelon's Grace: lifesteal on every kill
+      const heal = Math.min(player.maxHp - player.hp, 2 + Math.floor(player.level / 5));
+      if (heal > 0) { player.hp += heal; floatText(player.x, player.y, "+" + heal, "#8ed69a"); updateHUD(); }
+    }
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
@@ -1034,7 +1104,7 @@
     for (const e of enchants) {
       if (target.hp <= 0) break;
       const def = LOOT.enchants[e] || {};
-      const proc = def.proc != null ? def.proc : 1;     // chance the enchant fires this hit
+      const proc = (def.proc != null ? def.proc : 1) + guildProcBonus();   // Blessing of the Guild: +level% to fire
       if (Math.random() >= proc) continue;
       const fx = def.effect || {};
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
@@ -1138,7 +1208,58 @@
       floatText(spot.x, spot.y, "✦", "#9ad0ff");
     }
     log("The " + bossName + " falls — the way opens. (+3 stat points" + (trink ? ", a trinket glints nearby" : "") + ")", "hit");
+    offerBoons();                   // a god extends a blessing: pick one of three
   }
+
+  // ---- Boons: pick one of three at each boss kill; effects are permanent -------
+  function offerBoons() {
+    const all = DATA.boons || {};
+    const avail = Object.keys(all).filter((k) => !(player.boons && player.boons.has(k)));
+    if (!avail.length) return;
+    for (let i = avail.length - 1; i > 0; i--) { const j = randInt(0, i); const t = avail[i]; avail[i] = avail[j]; avail[j] = t; }
+    const pick = avail.slice(0, 3);
+    const wrap = document.getElementById("boonChoices");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    for (const k of pick) {
+      const g = all[k];
+      const btn = document.createElement("button");
+      btn.className = "boon-choice"; btn.type = "button";
+      btn.innerHTML = `<span class="b-icon" style="color:${g.color || "#f0c14b"}">${g.icon || "✦"}</span>` +
+        `<span class="b-text"><span class="b-name" style="color:${g.color || "#f0c14b"}">${g.name}</span>` +
+        `<span class="b-desc">${g.desc || ""}</span></span>`;
+      btn.addEventListener("click", () => pickBoon(k));
+      wrap.appendChild(btn);
+    }
+    walkPath = [];                  // don't let a queued walk fire under the modal
+    boonPending = true;
+    document.getElementById("boons").hidden = false;
+  }
+  function pickBoon(key) {
+    const el = document.getElementById("boons"); if (el) el.hidden = true;
+    boonPending = false;
+    if (!player.boons) player.boons = new Set();
+    player.boons.add(key);
+    const g = (DATA.boons || {})[key] || {};
+    log("You accept " + (g.name || "a boon") + ".", "hit");
+    if (key === "kethara") grantPurpleArmor();
+    updateHUD();
+    if (charOpen) renderChar();
+  }
+  // Kethara's Gift: a purple armor of a random tier, straight into your pack.
+  function grantPurpleArmor() {
+    const armors = GEAR_KEYS.filter((k) => GEAR[k].cat === "armor");
+    if (!armors.length) return;
+    const it = rollItem(armors[randInt(0, armors.length - 1)], depth, "purple");
+    it.identified = true;                          // a gift comes revealed
+    if (!invAdd(it)) {
+      const spot = dropSpot();
+      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, it));
+    }
+    floatText(player.x, player.y, "🛡", "#b491d6");
+    log("Kethara conjures " + itemName(it) + " for you.", "hit");
+  }
+  const guildProcBonus = () => ((player.boons && player.boons.has("guild")) ? player.level / 100 : 0);
 
   function win() {
     dead = true;
@@ -1310,6 +1431,9 @@
     if (over) over.hidden = true;
     const winEl = document.getElementById("win");
     if (winEl) winEl.hidden = true;
+    const boonEl = document.getElementById("boons");
+    if (boonEl) boonEl.hidden = true;
+    boonPending = false;
     generateLevel();
     log("A new adventurer enters the dungeon.");
   }
@@ -1319,6 +1443,7 @@
   const SENSE = 8;          // how far a monster notices the player (needs line of sight)
   const CHARGE_MAX = 7;
   let turns = 0;
+  let boonPending = false;    // a boss-reward boon choice is open — block play until picked
 
   // Passive regeneration is a per-class "turns to reach full health" number, sped
   // up by Vitality:  effective = regenTurns − VIT × vitRegen.  Healing accrues
@@ -1405,6 +1530,7 @@
   }
   function doCharge(m) {
     const dir = straightDir(m);
+    const sx = m.x, sy = m.y;
     let moved = 0;
     while (cheb(m.x, m.y, player.x, player.y) > 1) {
       const nx = m.x + dir[0], ny = m.y + dir[1];
@@ -1412,7 +1538,35 @@
       if (!canStep(m.x, m.y, dir[0], dir[1]) || isThorn(nx, ny) || monsterAt(nx, ny)) break;
       m.x = nx; m.y = ny; moved++;
     }
-    if (cheb(m.x, m.y, player.x, player.y) === 1) attack(m, player, moved);  // +1 dmg per tile crossed
+    if (moved > 0) {                                         // make the dash READ: streak + a slower slide + a roar
+      m.moveMs = Math.min(520, 150 + moved * 70);
+      spawnStreak(sx, sy, m.x, m.y, "#e8a24a", 300 + moved * 40);
+      floatText(sx, sy, "⚡", "#ffcf8a");
+    }
+    if (cheb(m.x, m.y, player.x, player.y) === 1) {
+      attack(m, player, moved);                             // +1 dmg per tile crossed
+      spawnBurst(player.x, player.y, "#e8a24a");            // slam impact at the player
+      if (moved >= 2) flashScreen("#5a3a1e", 200);
+    }
+  }
+  // A charge monster (bear) that can see you but isn't lined up sidesteps to get on
+  // your row / column / diagonal (at range) so it can charge, instead of just
+  // trudging straight in and settling for a normal swing.
+  function chargeApproach(m) {
+    let best = null, bestScore = -Infinity;
+    for (const [dx, dy] of DIRS8) {
+      const nx = m.x + dx, ny = m.y + dy;
+      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny) || monsterAt(nx, ny)) continue;
+      if (nx === player.x && ny === player.y) continue;
+      const ddx = player.x - nx, ddy = player.y - ny;
+      const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
+      const aligned = (ddx === 0 || ddy === 0 || Math.abs(ddx) === Math.abs(ddy));
+      let score = -dist;                                    // closing in is good
+      if (aligned && dist >= 2 && dist <= CHARGE_MAX && lineOfSight(nx, ny, player.x, player.y)) score += 100;  // a charge lane = great
+      if (score > bestScore) { bestScore = score; best = [nx, ny]; }
+    }
+    if (best) { m.x = best[0]; m.y = best[1]; }
+    else stepMonsterTo(m, player.x, player.y);
   }
 
   function eligiblePool() {
@@ -1578,8 +1732,8 @@
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
-    if (m.charge && d >= 3 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
-    if (canSee(m)) { stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in directly
+    if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
+    if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in (chargers line up)
     if (m.lastSeen) {                            // lost sight → head to where you were last seen
       stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
       if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null;   // reached it, trail goes cold
@@ -1612,6 +1766,7 @@
     if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }
+    tickBombs(); if (dead) return;              // armed bomb traps count down and detonate
     panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
@@ -1789,7 +1944,7 @@
       .sort((a, b) => cheb(a.x, a.y, player.x, player.y) - cheb(b.x, b.y, player.x, player.y));
   }
   function cycleEnemyFocus() {
-    if (dead || mapOpen || invOpen || charOpen) return;
+    if (dead || mapOpen || invOpen || charOpen || boonPending) return;
     const list = visibleEnemies();
     if (!list.length) { enemyFocusIdx = -1; log("No enemies in sight."); return; }
     enemyFocusIdx = (enemyFocusIdx + 1) % list.length;
@@ -1960,6 +2115,37 @@
     ctx.fillStyle = shade("#ffe08a", b);
     ctx.fill();
   }
+  // A discovered trap: a dark plate + a coloured ring so it reads at a glance, with
+  // a distinct icon per type — a live spiral (teleport), an arrow, or a bomb whose
+  // fuse shows its countdown while armed.
+  function drawTrapMark(t, px, py, now) {
+    const def = TRAPS[t.key] || {};
+    const cx = px + tile / 2, cy = py + tile / 2;
+    const spent = t.sprung && !t.armed;
+    const col = spent ? "#6a5a72" : (def.color || "#b491d6");
+    ctx.fillStyle = "rgba(10,7,4,0.55)";
+    ctx.beginPath(); ctx.arc(cx, cy, tile * 0.40, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.5, tile * 0.06); ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(cx, cy, tile * 0.40, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = col;
+    const eff = def.effect;
+    if (eff === "teleport_far") {
+      ctx.beginPath();
+      const steps = 40, turns = 2.2, maxR = tile * 0.26, spin = spent ? 0 : now / 500;
+      for (let i = 0; i <= steps; i++) { const p = i / steps, a = p * turns * Math.PI * 2 + spin, r = maxR * p; const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+      ctx.stroke();
+    } else if (eff === "arrow") {
+      ctx.beginPath(); ctx.moveTo(cx - tile * 0.22, cy + tile * 0.18); ctx.lineTo(cx + tile * 0.18, cy - tile * 0.18); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + tile * 0.24, cy - tile * 0.24); ctx.lineTo(cx + tile * 0.24, cy - tile * 0.02); ctx.lineTo(cx + tile * 0.02, cy - tile * 0.24); ctx.closePath(); ctx.fill();
+    } else if (eff === "bomb") {
+      ctx.beginPath(); ctx.arc(cx, cy + tile * 0.05, tile * 0.20, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx + tile * 0.13, cy - tile * 0.12); ctx.quadraticCurveTo(cx + tile * 0.27, cy - tile * 0.24, cx + tile * 0.20, cy - tile * 0.32); ctx.stroke();
+      if (t.armed > 0) { ctx.fillStyle = "#fff2c0"; ctx.font = `bold ${Math.floor(tile * 0.4)}px ${bodyFont()}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(t.armed), cx, cy + tile * 0.05); }
+    } else {
+      ctx.font = `bold ${Math.floor(tile * 0.5)}px ${bodyFont()}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(def.glyph || "^", cx, cy);
+    }
+  }
   // ---- Item icons: one set of vector primitives, drawn identically on the
   // floor (ctx, full tile) and in the inventory grid (a small per-slot canvas),
   // so a pickup and its pack icon always match. All take (c, ox, oy, s, …).
@@ -2078,9 +2264,10 @@
     if (e.rx === undefined) { e.rx = e.x; e.ry = e.y; e.lx = e.x; e.ly = e.y; e.ax = e.x; e.ay = e.y; e.at = 0; }
     if (e.x !== e.lx || e.y !== e.ly) { e.ax = e.rx; e.ay = e.ry; e.at = now; e.lx = e.x; e.ly = e.y; }
     if (reduceMotion) { e.rx = e.x; e.ry = e.y; return; }
-    const k = easeOut(Math.min(1, (now - e.at) / MOVE_MS));
+    const k = easeOut(Math.min(1, (now - e.at) / (e.moveMs || MOVE_MS)));
     e.rx = e.ax + (e.x - e.ax) * k;
     e.ry = e.ay + (e.y - e.ay) * k;
+    if (k >= 1 && e.moveMs) e.moveMs = 0;    // one-off slow slide (e.g. a charge) done → back to normal
   }
   function bumpOffset(e, now) {
     if (reduceMotion || !e.bumpAt) return [0, 0];
@@ -2115,6 +2302,19 @@
     for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 + Math.random() * 0.3; parts.push({ dx: Math.cos(a), dy: Math.sin(a), r: 0.8 + Math.random() * 0.6 }); }
     bursts.push({ x, y, color: color || "#b491d6", at: performance.now(), dur: 560, parts });
   }
+  // A motion streak between two tiles (a charging bear, a fired arrow) — a fat
+  // tapering line plus a couple of dust puffs so a fast dash reads clearly.
+  let streaks = [];
+  function spawnStreak(x0, y0, x1, y1, color, dur) {
+    if (reduceMotion) return;
+    streaks.push({ x0, y0, x1, y1, color: color || "#e8c07a", at: performance.now(), dur: dur || 360 });
+  }
+  // An expanding spiral at a tile (the teleport trap's signature twist).
+  let spirals = [];
+  function spawnSpiral(x, y, color, dur) {
+    if (reduceMotion) return;
+    spirals.push({ x, y, color: color || "#c79bff", at: performance.now(), dur: dur || 620 });
+  }
   // A brief full-view colour wash (teleport whoosh).
   let screenFlash = null;
   function flashScreen(color, dur) { if (!reduceMotion) screenFlash = { color: color || "#b491d6", at: performance.now(), dur: dur || 420 }; }
@@ -2130,6 +2330,8 @@
     speeches = speeches.filter((s) => now - s.at < SPEECH_MS && s.m && s.m.hp > 0);
     projectiles = projectiles.filter((p) => now - p.at < p.dur);
     bursts = bursts.filter((bt) => now - bt.at < bt.dur);
+    streaks = streaks.filter((s) => now - s.at < s.dur);
+    spirals = spirals.filter((s) => now - s.at < s.dur);
     if (screenFlash && now - screenFlash.at >= screenFlash.dur) screenFlash = null;
   }
 
@@ -2191,16 +2393,21 @@
       ctx.fillRect(px + (tile - sz) / 2, py + (tile - sz) / 2, sz, sz);
     }
 
+    // armed bomb danger zone: pulse the whole 3×3 red so it's obvious where to NOT be
+    for (const t of traps) {
+      if (!t.armed || t.armed <= 0) continue;
+      const pulse = 0.28 + 0.22 * (0.5 + 0.5 * Math.sin(now / 130));
+      for (let yy = t.y - 1; yy <= t.y + 1; yy++) for (let xx = t.x - 1; xx <= t.x + 1; xx++) {
+        if (!inBounds(xx, yy) || !visible[yy][xx]) continue;
+        ctx.fillStyle = "rgba(224,80,50," + pulse.toFixed(3) + ")";
+        ctx.fillRect(SX(xx), SY(yy), tile, tile);
+      }
+    }
     // revealed traps (hidden ones stay invisible until spotted or sprung)
     for (const t of traps) {
       if (!t.revealed || !inBounds(t.x, t.y) || !visible[t.y][t.x]) continue;
-      const px = SX(t.x), py = SY(t.y);
-      const def = TRAPS[t.key] || {};
-      ctx.fillStyle = t.sprung ? "#5a4a63" : (def.color || "#b491d6");
-      ctx.font = `bold ${Math.floor(tile * 0.62)}px ${bodyFont()}`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(def.glyph || "^", px + tile / 2, py + tile / 2);
-      dim(px, py, (1 - litBright(t.x, t.y)) * 0.8);
+      drawTrapMark(t, SX(t.x), SY(t.y), now);
+      dim(SX(t.x), SY(t.y), (1 - litBright(t.x, t.y)) * 0.8);
     }
 
     // floor items
@@ -2289,6 +2496,38 @@
         const r = Math.max(1.5, tile * 0.11 * (1 - p));
         ctx.beginPath(); ctx.arc(cx + q.dx * d, cy + q.dy * d, r, 0, Math.PI * 2); ctx.fill();
       }
+      ctx.globalAlpha = 1;
+    }
+
+    // motion streaks: a fat tapering dash from start tile to end tile (charge / arrow)
+    for (const s of streaks) {
+      const p = Math.min(1, (now - s.at) / s.dur);
+      const x0 = SX(s.x0) + tile / 2, y0 = SY(s.y0) + tile / 2;
+      const x1 = SX(s.x1) + tile / 2, y1 = SY(s.y1) + tile / 2;
+      ctx.globalAlpha = Math.max(0, 1 - p);
+      ctx.strokeStyle = s.color; ctx.lineCap = "round";
+      ctx.lineWidth = Math.max(2, tile * 0.34 * (1 - p));
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.globalAlpha = Math.max(0, 0.5 * (1 - p));
+      ctx.lineWidth = Math.max(1, tile * 0.12);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // spirals: an unfurling twist (the teleport trap's signature)
+    for (const s of spirals) {
+      const p = Math.min(1, (now - s.at) / s.dur);
+      const cx = SX(s.x) + tile / 2, cy = SY(s.y) + tile / 2;
+      ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(1.5, tile * 0.09);
+      ctx.globalAlpha = Math.max(0, 1 - p);
+      ctx.beginPath();
+      const turns = 3, steps = 48, maxR = tile * 0.62 * p, rot = p * Math.PI * 2;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps, a = t * turns * Math.PI * 2 + rot, r = maxR * t;
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
@@ -2729,7 +2968,7 @@
     renderChar(); updateHotbar();
   }
   function useSkill(key) {
-    if (dead || mapOpen || invOpen || charOpen) return;
+    if (dead || mapOpen || invOpen || charOpen || boonPending) return;
     const st = player.skills[key], d = skillDef(key);
     if (!st || st.rank < 1 || !d) return;
     if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
@@ -2908,13 +3147,18 @@
     return html;
   }
   function charBoonsHTML() {
-    const gods = DATA.gods || {};
+    const boons = DATA.boons || {};
+    const owned = player.boons ? [...player.boons] : [];
     let list = "";
-    for (const k of Object.keys(gods)) {
-      const g = gods[k];
-      list += `<span class="god"><b>${g.name}</b> — ${g.domain}${g.unlock === "sealed" ? " (sealed)" : ""}</span>`;
+    if (owned.length) {
+      for (const k of owned) {
+        const g = boons[k]; if (!g) continue;
+        list += `<div class="god"><span style="color:${g.color || "#f0c14b"}">${g.icon || "✦"}</span> <b style="color:${g.color || "#f0c14b"}">${g.name}</b> — ${g.desc || ""}</div>`;
+      }
+    } else {
+      list = `<div class="god"><em>None yet.</em></div>`;
     }
-    return `<div class="cboon">Boons are blessings you'll choose at the start of each biome — one of three from the gods you've unlocked. <em>Coming soon.</em>${list}</div>`;
+    return `<div class="cboon">Defeat a boss and a god offers you a blessing — one of three, chosen on the spot. They last the whole run.<br><br>${list}</div>`;
   }
 
   // ---- Hotbar --------------------------------------------------------------
@@ -2979,6 +3223,7 @@
   };
   window.addEventListener("keydown", (e) => {
     if (dead) { if (e.key === "Enter" || e.key === " ") restart(); return; }
+    if (boonPending) return;                     // choose your boon first
     const key = (e.key || "").toLowerCase();
     if (key === "c") { e.preventDefault(); toggleChar(); return; }
     if (charOpen) { if (e.key === "Escape" || key === "c") toggleChar(false); return; }
@@ -3010,7 +3255,7 @@
   { const en = document.getElementById("enemies"); if (en) en.addEventListener("click", cycleEnemyFocus); }
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen) return; walkPath = []; worldTurn(); }
+  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -3052,7 +3297,7 @@
     return [Math.floor(camX + colF), Math.floor(camY + rowF)];
   }
   canvas.addEventListener("touchstart", (e) => {
-    if (mapOpen || invOpen || charOpen || dead) return;
+    if (mapOpen || invOpen || charOpen || dead || boonPending) return;
     if (e.touches.length === 2) {
       e.preventDefault();
       touchMode = "pinch";
@@ -3115,6 +3360,10 @@
     rollGear: (f) => rollGearDrop(f != null ? f : depth),
     rollTrinket: (f) => rollTrinket(f != null ? f : depth),
     costs: () => ({ walk: walkCost(), attack: attackCost() }),
+    offerBoons, pickBoon,
+    giveBoon: (k) => { if (!player.boons) player.boons = new Set(); player.boons.add(k); if (k === "kethara") grantPurpleArmor(); updateHUD(); },
+    addTrap: (key, x, y) => { traps.push({ x, y, key, revealed: true, sprung: false }); },
+    springTrap: (i) => { if (traps[i]) triggerTrap(traps[i]); },
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
@@ -3129,6 +3378,7 @@
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
         acc: playerAcc(), eva: playerEva(), lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
+        boons: player.boons ? [...player.boons] : [], boonPending,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
@@ -3143,7 +3393,7 @@
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
-        traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung })),
+        traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
       };
     },
