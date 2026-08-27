@@ -391,11 +391,23 @@ body{
   font-size:12.5px;
   letter-spacing:.02em;
 }
-.eq-row{display:flex;align-items:baseline;gap:8px;padding:1px 0}
-.eq-slot{
-  flex:none;width:66px;
-  color:var(--ink-dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+.inv-equip{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.eq-row{
+  display:flex;align-items:center;gap:9px;padding:6px 8px;
+  border:1px solid var(--line);border-radius:9px;background:#0c0905;cursor:pointer;
+  -webkit-user-select:none;user-select:none;min-width:0;
 }
+.eq-row.empty{border-style:dashed;opacity:.5;cursor:default}
+.eq-row.sel{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber) inset}
+.eq-row:not(.empty):hover{border-color:var(--amber)}
+.eq-ic{flex:none;width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:#15110b;border-radius:6px}
+.eq-ic canvas{width:26px;height:26px;image-rendering:pixelated}
+.eq-slot{
+  flex:none;width:52px;
+  color:var(--ink-dim);font-size:9px;letter-spacing:.06em;text-transform:uppercase;line-height:1.2;
+}
+.eq-name{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eq-empty{opacity:.5}
 .inv-grid{
   display:grid;
   grid-template-columns:repeat(5,1fr);

@@ -19,8 +19,8 @@
   "use strict";
 
   // ---- Map model -----------------------------------------------------------
-  const MAP_W = 31;         // 25% smaller than 41 → denser, fewer awkward corners
-  const MAP_H = 31;
+  const MAP_W = 51;         // a big sprawling floor: same total room area, spread out
+  const MAP_H = 51;         // with long, winding, 3-wide corridors between chambers
   const FOV_RADIUS = 8;     // max line of sight: you see 8 tiles out (walls/closed
                             // doors block); rooms reveal as you move into them
 
@@ -386,20 +386,50 @@
     for (let y = r.y; y < r.y + r.h; y++)
       for (let x = r.x; x < r.x + r.w; x++) map[y][x] = FLOOR;
   }
-  function hTunnel(x1, x2, y) {
-    for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) if (map[y][x] === WALL) map[y][x] = FLOOR;
+  // Carve a 3×3 block of floor centred on a cell (keeps a 1-tile border).
+  function carveBlock3(cx, cy) {
+    for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) {
+      if (x >= 1 && y >= 1 && x < MAP_W - 1 && y < MAP_H - 1 && map[y][x] === WALL) map[y][x] = FLOOR;
+    }
   }
-  function vTunnel(y1, y2, x) {
-    for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) if (map[y][x] === WALL) map[y][x] = FLOOR;
+  // A winding orthogonal path from a→b: strictly alternates axes (so it bends after
+  // every leg) with legs capped at 9 tiles, and jogs perpendicular when a straight
+  // shot would run long — no straight run exceeds ~10 tiles, so halls snake.
+  function orthPath(ax, ay, bx, by) {
+    const clampX = (v) => Math.max(2, Math.min(MAP_W - 3, v));
+    const clampY = (v) => Math.max(2, Math.min(MAP_H - 3, v));
+    const pts = [[ax, ay]];
+    let x = ax, y = ay, last = -1, guard = 0;
+    while ((x !== bx || y !== by) && guard++ < 400) {
+      const dx = bx - x, dy = by - y;
+      let axis;
+      if (dx !== 0 && dy !== 0) axis = (last === 0) ? 1 : (last === 1 ? 0 : (Math.abs(dx) >= Math.abs(dy) ? 0 : 1));
+      else if (dx !== 0) axis = 0;
+      else if (dy !== 0) axis = 1;
+      else break;
+      if (axis === last) {                          // would repeat an axis → jog perpendicular to force a bend
+        const j = 1 - axis, jdir = Math.random() < 0.5 ? 1 : -1, jlen = randInt(3, 5);
+        for (let i = 0; i < jlen; i++) { if (j === 0) x = clampX(x + jdir); else y = clampY(y + jdir); pts.push([x, y]); }
+        last = j; continue;
+      }
+      const dir = axis === 0 ? Math.sign(dx) : Math.sign(dy);
+      const remain = axis === 0 ? Math.abs(dx) : Math.abs(dy);
+      const len = Math.min(remain, randInt(3, 6));   // short legs → the 3-wide carve keeps straight runs ≤ ~8
+      for (let i = 0; i < len; i++) { if (axis === 0) x = clampX(x + dir); else y = clampY(y + dir); pts.push([x, y]); }
+      last = axis;
+    }
+    // guarantee arrival (connectivity trumps the aesthetic cap in the rare fallback)
+    while (x !== bx) { x += Math.sign(bx - x); pts.push([x, y]); }
+    while (y !== by) { y += Math.sign(by - y); pts.push([x, y]); }
+    return pts;
   }
-  // Corridors are 1-tile-wide hallways connecting room centres.
+  // A 3-wide winding corridor between two points.
   function carveCorridor(a, b) {
-    if (Math.random() < 0.5) { hTunnel(a.x, b.x, a.y); vTunnel(a.y, b.y, b.x); }
-    else { vTunnel(a.y, b.y, a.x); hTunnel(a.x, b.x, b.y); }
+    for (const [x, y] of orthPath(a.x, a.y, b.x, b.y)) carveBlock3(x, y);
   }
-  // Connect rooms with distinct 1-wide corridors: a nearest-neighbour spanning
-  // tree for guaranteed connectivity, plus each room's single nearest link for a
-  // few loops. Each room pair is carved at most once (no stacked tunnels).
+  // Connect rooms with distinct 3-wide winding corridors: a nearest-neighbour
+  // spanning tree for guaranteed connectivity, plus each room's single nearest
+  // link for a few loops. Each room pair is carved at most once.
   function connectRooms(rooms) {
     if (rooms.length < 2) return;
     const cen = rooms.map(roomCenter);
@@ -420,7 +450,9 @@
       }
       link(best.a, best.b); inTree.add(best.b);
     }
+    // A few extra loops for alternate routes.
     for (let a = 0; a < rooms.length; a++) {
+      if (Math.random() > 0.55) continue;
       let nb = -1, nd = Infinity;
       for (let b = 0; b < rooms.length; b++) { if (b === a) continue; const d = manh(a, b); if (d < nd) { nd = d; nb = b; } }
       if (nb >= 0) link(a, nb);
@@ -465,13 +497,21 @@
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
 
-  // Every corridor opening into a room becomes a door (bush) at the threshold, so a
-  // closed door hides the room (and breaks line of sight) until you reach its mouth.
+  // Bushes/doors at room mouths. With 3-wide entrances we place them sparsely — a
+  // single bush per opening, and never two bushes touching (8-neighbour), so a
+  // doorway is a lone bush rather than a wall of them.
   function placeDoors(rooms) {
-    for (const r of rooms) {
-      for (const [x, y] of roomRing(r)) {
-        if (inBounds(x, y) && map[y][x] === FLOOR) map[y][x] = DOOR;
-      }
+    const cand = [], seen = new Set();
+    for (const r of rooms) for (const [x, y] of roomRing(r)) {
+      if (!inBounds(x, y) || map[y][x] !== FLOOR) continue;
+      const k = y * MAP_W + x; if (seen.has(k)) continue; seen.add(k);
+      cand.push([x, y]);
+    }
+    for (let i = cand.length - 1; i > 0; i--) { const j = randInt(0, i); const t = cand[i]; cand[i] = cand[j]; cand[j] = t; }
+    const placed = [];
+    for (const [x, y] of cand) {
+      if (placed.some(([px, py]) => Math.max(Math.abs(px - x), Math.abs(py - y)) <= 1)) continue;  // no two bushes touching
+      map[y][x] = DOOR; placed.push([x, y]);
     }
   }
   // ---- Traps: hidden on the floor, sprung when stepped on, spotted by chance ----
@@ -525,9 +565,9 @@
     t.revealed = true;
     const def = TRAPS[t.key] || {};
     if (def.effect === "bomb") {                // arms a fuse instead of firing now
-      t.sprung = true; t.armed = 2;             // explodes 2 of the player's turns later
+      t.sprung = true; t.armed = 3;             // explodes 3 of the player's turns later
       flash(player); floatText(t.x, t.y, "TICK!", "#e0685a");
-      log("A bomb trap clicks to life — it blows in 2 turns. Get clear of the blast!", "hurt");
+      log("A bomb trap clicks to life — it blows in 3 turns. Get clear of the blast!", "hurt");
       return;
     }
     t.sprung = true;
@@ -725,7 +765,7 @@
       const r = rooms[i];
       if (r === last) continue;
       const openings = roomOpenings(r).length;
-      if (openings >= 1 && openings <= 8 && r.w * r.h <= 45) candidates.push({ i, openings });
+      if (openings >= 1 && openings <= 14 && r.w * r.h <= 55) candidates.push({ i, openings });
     }
     candidates.sort((a, b) => a.openings - b.openings);   // fewest entrances = tidiest vaults
     candidates = candidates.map((c) => c.i);
@@ -802,6 +842,7 @@
     }
   }
   const countThorns = () => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; };
+  let lastRooms = [];   // the current floor's room rects (dev/inspection)
 
   function generateLevel() {
     map = blankGrid(WALL);
@@ -816,37 +857,24 @@
     turns = 0;
 
     const rooms = [];
-    const TOTAL = MAP_W * MAP_H;
-    const roomTarget = TOTAL * 0.35;
-    let roomArea = 0;
-    // Big rooms on a jittered 3×3 grid: even coverage of large chambers (cleaner
-    // geometry, fewer tight corners), each kept a margin inside its cell so a wall
-    // always survives between neighbours — no overlap test needed.
-    const GN = 3;
-    const cellW = Math.floor(MAP_W / GN), cellH = Math.floor(MAP_H / GN);
-    const cells = [];
-    for (let gy = 0; gy < GN; gy++) for (let gx = 0; gx < GN; gx++) cells.push([gx, gy]);
-    for (let i = cells.length - 1; i > 0; i--) { const j = randInt(0, i); const t = cells[i]; cells[i] = cells[j]; cells[j] = t; }
-    for (const [gx, gy] of cells) {
-      if (roomArea >= roomTarget) break;
-      // Roomy chambers filling most of each cell (dense map), connected by 1-wide
-      // halls and bush-gated doorways.
-      const w = randInt(5, cellW - 2), h = randInt(5, cellH - 2);
-      const x = gx * cellW + randInt(1, cellW - w - 1);
-      const y = gy * cellH + randInt(1, cellH - h - 1);
+    // Keep the TOTAL room area about the same as before — the map got much bigger,
+    // so the same chambers spread out across it, joined by long winding halls.
+    const roomTarget = 340;
+    let roomArea = 0, guard = 0;
+    while (roomArea < roomTarget && rooms.length < 16 && guard++ < 700) {
+      // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
+      // but kept to the familiar chamber size (~24–60 tiles).
+      let w = randInt(5, 9), h = randInt(4, 8);
+      if (Math.random() < 0.4) { const t = w; w = h; h = t; }
+      if (w * h > 60) continue;
+      const x = randInt(2, MAP_W - w - 3), y = randInt(2, MAP_H - h - 3);
       const room = { x, y, w, h };
+      if (rooms.some((r) => overlaps(r, room, 5))) continue;   // ≥5 apart so a 3-wide hall fits between
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
-    // Top up with a couple more small rooms in the leftover gaps.
-    for (let tries = 0; tries < 800 && roomArea < roomTarget && rooms.length < 20; tries++) {
-      const w = randInt(4, 6), h = randInt(4, 6);
-      const x = randInt(1, MAP_W - w - 2), y = randInt(1, MAP_H - h - 2);
-      const room = { x, y, w, h };
-      if (rooms.some((r) => overlaps(r, room, 1))) continue;
-      carveRoom(room); roomArea += w * h; rooms.push(room);
-    }
-    // Then connect them with distinct 1-wide corridors — no retraced tunnels.
+    // Then connect them with distinct 3-wide winding corridors.
     connectRooms(rooms);
+    lastRooms = rooms;
 
     biomeIndex = biomeOf(depth);
     biome = DATA.biomes[biomeIndex];
@@ -1360,6 +1388,21 @@
     const mon = monsterAt(nx, ny);
     if (mon) { attack(player, mon); worldTurn(attackCost()); return true; }   // weapon speed (+haste, +Metrognome) → attack cost
 
+    // Ranged weapon (spear/bow): if a foe stands along this direction within reach
+    // and line of sight, loose a shot — so arrow-key play fires without a tap.
+    const rng = weaponRange();
+    if (rng > 1) {
+      for (let step = 2; step <= rng; step++) {
+        const tx = player.x + dx * step, ty = player.y + dy * step;
+        if (!inBounds(tx, ty) || isWall(tx, ty)) break;
+        const tgt = monsterAt(tx, ty);
+        if (tgt && tgt.hp > 0 && lineOfSight(player.x, player.y, tx, ty)) {
+          spawnProjectile(player.x, player.y, tx, ty, "#ffe08a"); attack(player, tgt); worldTurn(attackCost());
+          return true;
+        }
+      }
+    }
+
     if (!canStep(player.x, player.y, dx, dy)) {          // walking into a wall-mounted torch lifts it off
       const torchThere = torches.find((t) => t.x === nx && t.y === ny);
       if (torchThere) { takeTorch(torchThere); return true; }
@@ -1842,6 +1885,18 @@
     return path;
   }
 
+  let pendingTorch = null;   // a torch we're auto-walking toward, to lift on arrival
+  // The nearest walkable, explored floor tile beside (tx,ty).
+  function adjacentReachableFloor(tx, ty) {
+    let best = null, bd = Infinity;
+    for (const [dx, dy] of DIRS8) {
+      const x = tx + dx, y = ty + dy;
+      if (!inBounds(x, y) || !passable(x, y) || !explored[y][x]) continue;
+      const d = cheb(player.x, player.y, x, y);
+      if (d < bd) { bd = d; best = { x, y }; }
+    }
+    return best;
+  }
   function stepToward(tx, ty) {
     const dx = Math.sign(tx - player.x), dy = Math.sign(ty - player.y);
     if (dx === 0 && dy === 0) return;
@@ -1862,9 +1917,19 @@
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
     const adjacent = cheb(player.x, player.y, tx, ty) === 1;
-    // tap an adjacent wall torch to take it off the wall
+    // tap a wall torch to take it — if it's not adjacent, walk to a tile beside it
+    // and lift it automatically on arrival (torches sit on wall tiles, so we can't
+    // path onto the torch itself).
     const torchHere = torches.find((t) => t.x === tx && t.y === ty);
-    if (torchHere && adjacent) { takeTorch(torchHere); return; }
+    if (torchHere) {
+      if (adjacent) { takeTorch(torchHere); return; }
+      const spot = adjacentReachableFloor(tx, ty);
+      if (spot) {
+        const path = findPath(player.x, player.y, spot.x, spot.y);
+        if (path.length) { walkPath = path; pendingTorch = torchHere; return; }
+      }
+      return;
+    }
     // tap an adjacent thorn while carrying a torch → burn it clear instead of bleeding through
     if (adjacent && isThorn(tx, ty)) {
       const ti = player.inv.findIndex((i) => i.key === "torch");
@@ -2677,7 +2742,7 @@
   let invOpen = false;
   function toggleInv(force) {
     invOpen = force === undefined ? !invOpen : force;
-    if (invOpen) { selectedInvIdx = -1; toggleMap(false); toggleChar(false); toggleExamine(false); renderInv(); }
+    if (invOpen) { selectedInvIdx = -1; selectedEquip = null; toggleMap(false); toggleChar(false); toggleExamine(false); renderInv(); }
     document.getElementById("inv").hidden = !invOpen;
     document.getElementById("btnBag").classList.toggle("on", invOpen);
   }
@@ -2693,7 +2758,9 @@
   }
   // ---- Inventory: a 5×5 grid; consumables stack; each item has actions ---------
   let selectedInvIdx = -1;
+  let selectedEquip = null;    // an equipped slot key selected for its detail/actions
   let pendingThrow = null;
+  const EQUIP_ROWS = [["Weapon", "weapon"], ["Armor", "armor"], ["Ring", "ring1"], ["Ring", "ring2"], ["Trinket", "trinket"], ["Necklace", "necklace"]];
   const entryDef = (e) => (isGear(e) ? GEAR[e.key] : CONSUM[e.key]);
   const entryGlyph = (e) => { const d = entryDef(e); return (d && d.glyph) || "?"; };
   const entryColor = (e) => (isGear(e) ? itemColor(e) : consumColor(e.key));
@@ -2708,11 +2775,22 @@
     document.getElementById("invStats").innerHTML =
       `${cname} · Lv ${player.level} · Atk ${playerAtk()} · Def ${df}` +
       `<br><span style="opacity:.85">${statLine}${pts}</span>`;
-    const slotRow = (lbl, inst) => `<div class="eq-row"><span class="eq-slot">${lbl}</span>${equipLabel(inst)}</div>`;
-    document.getElementById("invEquip").innerHTML =
-      slotRow("Weapon", player.weapon) + slotRow("Armor", player.armor) +
-      slotRow("Ring", player.ring1) + slotRow("Ring", player.ring2) +
-      slotRow("Trinket", player.trinket) + slotRow("Necklace", player.necklace);
+    // Equipped slots: each is a card with an icon, its slot label, and the item —
+    // and it's tappable to see the item's details and unequip it.
+    const equipHost = document.getElementById("invEquip");
+    equipHost.innerHTML = "";
+    for (const [lbl, sk] of EQUIP_ROWS) {
+      const inst = player[sk];
+      const row = document.createElement("div");
+      row.className = "eq-row" + (inst ? "" : " empty") + (selectedEquip === sk ? " sel" : "");
+      const ic = document.createElement("span"); ic.className = "eq-ic";
+      if (inst) { const cv = document.createElement("canvas"); cv.width = 48; cv.height = 48; const cc = cv.getContext("2d"); cc.imageSmoothingEnabled = false; renderIconInto(cc, 0, 0, 48, inst); ic.appendChild(cv); }
+      const lab = document.createElement("span"); lab.className = "eq-slot"; lab.textContent = lbl;
+      const nm = document.createElement("span"); nm.className = "eq-name"; nm.innerHTML = inst ? equipLabel(inst) : '<span class="eq-empty">— empty —</span>';
+      row.appendChild(ic); row.appendChild(lab); row.appendChild(nm);
+      if (inst) row.addEventListener("click", () => { selectedEquip = (selectedEquip === sk ? null : sk); selectedInvIdx = -1; renderInv(); });
+      equipHost.appendChild(row);
+    }
     if (selectedInvIdx >= player.inv.length) selectedInvIdx = -1;
     const grid = document.getElementById("invGrid");
     grid.innerHTML = "";
@@ -2726,16 +2804,13 @@
         slot.appendChild(cv);
         const cnt = e.count || 1;
         if (cnt > 1) { const c = document.createElement("span"); c.className = "i-count"; c.textContent = cnt; slot.appendChild(c); }
-        slot.addEventListener("click", () => { selectedInvIdx = (selectedInvIdx === i ? -1 : i); renderInv(); });
+        slot.addEventListener("click", () => { selectedInvIdx = (selectedInvIdx === i ? -1 : i); selectedEquip = null; renderInv(); });
       }
       grid.appendChild(slot);
     }
     renderInvDetail();
   }
-  function renderInvDetail() {
-    const d = document.getElementById("invDetail");
-    const e = player.inv[selectedInvIdx];
-    if (!e) { d.innerHTML = '<div class="d-empty">Tap a slot to see its actions.</div>'; return; }
+  function detailHeaderHTML(e) {
     const def = entryDef(e) || {};
     let sub;
     if (isGear(e)) {
@@ -2747,14 +2822,54 @@
       sub = identified.has(e.key) ? (def.cat || "item") : "unidentified " + (def.cat || "item");
       if ((e.count || 1) > 1) sub += " · ×" + e.count;
     }
-    d.innerHTML = `<div class="d-name" style="color:${entryColor(e)}">${entryName(e)}</div><div class="d-sub">${sub}</div>`;
+    return `<div class="d-name" style="color:${entryColor(e)}">${entryName(e)}</div><div class="d-sub">${sub}</div>`;
+  }
+  const mkBtn = (label, cls, fn) => { const b = document.createElement("button"); if (cls) b.className = cls; b.textContent = label; b.addEventListener("click", fn); return b; };
+  function renderInvDetail() {
+    const d = document.getElementById("invDetail");
+    // An equipped slot is selected → show it, with Unequip / Drop.
+    if (selectedEquip && player[selectedEquip]) {
+      const e = player[selectedEquip];
+      d.innerHTML = detailHeaderHTML(e);
+      const acts = document.createElement("div"); acts.className = "inv-actions";
+      acts.appendChild(mkBtn("Unequip", "primary", () => unequipSlot(selectedEquip)));
+      acts.appendChild(mkBtn("Drop", "danger", () => dropEquip(selectedEquip)));
+      d.appendChild(acts);
+      return;
+    }
+    const e = player.inv[selectedInvIdx];
+    if (!e) { d.innerHTML = '<div class="d-empty">Tap an item, or an equipped slot, to see its actions.</div>'; return; }
+    const def = entryDef(e) || {};
+    d.innerHTML = detailHeaderHTML(e);
     const acts = document.createElement("div"); acts.className = "inv-actions";
-    const mk = (label, cls, fn) => { const b = document.createElement("button"); if (cls) b.className = cls; b.textContent = label; b.addEventListener("click", fn); return b; };
     const other = isGear(e) ? "Equip" : def.cat === "potion" ? "Drink" : def.cat === "scroll" ? "Read" : "Use";
-    acts.appendChild(mk(other, "primary", () => actItem(selectedInvIdx)));
-    acts.appendChild(mk("Throw", "", () => beginThrow(selectedInvIdx)));
-    acts.appendChild(mk("Drop", "danger", () => dropItem(selectedInvIdx)));
+    acts.appendChild(mkBtn(other, "primary", () => actItem(selectedInvIdx)));
+    acts.appendChild(mkBtn("Throw", "", () => beginThrow(selectedInvIdx)));
+    acts.appendChild(mkBtn("Drop", "danger", () => dropItem(selectedInvIdx)));
     d.appendChild(acts);
+  }
+  function unequipSlot(sk) {
+    const it = player[sk]; if (!it) return;
+    if (player.inv.length >= INV_MAX) { log("Your pack is full — drop something first."); return; }
+    player[sk] = null; selectedEquip = null;
+    player.inv.push(it);
+    log("You put away the " + itemName(it) + ".");
+    player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    updateHUD(); worldTurn();
+    if (dead) { toggleInv(false); return; }
+    renderInv();
+  }
+  function dropEquip(sk) {
+    const it = player[sk]; if (!it) return;
+    const spot = dropSpot();
+    if (!spot) { log("Nowhere to drop it here."); return; }
+    player[sk] = null; selectedEquip = null;
+    items.push(Object.assign({ x: spot.x, y: spot.y }, it));
+    log("You drop the " + itemName(it) + ".");
+    player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    updateHUD(); worldTurn();
+    if (dead) { toggleInv(false); return; }
+    renderInv();
   }
   function actItem(idx) {
     const it = player.inv[idx];
@@ -3255,6 +3370,11 @@
     } else {
       acc = 0;
     }
+    // Arrived beside a torch we were walking to → lift it off the wall.
+    if (pendingTorch && !walkPath.length && !dead) {
+      if (cheb(player.x, player.y, pendingTorch.x, pendingTorch.y) === 1 && torches.indexOf(pendingTorch) >= 0) takeTorch(pendingTorch);
+      pendingTorch = null;
+    }
 
     if (!reduceMotion) flick = Math.sin(t / 420) * 0.14 + Math.sin(t / 130) * 0.05;
     updateAnims(t);
@@ -3419,6 +3539,7 @@
     springTrap: (i) => { if (traps[i]) triggerTrap(traps[i]); },
     throwAt: (idx, x, y) => executeThrow(idx, x, y),
     anims: () => ({ projectiles: projectiles.length, streaks: streaks.length, spirals: spirals.length, bursts: bursts.length }),
+    rooms: () => lastRooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
