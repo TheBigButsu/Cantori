@@ -39,6 +39,12 @@ window.CantoriLoot = function (deps) {
       if (Math.random() < LOOT.purpleSecondStatChance) addStat(); else addEnchant();
     }
     // white gets nothing but its (possible) plus; gold is authored, not rolled here
+    // Jewelry is worthless as a bare item, so a ring / trinket / necklace always
+    // carries at least one property — roll an enchant if it can, otherwise a stat.
+    const JEWELRY = { ring: 1, trinket: 1, necklace: 1 };
+    if (JEWELRY[base.cat] && stats.length === 0 && enchants.length === 0) {
+      if (ekeys.length && Math.random() < 0.5) addEnchant(); else addStat();
+    }
     // Identification: how much use it takes to learn this item's hidden properties.
     //   idNeed = (tier + plus) * (1..10 + rarity rank),  white=1 … purple=4 … gold=5
     const rank = LOOT.rarities.findIndex((r) => r.key === rarity) + 1;

@@ -92,13 +92,14 @@
   const flippedSkill = new Set();   // skill cells currently showing raw code, keyed "cls:t,s"
   // The effect kinds the engine understands, and the numbers each one reads.
   // Leaving a param blank makes the engine fall back to its built-in default.
-  const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste"];
+  const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste", "defense"];
   const EFFECT_PARAMS = {
-    burn:   [["burstMult", "burst × power", "0.05"], ["dotTurns", "burn turns", "1"]],
-    poison: [["initial", "initial hit", "1"], ["perTurn", "dmg / turn", "1"], ["turns", "turns per dose", "1"]],
-    shock:  [["burstMult", "burst × power", "0.05"], ["stunPer", "stun / power", "0.01"]],
-    thorns: [["mult", "reflect × power", "0.05"]],
-    haste:  [["mult", "haste (0–1)", "0.05"]],
+    burn:    [["burstMult", "burst × power", "0.05"], ["dotTurns", "burn turns", "1"]],
+    poison:  [["initial", "initial hit", "1"], ["perTurn", "dmg / turn", "1"], ["turns", "turns per dose", "1"]],
+    shock:   [["burstMult", "burst × power", "0.05"], ["stunPer", "stun / power", "0.01"]],
+    thorns:  [["mult", "reflect × power", "0.05"]],
+    haste:   [["mult", "haste (0–1)", "0.05"]],
+    defense: [["amount", "+block / hit", "1"]],
   };
   // A reusable "flip to raw JSON" editor: shows the object as text, parses live,
   // and hands the parsed value back so the user can write the governing code directly.

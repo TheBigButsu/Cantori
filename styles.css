@@ -418,6 +418,7 @@ body{
 .inv-slot.empty{border-style:dashed;opacity:.5;cursor:default}
 .inv-slot.sel{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber) inset}
 .inv-slot .i-glyph{font-size:20px;font-weight:700}
+.inv-slot .i-icon{width:76%;height:76%;image-rendering:pixelated}
 .inv-slot .i-count{position:absolute;right:4px;bottom:2px;font-size:11px;font-weight:700;color:var(--amber)}
 .inv-slot .i-dot{position:absolute;left:4px;top:4px;width:7px;height:7px;border-radius:50%;border:1px solid rgba(0,0,0,.4)}
 .inv-detail{min-height:58px;border-top:1px solid var(--line);padding-top:10px}

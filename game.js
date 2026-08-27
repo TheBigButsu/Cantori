@@ -100,6 +100,8 @@
     player.regenAcc = 0; player.mpRegenAcc = 0;
     player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
+    player.stoneSkin = null;                   // timed buffs don't carry across a new run
+    assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
     player.skills = {};
     const sk = treeSkills(key).skills;
@@ -206,11 +208,30 @@
     return n;
   }
   const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
-  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorSubMit();          // top-end block (display/peek)
-  const armorDefMin = () => (player.armor ? gDefMin(player.armor) : 0) + armorSubMit();
-  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorSubMit();
+  // Extra flat mitigation from "Defense" enchants worn on armor / jewelry.
+  function wornDefense() {
+    let d = 0;
+    for (const it of wornItems()) {
+      if (!it || !it.enchants) continue;
+      for (const e of it.enchants) {
+        const def = LOOT.enchants[e];
+        if (def && def.effect && def.effect.type === "defense") d += (def.effect.amount || 0);
+      }
+    }
+    return d;
+  }
+  // Stone Skin (a potion buff): while it lasts, each block gets a bonus rolled
+  // between level/2 and (level + floor + VIT)/2.
+  const stoneSkinActive = () => !!(player.stoneSkin && player.stoneSkin.turns > 0);
+  const stoneSkinLo = () => (stoneSkinActive() ? Math.floor(player.level / 2) : 0);
+  const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + eff("VIT")) / 2) : 0);
+  const stoneSkinRoll = () => (stoneSkinActive() ? randInt(Math.min(stoneSkinLo(), stoneSkinHi()), Math.max(stoneSkinLo(), stoneSkinHi())) : 0);
+  const armorFlat = () => armorSubMit() + wornDefense();          // flat, always-on mitigation
+  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi();          // top-end block (display/peek)
+  const armorDefMin = () => (player.armor ? gDefMin(player.armor) : 0) + armorFlat() + stoneSkinLo();
+  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorFlat() + stoneSkinHi();
   // The actual mitigation applied on a hit: roll a fresh block within the range.
-  const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorSubMit();
+  const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorFlat() + stoneSkinRoll();
   // Weapon combat numbers (unarmed falls back to the base 2–3 fists).
   const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin);
   const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax);
@@ -292,10 +313,42 @@
   const TRAP_KEYS = Object.keys(TRAPS);
   const identified = new Set();
   const defOf = (key) => GEAR[key] || CONSUM[key];
+  // Unidentified potions look different every run: each potion key is assigned a
+  // random shade + colour, so you can't tell them apart until you drink one. Two
+  // potions with the same shade this run really are the same potion.
+  const POTION_SHADES = [
+    ["Crimson", "#c0392b"], ["Azure", "#3d7fd6"], ["Emerald", "#2ecc71"],
+    ["Amber", "#e0a838"], ["Violet", "#9b59b6"], ["Rose", "#e07aa0"],
+    ["Teal", "#20b2aa"], ["Pearl", "#d8dce2"], ["Ivory", "#ece0c0"],
+    ["Umber", "#8a5a2b"], ["Cobalt", "#3454c4"], ["Scarlet", "#e04a3a"],
+    ["Jade", "#4fbf8f"], ["Ochre", "#c9922e"], ["Indigo", "#5b4fd0"],
+    ["Charcoal", "#6a7078"],
+  ];
+  const potionLook = {};   // key -> { name, color } for the current run
+  function assignPotionLooks() {
+    for (const k of Object.keys(potionLook)) delete potionLook[k];
+    const shades = POTION_SHADES.slice();
+    for (let i = shades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = shades[i]; shades[i] = shades[j]; shades[j] = t; }
+    let si = 0;
+    for (const k of Object.keys(CONSUM)) {
+      if (CONSUM[k].cat !== "potion") continue;
+      const s = shades[si % shades.length]; si++;
+      potionLook[k] = { name: s[0], color: s[1] };
+    }
+  }
+  // The colour a consumable shows at: an unidentified potion wears its scrambled
+  // shade; everything else uses its authored colour.
+  function consumColor(key) {
+    const d = CONSUM[key];
+    if (!d) return "#cfc3a0";
+    if (d.cat === "potion" && !identified.has(key) && potionLook[key]) return potionLook[key].color;
+    return d.color || "#cfc3a0";
+  }
   function displayName(key) {
     const d = defOf(key);
     if (d.cat === "weapon" || d.cat === "armor" || d.cat === "tool" || identified.has(key)) return d.name;
-    return d.cat === "potion" ? "Unidentified Potion" : "Unidentified Scroll";
+    if (d.cat === "potion") return (potionLook[key] ? potionLook[key].name + " Potion" : "Unidentified Potion");
+    return "Unidentified Scroll";
   }
   function weightedConsumKey() {
     const pool = CONSUM_KEYS.filter((k) => !CONSUM[k].noDrop);   // torch etc. never drop as loot
@@ -677,6 +730,7 @@
     computeFOV();
     setDepthLabel();
     floaters = [];
+    speeches = [];
     projectiles = [];
     bursts = [];
     screenFlash = null;
@@ -732,7 +786,8 @@
   }
 
   function spawnItems(rooms) {
-    const count = randInt(2, 4);
+    let count = randInt(2, 4);
+    if (Math.random() < 0.10 * count) count += 1;     // ~+10% loot per floor
     for (let i = 0; i < count; i++) {
       const spot = freeFloorSpot(rooms);
       if (!spot) continue;
@@ -745,6 +800,10 @@
         items.push({ x: spot.x, y: spot.y, key: weightedConsumKey() });
       }
     }
+    // Exactly one Potion of Insight (a skill point) is guaranteed on every floor —
+    // it never rolls in the random pool (noDrop), so this is its only source.
+    const sp = freeFloorSpot(rooms);
+    if (sp) items.push({ x: sp.x, y: sp.y, key: "skill_point" });
   }
 
   function spawnMonsters(rooms) {
@@ -1353,6 +1412,7 @@
       spawnNear("rat", player.x, player.y, 3, 2);
       spawnNear("snake", player.x, player.y, 3, 1);
       flashScreen("#7a1e1e", 320);
+      sayMonster(m, "Friends, friends everywhere", "#e07aa0");
       log("The Piper's shrill tune summons vermin around you!", "hurt");
       return;
     }
@@ -1406,6 +1466,7 @@
     m.beam = { dir, tiles };
     flashScreen("#c02020", 300);                      // a sharp red pulse — impossible to miss
     floatText(player.x, player.y, "⚠", "#ff5a5a");
+    sayMonster(m, "Dance for me", "#ff6a6a");
     log("The Piper marks a line of death — MOVE off it!", "hurt");
   }
   function piperFireBeam(m) {
@@ -1475,6 +1536,9 @@
     cost = cost == null ? 1 : cost;
     turns++;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
+    if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
+      player.stoneSkin = null; log("Your stone skin crumbles away.");
+    }
     panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
@@ -1681,6 +1745,17 @@
     if (!_font) _font = getComputedStyle(document.body).fontFamily || "monospace";
     return _font;
   }
+  // Build a rounded-rect path on ctx (caller then fills/strokes).
+  function roundRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
 
   // ---- Sprites (CC0 Dungeon Crawl Stone Soup tiles) -----------------------
   const SPRITE_NAMES = Array.from(new Set([
@@ -1812,48 +1887,106 @@
     ctx.fillStyle = shade("#ffe08a", b);
     ctx.fill();
   }
-  function spriteForItem(key) {
-    const d = defOf(key);
-    if (d.cat === "weapon" || d.cat === "armor") return SPRITES[key];
-    if (d.cat === "potion") return SPRITES.potion;
-    if (d.cat === "scroll") return SPRITES.scroll;
-    return null;   // jewelry / tools draw procedurally
-  }
-  // Procedural jewelry glyph for the floor (no sprite asset needed).
-  function drawJewel(px, py, cat, color) {
-    const cx = px + tile / 2, cy = py + tile / 2;
-    ctx.lineWidth = Math.max(1, tile * 0.08);
+  // ---- Item icons: one set of vector primitives, drawn identically on the
+  // floor (ctx, full tile) and in the inventory grid (a small per-slot canvas),
+  // so a pickup and its pack icon always match. All take (c, ox, oy, s, …).
+  function drawJewelInto(c, ox, oy, s, cat, color) {
+    const cx = ox + s / 2, cy = oy + s / 2;
+    c.lineWidth = Math.max(1, s * 0.08);
     if (cat === "ring") {
-      ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(cx, cy + tile * 0.05, tile * 0.2, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = "#bfe0ff"; ctx.beginPath(); ctx.arc(cx, cy - tile * 0.18, tile * 0.08, 0, Math.PI * 2); ctx.fill();
+      c.strokeStyle = color; c.beginPath(); c.arc(cx, cy + s * 0.05, s * 0.2, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = "#bfe0ff"; c.beginPath(); c.arc(cx, cy - s * 0.18, s * 0.08, 0, Math.PI * 2); c.fill();
     } else if (cat === "necklace") {
-      ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(cx, cy - tile * 0.02, tile * 0.22, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
-      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx, cy + tile * 0.22, tile * 0.09, 0, Math.PI * 2); ctx.fill();
+      c.strokeStyle = color; c.beginPath(); c.arc(cx, cy - s * 0.02, s * 0.22, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();
+      c.fillStyle = color; c.beginPath(); c.arc(cx, cy + s * 0.22, s * 0.09, 0, Math.PI * 2); c.fill();
     } else {   // trinket: a small gem
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - tile * 0.22); ctx.lineTo(cx + tile * 0.2, cy); ctx.lineTo(cx, cy + tile * 0.22); ctx.lineTo(cx - tile * 0.2, cy);
-      ctx.closePath(); ctx.fill();
+      c.fillStyle = color;
+      c.beginPath();
+      c.moveTo(cx, cy - s * 0.22); c.lineTo(cx + s * 0.2, cy); c.lineTo(cx, cy + s * 0.22); c.lineTo(cx - s * 0.2, cy);
+      c.closePath(); c.fill();
     }
   }
-  // Fallback for gear with no sprite file: draw its glyph char (so editor-added
-  // weapons/armor still show up on the floor).
-  function drawGlyph(px, py, ch, color) {
-    ctx.fillStyle = color || "#e6e0d2";
-    ctx.font = "700 " + Math.round(tile * 0.7) + "px " + bodyFont();
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(ch || "?", px + tile / 2, py + tile / 2);
+  // A stoppered flask tinted to the potion's (possibly scrambled) colour.
+  function drawFlaskInto(c, ox, oy, s, color) {
+    const cx = ox + s / 2;
+    c.fillStyle = "#cbb78a";                                   // cork
+    c.fillRect(cx - s * 0.06, oy + s * 0.12, s * 0.12, s * 0.12);
+    c.fillStyle = "rgba(228,233,238,0.85)";                    // glass neck
+    c.fillRect(cx - s * 0.09, oy + s * 0.22, s * 0.18, s * 0.12);
+    c.beginPath();                                             // rounded body of liquid
+    c.arc(cx, oy + s * 0.58, s * 0.24, 0, Math.PI * 2);
+    c.fillStyle = color; c.fill();
+    c.strokeStyle = "rgba(255,255,255,0.30)"; c.lineWidth = Math.max(1, s * 0.03); c.stroke();
+    c.fillStyle = "rgba(255,255,255,0.4)";                     // highlight
+    c.beginPath(); c.arc(cx - s * 0.08, oy + s * 0.50, s * 0.05, 0, Math.PI * 2); c.fill();
   }
-  // Draw a floor item's icon, falling back to a jewel shape or glyph when there's
-  // no sprite for its key.
-  function drawItemIcon(px, py, it) {
-    if (drawImg(spriteForItem(it.key), px, py)) return;
-    const g = GEAR[it.key];
-    const cat = g ? g.cat : "trinket";
-    const col = isGear(it) ? itemColor(it) : rarityColor(it.rarity);   // neutral while unidentified
-    if (cat === "ring" || cat === "necklace" || cat === "trinket") drawJewel(px, py, cat, col);
-    else drawGlyph(px, py, g ? (g.glyph || "?") : "?", g && g.color ? g.color : col);
+  // Simple weapon silhouettes by subtype, for gear with no sprite file.
+  function drawWeaponInto(c, ox, oy, s, sub, color) {
+    const cx = ox + s / 2, cy = oy + s / 2;
+    c.strokeStyle = color; c.fillStyle = color;
+    c.lineWidth = Math.max(1.5, s * 0.09); c.lineCap = "round";
+    if (sub === "bow") {
+      c.beginPath(); c.arc(cx + s * 0.06, cy, s * 0.30, -0.62 * Math.PI, 0.62 * Math.PI); c.stroke();
+      c.lineWidth = Math.max(1, s * 0.03);
+      c.beginPath();
+      c.moveTo(cx + s * 0.06 + Math.cos(-0.62 * Math.PI) * s * 0.30, cy + Math.sin(-0.62 * Math.PI) * s * 0.30);
+      c.lineTo(cx + s * 0.06 + Math.cos(0.62 * Math.PI) * s * 0.30, cy + Math.sin(0.62 * Math.PI) * s * 0.30);
+      c.stroke();
+    } else if (sub === "spear") {
+      c.beginPath(); c.moveTo(ox + s * 0.22, oy + s * 0.78); c.lineTo(ox + s * 0.74, oy + s * 0.26); c.stroke();
+      c.beginPath(); c.moveTo(ox + s * 0.74, oy + s * 0.16); c.lineTo(ox + s * 0.86, oy + s * 0.30); c.lineTo(ox + s * 0.66, oy + s * 0.34); c.closePath(); c.fill();
+    } else {   // dagger / sword / axe fallback: a blade with a crossguard
+      c.beginPath(); c.moveTo(ox + s * 0.28, oy + s * 0.76); c.lineTo(ox + s * 0.70, oy + s * 0.24); c.stroke();
+      c.lineWidth = Math.max(1.5, s * 0.10);
+      c.beginPath(); c.moveTo(ox + s * 0.24, oy + s * 0.62); c.lineTo(ox + s * 0.42, oy + s * 0.80); c.stroke();
+    }
   }
+  // A rounded cuirass silhouette for armor with no sprite file.
+  function drawArmorInto(c, ox, oy, s, color) {
+    const cx = ox + s / 2;
+    c.fillStyle = color;
+    c.beginPath();
+    c.moveTo(cx - s * 0.22, oy + s * 0.26);
+    c.lineTo(cx + s * 0.22, oy + s * 0.26);
+    c.lineTo(cx + s * 0.26, oy + s * 0.44);
+    c.quadraticCurveTo(cx + s * 0.22, oy + s * 0.78, cx, oy + s * 0.82);
+    c.quadraticCurveTo(cx - s * 0.22, oy + s * 0.78, cx - s * 0.26, oy + s * 0.44);
+    c.closePath(); c.fill();
+    c.strokeStyle = "rgba(0,0,0,0.25)"; c.lineWidth = Math.max(1, s * 0.03);
+    c.beginPath(); c.moveTo(cx, oy + s * 0.28); c.lineTo(cx, oy + s * 0.80); c.stroke();
+  }
+  function drawGlyphInto(c, ox, oy, s, ch, color) {
+    c.fillStyle = color || "#e6e0d2";
+    c.font = "700 " + Math.round(s * 0.7) + "px " + bodyFont();
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(ch || "?", ox + s / 2, oy + s / 2);
+  }
+  // The one entry point: paint entry `e` (a floor item or a pack entry) into c.
+  function renderIconInto(c, ox, oy, s, e) {
+    const key = e.key;
+    if (key === "gold") { drawGlyphInto(c, ox, oy, s, "¢", "#f0c14b"); return; }
+    const d = defOf(key);
+    if (!d) { drawGlyphInto(c, ox, oy, s, "?", "#cfc3a0"); return; }
+    if (d.cat === "weapon" || d.cat === "armor") {
+      const img = SPRITES[key];
+      if (ready(img)) { c.drawImage(img, ox, oy, s, s); return; }
+      if (d.cat === "weapon") drawWeaponInto(c, ox, oy, s, d.sub, d.color || "#d8d2c0");
+      else drawArmorInto(c, ox, oy, s, d.color || "#b9c0c8");
+      return;
+    }
+    if (d.cat === "ring" || d.cat === "necklace" || d.cat === "trinket") {
+      const col = (isGear(e) && itemIdentified(e)) ? itemColor(e) : (d.color || "#cfc3a0");
+      drawJewelInto(c, ox, oy, s, d.cat, col); return;
+    }
+    if (d.cat === "potion") { drawFlaskInto(c, ox, oy, s, consumColor(key)); return; }
+    if (d.cat === "scroll") {
+      if (ready(SPRITES.scroll)) { c.drawImage(SPRITES.scroll, ox, oy, s, s); return; }
+      drawGlyphInto(c, ox, oy, s, "?", consumColor(key)); return;
+    }
+    drawGlyphInto(c, ox, oy, s, d.glyph || "?", d.color || "#cfc3a0");   // tools (torch) etc.
+  }
+  // Draw a floor item's icon (delegates to the shared renderer).
+  function drawItemIcon(px, py, it) { renderIconInto(ctx, px, py, tile, it); }
   // Draw a sprite preserving its aspect, bottom-anchored in the tile (bosses
   // can be taller than one tile and scale > 1).
   function drawSpriteFit(img, px, py, scale) {
@@ -1890,6 +2023,10 @@
   }
   const flash = (e) => { e.hitAt = performance.now(); };
   const floatText = (x, y, text, color) => floaters.push({ x, y, text, color, at: performance.now() });
+  // On-screen speech: a quote that hovers over a monster for a beat (the Piper taunts).
+  let speeches = [];
+  const SPEECH_MS = 2200;
+  function sayMonster(m, text, color) { speeches.push({ m, text, color: color || "#ffd98a", at: performance.now() }); }
   // A little projectile that flies tile-to-tile (ranged attacks). Purely visual.
   let projectiles = [];
   function spawnProjectile(x0, y0, x1, y1, color) {
@@ -1917,6 +2054,7 @@
     animEntity(player, now);
     for (const m of monsters) animEntity(m, now);
     floaters = floaters.filter((f) => now - f.at < FLOAT_MS);
+    speeches = speeches.filter((s) => now - s.at < SPEECH_MS && s.m && s.m.hp > 0);
     projectiles = projectiles.filter((p) => now - p.at < p.dur);
     bursts = bursts.filter((bt) => now - bt.at < bt.dur);
     if (screenFlash && now - screenFlash.at >= screenFlash.dur) screenFlash = null;
@@ -2094,6 +2232,28 @@
     }
     ctx.globalAlpha = 1;
 
+    // monster speech: a taunt in a small dark bubble above the speaker
+    for (const s of speeches) {
+      const m = s.m; if (!m || m.hp <= 0) continue;
+      const p = (now - s.at) / SPEECH_MS;
+      const rise = Math.min(1, p * 4);                       // pop up quickly, then hold
+      const bx = SX(m.rx != null ? m.rx : m.x) + tile / 2;
+      const by = SY(m.ry != null ? m.ry : m.y) - tile * (0.35 + rise * 0.15);
+      ctx.font = `700 ${Math.max(12, Math.floor(tile * 0.42))}px ${bodyFont()}`;
+      const w = ctx.measureText(s.text).width, padX = tile * 0.24, padY = tile * 0.16;
+      const bw = w + padX * 2, bh = Math.max(14, tile * 0.42) + padY * 2;
+      ctx.globalAlpha = Math.max(0, Math.min(1, (1 - p) * 3));
+      ctx.fillStyle = "rgba(12,9,5,0.86)";
+      roundRect(bx - bw / 2, by - bh, bw, bh, Math.min(8, tile * 0.16)); ctx.fill();
+      ctx.fillStyle = "rgba(12,9,5,0.86)";                    // little tail
+      ctx.beginPath(); ctx.moveTo(bx - tile * 0.10, by); ctx.lineTo(bx + tile * 0.10, by); ctx.lineTo(bx, by + tile * 0.14); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(1, tile * 0.03);
+      roundRect(bx - bw / 2, by - bh, bw, bh, Math.min(8, tile * 0.16)); ctx.stroke();
+      ctx.fillStyle = s.color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(s.text, bx, by - bh / 2);
+    }
+    ctx.globalAlpha = 1;
+
     // boss health banner
     const bosses = monsters.filter((m) => m.boss && inBounds(m.x, m.y) && visible[m.y][m.x]);
     if (bosses.length) drawBossBar(bosses);
@@ -2200,7 +2360,7 @@
   let pendingThrow = null;
   const entryDef = (e) => (isGear(e) ? GEAR[e.key] : CONSUM[e.key]);
   const entryGlyph = (e) => { const d = entryDef(e); return (d && d.glyph) || "?"; };
-  const entryColor = (e) => (isGear(e) ? itemColor(e) : ((CONSUM[e.key] && CONSUM[e.key].color) || "#cfc3a0"));
+  const entryColor = (e) => (isGear(e) ? itemColor(e) : consumColor(e.key));
   const entryName = (e) => (isGear(e) ? itemName(e) : displayName(e.key));
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
@@ -2225,7 +2385,9 @@
       const slot = document.createElement("div");
       slot.className = "inv-slot" + (e ? "" : " empty") + (i === selectedInvIdx ? " sel" : "");
       if (e) {
-        const g = document.createElement("span"); g.className = "i-glyph"; g.textContent = entryGlyph(e); g.style.color = entryColor(e); slot.appendChild(g);
+        const cv = document.createElement("canvas"); cv.className = "i-icon"; cv.width = 64; cv.height = 64;
+        const cc = cv.getContext("2d"); cc.imageSmoothingEnabled = false; renderIconInto(cc, 0, 0, 64, e);
+        slot.appendChild(cv);
         const cnt = e.count || 1;
         if (cnt > 1) { const c = document.createElement("span"); c.className = "i-count"; c.textContent = cnt; slot.appendChild(c); }
         slot.addEventListener("click", () => { selectedInvIdx = (selectedInvIdx === i ? -1 : i); renderInv(); });
@@ -2373,22 +2535,41 @@
                            : "Fire races through the brambles — " + cells.length + " thorns burn away.", "hit");
   }
   function applyEffect(effect) {
-    if (effect === "heal") {
+    const fx = String(effect || "").toLowerCase();
+    if (fx === "heal") {
       const amt = 8 + player.level * 2;
       player.hp = Math.min(player.maxHp, player.hp + amt);
       log("You drink a Potion of Healing. (+" + amt + ")", "hit");
-    } else if (effect === "strength") {
+    } else if (fx === "strength") {
       player.stats.STR += 1;
       log("Strength surges through your arms. (+1 STR)", "hit");
-    } else if (effect === "poison") {
+    } else if (fx === "vitality") {
+      const before = player.maxHp;
+      player.stats.VIT += 1;
+      player.maxHp = computeMaxHp();
+      player.hp += Math.max(0, player.maxHp - before);   // the freshly-gained HP is granted too
+      log("Vigor floods your body. (+1 VIT)", "hit");
+    } else if (fx === "intelligence") {
+      player.stats.INT += 1;
+      log("Your mind sharpens. (+1 INT)", "hit");
+    } else if (fx === "stone skin" || fx === "stone_skin" || fx === "stoneskin") {
+      player.stoneSkin = { turns: 40 };
+      floatText(player.x, player.y, "🛡", "#bcd3e6");
+      log("Your skin hardens to stone — blows glance off you. (40 turns)", "hit");
+    } else if (fx === "skill_point" || fx === "skill point" || fx === "insight") {
+      player.statPoints += 1;
+      renderChar(); updateHotbar();
+      floatText(player.x, player.y, "★", "#f0c14b");
+      log("Insight blooms — you gain a skill point.", "hit");
+    } else if (fx === "poison") {
       const amt = randInt(4, 8);
       player.hp -= amt;
       log("It was poison! (-" + amt + ")", "hurt");
       if (player.hp <= 0) die();
-    } else if (effect === "map") {
+    } else if (fx === "map") {
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
       log("The layout of this level floods into your mind.");
-    } else if (effect === "teleport") {
+    } else if (fx === "teleport") {
       for (let t = 0; t < 400; t++) {
         const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
         if (passable(x, y) && !monsterAt(x, y)) {
@@ -2850,6 +3031,8 @@
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
     descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart,
+    dname: (k) => displayName(k), dcolor: (k) => consumColor(k),
+    stoneSkinTurns: () => (player.stoneSkin ? player.stoneSkin.turns : 0),
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
     give: (k) => { if (GEAR[k]) invAdd(rollItem(k, depth)); else if (defOf(k)) invAdd({ key: k }); },
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})

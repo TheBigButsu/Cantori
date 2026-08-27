@@ -549,14 +549,18 @@ window.CANTORI_DATA = {
       "Defense": {
         "name": "Defense",
         "icon": "✦",
-        "color": "#cccccc",
+        "color": "#9ad0ff",
         "proc": 1,
         "slots": [
           "armor",
           "ring",
           "necklace"
         ],
-        "desc": "Increases amount of damage reduced from incoming attacks. "
+        "desc": "Increases amount of damage reduced from incoming attacks. ",
+        "effect": {
+          "type": "defense",
+          "amount": 2
+        }
       }
     }
   },
@@ -629,6 +633,14 @@ window.CANTORI_DATA = {
       "effect": "intelligence",
       "glyph": "!",
       "color": "#cccccc"
+    },
+    "skill_point": {
+      "cat": "potion",
+      "name": "Potion of Insight",
+      "effect": "skill_point",
+      "noDrop": true,
+      "glyph": "!",
+      "color": "#f0c14b"
     }
   },
   "traps": {
