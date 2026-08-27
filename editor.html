@@ -108,6 +108,10 @@
     .bmixw:focus{outline:none;border-color:var(--amber)}
     .bmixrow.head .bmixw{border:none;background:none;color:var(--ink-dim);font-size:10px;padding:0}
     .bmixw.lbl{border:none;background:none;color:var(--ink-dim);font-size:10px;letter-spacing:.05em}
+    .bmixw.locked{border:1px dashed var(--line);background:#0c0905;color:var(--ink-dim);opacity:.5;display:flex;align-items:center;justify-content:center;cursor:not-allowed}
+    .bmixw.over{border-color:var(--red);color:var(--red)}
+    .bmixrow.total .bmixw.tot{border:none;background:none;color:var(--ink-dim);font-size:10.5px}
+    .bmixrow.total .bmixname{color:var(--ink-dim);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
     /* Classes editor */
     .cpick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
     .ctab2{background:var(--panel2);border:1px solid var(--line);color:var(--ink-dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:12px;cursor:pointer}
@@ -288,7 +292,7 @@
     </div>
   </dialog>
 
-  <script src="./data.js?v=53"></script>
-  <script src="./editor.js?v=53"></script>
+  <script src="./data.js?v=54"></script>
+  <script src="./editor.js?v=54"></script>
 </body>
 </html>

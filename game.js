@@ -386,15 +386,8 @@
     for (let y = r.y; y < r.y + r.h; y++)
       for (let x = r.x; x < r.x + r.w; x++) map[y][x] = FLOOR;
   }
-  // Carve a 3×3 block of floor centred on a cell (keeps a 1-tile border).
-  function carveBlock3(cx, cy) {
-    for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) {
-      if (x >= 1 && y >= 1 && x < MAP_W - 1 && y < MAP_H - 1 && map[y][x] === WALL) map[y][x] = FLOOR;
-    }
-  }
-  // A winding orthogonal path from a→b: strictly alternates axes (so it bends after
-  // every leg) with legs capped at 9 tiles, and jogs perpendicular when a straight
-  // shot would run long — no straight run exceeds ~10 tiles, so halls snake.
+  // A winding orthogonal path from a→b: strictly alternates axes so it bends after
+  // every leg (an L, or a staircase), with short legs. Used for 1-wide hallways.
   function orthPath(ax, ay, bx, by) {
     const clampX = (v) => Math.max(2, Math.min(MAP_W - 3, v));
     const clampY = (v) => Math.max(2, Math.min(MAP_H - 3, v));
@@ -423,39 +416,68 @@
     while (y !== by) { y += Math.sign(by - y); pts.push([x, y]); }
     return pts;
   }
-  // A 3-wide winding corridor between two points.
+  // A 1-wide winding hallway between two points (an L or a short staircase).
   function carveCorridor(a, b) {
-    for (const [x, y] of orthPath(a.x, a.y, b.x, b.y)) carveBlock3(x, y);
+    for (const [x, y] of orthPath(a.x, a.y, b.x, b.y)) if (map[y][x] === WALL) map[y][x] = FLOOR;
   }
-  // Connect rooms with distinct 3-wide winding corridors: a nearest-neighbour
-  // spanning tree for guaranteed connectivity, plus each room's single nearest
-  // link for a few loops. Each room pair is carved at most once.
-  function connectRooms(rooms) {
+  // Try to place a new w×h room flush against an existing one with a single wall
+  // between (an "attached" room — no hallway, just a doorway). Returns the rect,
+  // its partner index, and the wall tile to open, or null if it won't fit.
+  function placeAdjacent(rooms, w, h) {
+    for (let tries = 0; tries < 24; tries++) {
+      const pi = randInt(0, rooms.length - 1), r = rooms[pi], side = randInt(0, 3);
+      let rect;
+      if (side === 0) rect = { x: r.x + r.w + 1, y: r.y + randInt(-(h - 3), r.h - 3), w, h };       // east
+      else if (side === 1) rect = { x: r.x - 1 - w, y: r.y + randInt(-(h - 3), r.h - 3), w, h };     // west
+      else if (side === 2) rect = { x: r.x + randInt(-(w - 3), r.w - 3), y: r.y + r.h + 1, w, h };   // south
+      else rect = { x: r.x + randInt(-(w - 3), r.w - 3), y: r.y - 1 - h, w, h };                     // north
+      if (rect.x < 2 || rect.y < 2 || rect.x + rect.w > MAP_W - 2 || rect.y + rect.h > MAP_H - 2) continue;
+      if (rooms.some((k, ki) => ki !== pi && overlaps(k, rect, 1))) continue;   // clear of every OTHER room
+      let door;
+      if (side === 0 || side === 1) {
+        const lo = Math.max(r.y, rect.y) + 1, hi = Math.min(r.y + r.h, rect.y + rect.h) - 2;
+        if (hi < lo) continue;
+        door = { x: side === 0 ? r.x + r.w : r.x - 1, y: randInt(lo, hi) };
+      } else {
+        const lo = Math.max(r.x, rect.x) + 1, hi = Math.min(r.x + r.w, rect.x + rect.w) - 2;
+        if (hi < lo) continue;
+        door = { x: randInt(lo, hi), y: side === 2 ? r.y + r.h : r.y - 1 };
+      }
+      return { rect, partner: pi, door };
+    }
+    return null;
+  }
+  // Connect rooms: open the attached-room doorways, then join the remaining separate
+  // clusters with 1-wide winding hallways (nearest-first), plus a few extra loops.
+  function connectRooms(rooms, attachEdges) {
     if (rooms.length < 2) return;
+    const parent = rooms.map((_, i) => i);
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+    for (const [ai, bi, door] of (attachEdges || [])) {
+      if (inBounds(door.x, door.y) && map[door.y][door.x] === WALL) map[door.y][door.x] = FLOOR;
+      union(ai, bi);
+    }
     const cen = rooms.map(roomCenter);
     const manh = (a, b) => Math.abs(cen[a].x - cen[b].x) + Math.abs(cen[a].y - cen[b].y);
-    const used = new Set();
-    const link = (a, b) => {
-      const key = Math.min(a, b) + "-" + Math.max(a, b);
-      if (used.has(key)) return; used.add(key);
-      carveCorridor(cen[a], cen[b]);
-    };
-    const inTree = new Set([0]);
-    while (inTree.size < rooms.length) {
+    const comps = () => new Set(rooms.map((_, i) => find(i))).size;
+    let guard = 0;
+    while (comps() > 1 && guard++ < 200) {           // join nearest rooms across components
       let best = null;
-      for (const a of inTree) for (let b = 0; b < rooms.length; b++) {
-        if (inTree.has(b)) continue;
+      for (let a = 0; a < rooms.length; a++) for (let b = a + 1; b < rooms.length; b++) {
+        if (find(a) === find(b)) continue;
         const d = manh(a, b);
         if (!best || d < best.d) best = { a, b, d };
       }
-      link(best.a, best.b); inTree.add(best.b);
+      if (!best) break;
+      carveCorridor(cen[best.a], cen[best.b]); union(best.a, best.b);
     }
     // A few extra loops for alternate routes.
     for (let a = 0; a < rooms.length; a++) {
-      if (Math.random() > 0.55) continue;
+      if (Math.random() > 0.4) continue;
       let nb = -1, nd = Infinity;
       for (let b = 0; b < rooms.length; b++) { if (b === a) continue; const d = manh(a, b); if (d < nd) { nd = d; nb = b; } }
-      if (nb >= 0) link(a, nb);
+      if (nb >= 0) carveCorridor(cen[a], cen[nb]);
     }
   }
   // Breakdown of the finished level: how much is room floor vs corridor floor.
@@ -843,6 +865,7 @@
   }
   const countThorns = () => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; };
   let lastRooms = [];   // the current floor's room rects (dev/inspection)
+  let lastAttach = 0;   // how many of them are attached (doorway, no hallway)
 
   function generateLevel() {
     map = blankGrid(WALL);
@@ -857,24 +880,34 @@
     turns = 0;
 
     const rooms = [];
-    // Keep the TOTAL room area about the same as before — the map got much bigger,
-    // so the same chambers spread out across it, joined by long winding halls.
+    const attachEdges = [];   // [roomIdx, partnerIdx, doorTile] for attached rooms (doorway, no hall)
+    // Keep the TOTAL room area about the same as before — the same chambers spread
+    // across a big floor, joined by 1-wide winding hallways (or a shared doorway).
     const roomTarget = 340;
     let roomArea = 0, guard = 0;
-    while (roomArea < roomTarget && rooms.length < 16 && guard++ < 700) {
+    while (roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
       // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
       // but kept to the familiar chamber size (~24–60 tiles).
       let w = randInt(5, 9), h = randInt(4, 8);
       if (Math.random() < 0.4) { const t = w; w = h; h = t; }
       if (w * h > 60) continue;
+      // A fraction of rooms are "attached": placed flush against another with just
+      // a doorway between (no hallway). Kept under ~half so most rooms are still
+      // joined by hallways; the rest are separate.
+      if (rooms.length && Math.random() < 0.3 && attachEdges.length < rooms.length * 0.5) {
+        const res = placeAdjacent(rooms, w, h);
+        if (!res) continue;
+        carveRoom(res.rect); roomArea += w * h; rooms.push(res.rect);
+        attachEdges.push([rooms.length - 1, res.partner, res.door]);
+        continue;
+      }
       const x = randInt(2, MAP_W - w - 3), y = randInt(2, MAP_H - h - 3);
       const room = { x, y, w, h };
-      if (rooms.some((r) => overlaps(r, room, 5))) continue;   // ≥5 apart so a 3-wide hall fits between
+      if (rooms.some((r) => overlaps(r, room, 3))) continue;   // ≥3 apart so a 1-wide hall + walls fit between
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
-    // Then connect them with distinct 3-wide winding corridors.
-    connectRooms(rooms);
-    lastRooms = rooms;
+    connectRooms(rooms, attachEdges);
+    lastRooms = rooms; lastAttach = attachEdges.length;
 
     biomeIndex = biomeOf(depth);
     biome = DATA.biomes[biomeIndex];
@@ -1651,8 +1684,11 @@
     const fi = floorInBiome(depth) - 1;
     const mix = biome.spawnMix || {};
     let total = 0;
+    // Spawn mix values are per-floor spawn percentages: a blank means 0% (that
+    // monster isn't in this floor's mix). If a floor has no percentages at all,
+    // fall back to an even spread across everything eligible.
     const weights = pool.map((k) => {
-      const raw = mix[k] && mix[k][fi] != null ? Number(mix[k][fi]) : 1;
+      const raw = mix[k] && mix[k][fi] != null ? Number(mix[k][fi]) : 0;
       const w = raw > 0 ? raw : 0; total += w; return w;
     });
     if (total <= 0) return pool[randInt(0, pool.length - 1)];
@@ -3540,6 +3576,7 @@
     throwAt: (idx, x, y) => executeThrow(idx, x, y),
     anims: () => ({ projectiles: projectiles.length, streaks: streaks.length, spirals: spirals.length, bursts: bursts.length }),
     rooms: () => lastRooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
+    attachInfo: () => ({ attached: lastAttach, total: lastRooms.length }),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
