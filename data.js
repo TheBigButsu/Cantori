@@ -4,44 +4,43 @@ window.CANTORI_DATA = {
   "monsters": {
     "rat": {
       "name": "Rat",
-      "hp": 10,
-      "atkMin": 2,
-      "atkMax": 4,
+      "hp": 8,
+      "atkMax": 3,
       "minFloor": 1,
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
       "acc": 8,
-      "eva": 8
+      "eva": 12,
+      "atkMin": 1
     },
     "bat": {
       "name": "Bat",
-      "atkMin": 2,
       "atkMax": 3,
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
       "hp": 5,
-      "speed": 1.5,
       "acc": 9,
-      "eva": 20
+      "eva": 20,
+      "speed": 1.1,
+      "atkMin": 1
     },
     "snake": {
       "name": "Snake",
       "hp": 8,
-      "atkMin": 3,
-      "atkMax": 5,
+      "atkMax": 4,
       "glyph": "s",
       "color": "#7ec98a",
       "minFloor": 2,
       "speed": 1,
       "acc": 10,
-      "eva": 25
+      "eva": 25,
+      "atkMin": 1
     },
     "spider": {
       "name": "Spider",
-      "atkMin": 3,
-      "atkMax": 6,
+      "atkMax": 5,
       "minFloor": 3,
       "glyph": "x",
       "color": "#d68f8f",
@@ -50,19 +49,20 @@ window.CANTORI_DATA = {
       "eva": 6,
       "range": 4,
       "ranged": true,
-      "hp": 20
+      "atkMin": 1,
+      "hp": 18
     },
     "wolf": {
       "name": "Wolf",
-      "atkMin": 4,
       "acc": 10,
       "glyph": "W",
       "color": "#9aa0a8",
       "hp": 28,
       "atkMax": 8,
       "speed": 1,
-      "eva": 12,
-      "minFloor": 2
+      "minFloor": 2,
+      "atkMin": 2,
+      "eva": 5
     },
     "bee": {
       "name": "Bee",
@@ -70,13 +70,13 @@ window.CANTORI_DATA = {
       "atkMin": 2,
       "atkMax": 6,
       "acc": 11,
-      "eva": 16,
       "glyph": "e",
       "color": "#e6c34a",
       "minFloor": 3,
       "ranged": true,
       "range": 2,
-      "speed": 1
+      "speed": 1,
+      "eva": 20
     },
     "bear": {
       "name": "Bear",
@@ -285,13 +285,13 @@ window.CANTORI_DATA = {
     "metrognome": {
       "cat": "trinket",
       "name": "Metrognome",
-      "tier": 3,
       "glyph": "*",
       "color": "#9ad0ff",
       "variants": [
         "walk",
         "attack"
-      ]
+      ],
+      "tier": 1
     },
     "amulet_jade": {
       "cat": "necklace",
