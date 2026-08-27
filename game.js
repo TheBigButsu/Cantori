@@ -510,18 +510,23 @@
   }
   // Teleport-trap: fling the player next to the monster that is currently furthest away.
   function teleportToFurthestMonster() {
+    const reach = floodReach(player.x, player.y, true);      // never fling you behind thorns
     const live = monsters.filter((m) => m.hp > 0);
-    if (!live.length) { applyEffect("teleport"); return; }   // nothing to yank toward → random blink
-    let far = live[0], fd = -1;
-    for (const m of live) { const d = cheb(m.x, m.y, player.x, player.y); if (d > fd) { fd = d; far = m; } }
-    const spot = nearestFreeFloor(far.x, far.y);
-    if (spot) {
-      spawnBurst(player.x, player.y, "#c79bff");            // implode at the launch point
-      player.x = spot.x; player.y = spot.y; computeFOV(); snapPlayer();
-      flashScreen("#7a4fb0", 460);                          // teleport whoosh
-      spawnBurst(player.x, player.y, "#c79bff");            // materialise at the landing
-      floatText(player.x, player.y, "✦", "#e0c6ff");
+    // Consider only foes you could reach on foot — a monster sealed inside a thorn
+    // vault is off-limits as a landing, so the trap can't strand you in the brambles.
+    let fd = -1, spot = null;
+    for (const m of live) {
+      const s = nearestFreeFloor(m.x, m.y);
+      if (!s || !reach.has(s.y * MAP_W + s.x)) continue;
+      const d = cheb(m.x, m.y, player.x, player.y);
+      if (d > fd) { fd = d; spot = s; }
     }
+    if (!spot) { applyEffect("teleport"); return; }          // no reachable foe → random blink
+    spawnBurst(player.x, player.y, "#c79bff");              // implode at the launch point
+    player.x = spot.x; player.y = spot.y; computeFOV(); snapPlayer();
+    flashScreen("#7a4fb0", 460);                            // teleport whoosh
+    spawnBurst(player.x, player.y, "#c79bff");              // materialise at the landing
+    floatText(player.x, player.y, "✦", "#e0c6ff");
     log("The trap flings you across the dungeon — a foe looms.", "hurt");
   }
   // BFS out from (tx,ty) for the closest passable, unoccupied floor tile.
@@ -572,9 +577,26 @@
 
   // Seal a small side room behind brambles and hide a choice item inside. Returns a
   // Set of restricted room indices (torches are kept out of them).
-  // Every non-wall cell in a room's perimeter = an opening into it.
+  // The full 8-neighbour ring of a room — its 4 edges AND its 4 diagonal corners.
+  // Sealing all of these is what actually walls a room off: a corner left open
+  // lets the player slip in diagonally, so an "entrance" must include corners.
+  function roomRing8(r) {
+    const ring = [];
+    for (let x = r.x - 1; x <= r.x + r.w; x++) { ring.push([x, r.y - 1]); ring.push([x, r.y + r.h]); }
+    for (let y = r.y; y < r.y + r.h; y++) { ring.push([r.x - 1, y]); ring.push([r.x + r.w, y]); }
+    return ring;
+  }
+  // Every non-wall cell in that full ring = a way into the room.
   function roomOpenings(r) {
-    return roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] !== WALL);
+    return roomRing8(r).filter(([x, y]) => inBounds(x, y) && map[y][x] !== WALL);
+  }
+  // Is any floor tile inside room `r` reachable from the start without a torch?
+  function interiorReachableTorchFree(r) {
+    const reach = floodReach(player.x, player.y, true);
+    for (let y = r.y; y < r.y + r.h; y++)
+      for (let x = r.x; x < r.x + r.w; x++)
+        if (map[y][x] === FLOOR && reach.has(y * MAP_W + x)) return true;
+    return false;
   }
   // Tiles reachable from (sx,sy) by real movement (8-dir + corner rule). When
   // blockThorns is true, brambles count as walls — i.e. reachable WITHOUT a torch.
@@ -600,7 +622,7 @@
       const r = rooms[i];
       if (r === last) continue;
       const openings = roomOpenings(r).length;
-      if (openings >= 1 && openings <= 5 && r.w * r.h <= 45) candidates.push({ i, openings });
+      if (openings >= 1 && openings <= 8 && r.w * r.h <= 45) candidates.push({ i, openings });
     }
     candidates.sort((a, b) => a.openings - b.openings);   // fewest entrances = tidiest vaults
     candidates = candidates.map((c) => c.i);
@@ -618,37 +640,61 @@
         for (const [x, y] of openings) map[y][x] = THORN;                 // tentative seal
         const reach = floodReach(player.x, player.y, true);              // reachable torch-free
         let safe = true;
+        // (a) every OTHER room must still be reachable without a torch, so a vault
+        //     never walls the player in.
         for (let j = 0; j < rooms.length && safe; j++) {
           if (j === cand) continue;
           const c = roomCenter(rooms[j]);
           if (!reach.has(c.y * MAP_W + c.x)) safe = false;
         }
+        // (b) the vault interior must be UNreachable without a torch — thorns are
+        //     the only way in. If any interior tile leaks (a corner, a stray
+        //     corridor), this seal is no good.
+        if (safe && interiorReachableTorchFree(rooms[cand])) safe = false;
         if (safe) { pick = cand; break; }
         openings.forEach(([x, y], o) => { map[y][x] = saved[o]; });      // revert an unsafe seal
       }
       if (pick < 0) break;
       const spot = freeFloorInRoom(rooms[pick]);
-      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, rollVaultLoot(depth)));
+      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y, vault: true }, rollVaultLoot(depth)));
       restricted.add(pick);
     }
     return restricted;
   }
 
-  // Mount exactly `count` torches on room walls (never inside a thorn vault) — a
-  // strict 1:1 with the thorns on the level, so there's always fuel for every bramble.
+  // Mount exactly `count` torches — a strict 1:1 with the thorns on the level, so
+  // there's always fuel for every bramble. Each torch sits on a wall touching a
+  // torch-free-reachable floor tile, so you can always grab one before any thorn
+  // (and never one sealed inside a vault). Room walls are preferred; if those run
+  // short we fall back to any qualifying wall so the count is always met.
   function placeTorches(rooms, restricted, count) {
-    const spots = [];
+    if (count <= 0) return;
+    const reach = floodReach(player.x, player.y, true);
+    const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const grabbableWall = (x, y) => {
+      if (!inBounds(x, y) || map[y][x] !== WALL) return false;
+      for (const [dx, dy] of ORTHO) {
+        const nx = x + dx, ny = y + dy;
+        if (inBounds(nx, ny) && map[ny][nx] === FLOOR && reach.has(ny * MAP_W + nx)) return true;
+      }
+      return false;
+    };
+    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = randInt(0, i); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
+    // Tier 1: walls around non-vault rooms (tidiest). Tier 2: any qualifying wall.
+    const seenSpot = new Set(), roomSpots = [], anySpots = [];
     for (let i = 0; i < rooms.length; i++) {
       if (restricted.has(i)) continue;
-      for (const [x, y] of roomRing(rooms[i])) if (inBounds(x, y) && map[y][x] === WALL) spots.push([x, y]);
+      for (const [x, y] of roomRing(rooms[i])) { const k = y * MAP_W + x; if (!seenSpot.has(k) && grabbableWall(x, y)) { seenSpot.add(k); roomSpots.push([x, y]); } }
     }
-    for (let i = spots.length - 1; i > 0; i--) { const j = randInt(0, i); const t = spots[i]; spots[i] = spots[j]; spots[j] = t; }
-    const seen = new Set();
-    for (const [x, y] of spots) {
+    const inRoomSpot = new Set(roomSpots.map(([x, y]) => y * MAP_W + x));
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const k = y * MAP_W + x; if (!inRoomSpot.has(k) && grabbableWall(x, y)) anySpots.push([x, y]); }
+    const order = shuffle(roomSpots).concat(shuffle(anySpots));
+    const used = new Set();
+    for (const [x, y] of order) {
       if (torches.length >= count) break;
       const k = y * MAP_W + x;
-      if (seen.has(k)) continue;
-      seen.add(k);
+      if (used.has(k)) continue;
+      used.add(k);
       torches.push({ x, y });
     }
   }
@@ -2570,9 +2616,10 @@
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
       log("The layout of this level floods into your mind.");
     } else if (fx === "teleport") {
+      const reach = floodReach(player.x, player.y, true);   // only tiles you could walk to (never into a thorn vault)
       for (let t = 0; t < 400; t++) {
         const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
-        if (passable(x, y) && !monsterAt(x, y)) {
+        if (passable(x, y) && !monsterAt(x, y) && reach.has(y * MAP_W + x)) {
           spawnBurst(player.x, player.y, "#9ad0ff");
           player.x = x; player.y = y; computeFOV(); snapPlayer();
           flashScreen("#4f77b0", 400);
@@ -3065,7 +3112,7 @@
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null })),
-        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null })),
+        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
