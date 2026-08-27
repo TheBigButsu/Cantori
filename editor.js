@@ -20,7 +20,7 @@
   try { const d = localStorage.getItem(LSKEY); source = d ? JSON.parse(d) : clone(SHIPPED); }
   catch (e) { source = clone(SHIPPED); }
 
-  const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses"];
+  const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses", "boons"];
   const JSON_COLLS = ["loot", "stats", "gods"];
   const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS);
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
@@ -64,6 +64,12 @@
       { f: "name", type: "text", cls: "name" },
       { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
     ],
+    boons: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "name", type: "text", cls: "name" },
+      { f: "icon", type: "text" }, { f: "color", type: "color" },
+      { f: "desc", label: "description", type: "text", cls: "name" },
+    ],
   };
   // Blank templates when adding a row.
   const TEMPLATES = {
@@ -71,6 +77,7 @@
     gear: { cat: "weapon", name: "New Gear", dmgMin: 1, dmgMax: 3, speed: 1, accuracy: 0, tier: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
     consumables: { cat: "potion", name: "New Item", effect: "heal", glyph: "!", color: "#cccccc" },
     bosses: { name: "New Boss", hp: 40, atkMin: 4, atkMax: 6 },
+    boons: { name: "New Boon", desc: "", icon: "✦", color: "#f0c14b" },
   };
 
   // Editing state: table rows as [{key,obj}], json collections as text + parsed cache.
@@ -972,6 +979,7 @@
       gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range); JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype nudges evasion: light +2, medium 0, heavy −3. tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
+      boons: "After each boss, the player is offered 3 of these at random and picks 1 (lasts the run). name / icon / color / description are all editable here. The EFFECT of each boon is wired in code by its key — guild (on-hit proc +level%), kethara (grant a purple armor), maelon (heal on kill), ourn (grants the Ourn's Blink freeze skill). Renaming/retuning text is safe; a brand-new key will show and be pickable but has no effect until it's coded.",
     })[coll] || "";
   }
   function jsonHint(coll) {
