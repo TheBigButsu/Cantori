@@ -93,7 +93,7 @@ window.CANTORI_DATA = {
     "harpy": {
       "name": "Harpy",
       "atkMin": 4,
-      "atkMax": 12,
+      "atkMax": 8,
       "acc": 12,
       "eva": 14,
       "ranged": true,
@@ -386,25 +386,25 @@ window.CANTORI_DATA = {
       {
         "key": "white",
         "name": "",
-        "chance": 0.6,
+        "chance": 0.5,
         "color": "#e6e0d2"
       },
       {
         "key": "green",
         "name": "",
-        "chance": 0.28,
+        "chance": 0.33,
         "color": "#7ec98a"
       },
       {
         "key": "blue",
         "name": "",
-        "chance": 0.1,
+        "chance": 0.12,
         "color": "#5a9fe0"
       },
       {
         "key": "purple",
         "name": "",
-        "chance": 0.02,
+        "chance": 0.05,
         "color": "#b491d6"
       },
       {
@@ -489,7 +489,6 @@ window.CANTORI_DATA = {
         "proc": 0.35,
         "slots": [
           "weapon",
-          "armor",
           "ring",
           "trinket",
           "necklace"
@@ -508,16 +507,14 @@ window.CANTORI_DATA = {
         "proc": 0.3,
         "slots": [
           "weapon",
-          "armor",
           "ring",
-          "trinket",
           "necklace"
         ],
         "desc": "A jolt equal to the source's power, with a chance to stun that fades against higher-level foes.",
         "effect": {
           "type": "shock",
-          "burstMult": 1,
-          "stunPer": 0.1
+          "stunPer": 0.1,
+          "burstMult": 0.5
         }
       },
       "Speed": {
@@ -556,7 +553,8 @@ window.CANTORI_DATA = {
         "color": "#9ad06a",
         "proc": 0.2,
         "slots": [
-          "weapon"
+          "weapon",
+          "ring"
         ],
         "desc": "A small bite now (+2), then 1 damage per turn for several turns. Every proc stacks another dose.",
         "effect": {
@@ -762,57 +760,57 @@ window.CANTORI_DATA = {
       ],
       "spawnMix": {
         "rat": [
-          4,
-          4,
-          1,
-          1,
-          1
+          40,
+          40,
+          10,
+          5,
+          5
         ],
         "wolf": [
           1,
-          2,
-          3,
-          4,
-          4
+          20,
+          20,
+          15,
+          0
         ],
         "spider": [
           3,
           3,
-          3,
-          2,
-          2
+          5,
+          20,
+          0
         ],
         "bee": [
           null,
           4,
-          3,
-          4,
-          3
+          15,
+          15,
+          0
         ],
         "bear": [
           null,
           null,
-          3,
-          3
+          10,
+          15
         ],
         "harpy": [
           null,
           null,
           3,
-          3
+          10
         ],
         "bat": [
-          4,
-          3,
-          2,
-          1
+          40,
+          20,
+          15,
+          5
         ],
         "snake": [
           null,
-          2,
-          3,
-          3,
-          1
+          20,
+          25,
+          15,
+          0
         ]
       },
       "boss": "piper",
@@ -822,11 +820,11 @@ window.CANTORI_DATA = {
         5,
         5
       ],
-      "spawnEvery": 14,
-      "spawnCap": 16,
+      "spawnEvery": 25,
       "exitStyle": "wall",
       "exitSprite": "exit_forest",
-      "door": "bush"
+      "door": "bush",
+      "spawnCap": -30
     },
     {
       "key": "cave",
