@@ -517,7 +517,11 @@
       }
     }
   }
-  function triggerTrap(t) {
+  // Trigger a trap. `remote` is true when it was set off from a distance (a thrown
+  // item landing on it) rather than the player stepping on it — location-based
+  // traps (arrow, bomb) play out the same, but player-centric ones don't grab the
+  // player when they're nowhere near.
+  function triggerTrap(t, remote) {
     t.revealed = true;
     const def = TRAPS[t.key] || {};
     if (def.effect === "bomb") {                // arms a fuse instead of firing now
@@ -527,11 +531,36 @@
       return;
     }
     t.sprung = true;
-    flash(player); floatText(player.x, player.y, "TRAP!", "#e0685a");
-    log("You trigger a " + (def.name || "trap") + "!", "hurt");
-    if (def.effect === "teleport_far") { spawnSpiral(t.x, t.y, "#c79bff", 640); teleportToFurthestMonster(); }
+    if (remote) floatText(t.x, t.y, "TRAP!", "#e0685a");
+    else { flash(player); floatText(player.x, player.y, "TRAP!", "#e0685a"); }
+    log((remote ? "Your throw springs a " : "You trigger a ") + (def.name || "trap") + "!", "hurt");
+    if (def.effect === "teleport_far") {
+      spawnSpiral(t.x, t.y, "#c79bff", 640);
+      if (remote) teleportCreatureAt(t);        // grab whoever's on the rune, not the distant thrower
+      else teleportToFurthestMonster();
+    }
     else if (def.effect === "arrow") arrowTrap(t);
-    else applyEffect(def.effect);              // any consumable effect works as a trap effect too
+    else if (!remote) applyEffect(def.effect);  // generic (player-centric) effects only when you step on it
+  }
+  // A remotely-sprung teleport rune seizes the creature standing on it (a monster
+  // → blink it away; the player → the usual yank), else it fizzles.
+  function teleportCreatureAt(t) {
+    const m = monsterAt(t.x, t.y);
+    if (m) {
+      for (let i = 0; i < 200; i++) {
+        const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+        if (passable(x, y) && map[y][x] !== THORN && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
+          spawnBurst(m.x, m.y, "#c79bff"); m.x = x; m.y = y; snapEntity(m);
+          spawnBurst(x, y, "#c79bff"); floatText(x, y, "✦", "#e0c6ff");
+          break;
+        }
+      }
+      log("The rune seizes the " + monName(m) + " and flings it across the dungeon!");
+    } else if (player.x === t.x && player.y === t.y) {
+      teleportToFurthestMonster();
+    } else {
+      log("The rune flares, but finds no one to seize.");
+    }
   }
   // Arrow trap: a bolt flies at the nearest mobile character to the trap (usually
   // whoever tripped it, but a closer monster catches it instead). Damage scales
@@ -2808,9 +2837,10 @@
     const one = takeOne(idx); selectedInvIdx = -1;
     const nm = entryName(one);
     const isPotion = !isGear(one) && CONSUM[one.key] && CONSUM[one.key].cat === "potion";
+    spawnProjectile(player.x, player.y, tx, ty, isGear(one) ? "#d8cfa0" : consumColor(one.key));  // the item arcs to its target
     if (isPotion) {
       identified.add(one.key);
-      floatText(tx, ty, "✸", CONSUM[one.key].color || "#cfe6b0");
+      floatText(tx, ty, "✸", consumColor(one.key));
       const m = monsterAt(tx, ty);
       if (m && CONSUM[one.key].effect === "poison") {
         const d = randInt(3, 6); m.hp -= d; flash(m); floatText(m.x, m.y, "☠-" + d, "#9ad06a");
@@ -2824,8 +2854,13 @@
       const spot = passable(tx, ty) ? { x: tx, y: ty } : nearestFreeFloor(tx, ty);
       if (spot) { items.push(Object.assign({ x: spot.x, y: spot.y }, one)); log("You throw the " + nm + "."); }
     }
+    // A thrown item that lands on a trap sets it off (from a distance).
+    const trap = trapAt(tx, ty);
+    if (trap && !trap.sprung) triggerTrap(trap, true);
     pendingThrow = null;
-    updateHUD(); worldTurn();
+    updateHUD();
+    if (dead) return;
+    worldTurn();
     if (dead) return;
     updateHotbar();
   }
@@ -3382,6 +3417,8 @@
     giveBoon: (k) => { if (!player.boons) player.boons = new Set(); player.boons.add(k); if (k === "kethara") grantPurpleArmor(); if (k === "ourn") player.skills[OURN_KEY] = { rank: 1, cd: 0 }; updateHUD(); updateHotbar(); },
     addTrap: (key, x, y) => { traps.push({ x, y, key, revealed: true, sprung: false }); },
     springTrap: (i) => { if (traps[i]) triggerTrap(traps[i]); },
+    throwAt: (idx, x, y) => executeThrow(idx, x, y),
+    anims: () => ({ projectiles: projectiles.length, streaks: streaks.length, spirals: spirals.length, bursts: bursts.length }),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
     learn: (k) => learnSkill(k),
     doSkill: (k) => useSkill(k),
