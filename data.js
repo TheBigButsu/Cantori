@@ -233,33 +233,33 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#b98a5a",
       "defMin": 1,
-      "defMax": 3
+      "defMax": 4
     },
     "chain": {
       "cat": "armor",
       "sub": "medium",
       "name": "Chain Mail",
-      "tier": 2,
+      "tier": 3,
       "glyph": "[",
       "color": "#b9c0c8",
       "req": {
         "STR": 15
       },
-      "defMin": 3,
-      "defMax": 5
+      "defMin": 2,
+      "defMax": 10
     },
     "plate": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Plate Armor",
-      "tier": 3,
+      "tier": 5,
       "glyph": "[",
       "color": "#dfe6f0",
       "req": {
         "STR": 40
       },
-      "defMin": 6,
-      "defMax": 10
+      "defMin": 3,
+      "defMax": 25
     },
     "ring_copper": {
       "cat": "ring",
@@ -512,7 +512,7 @@ window.CANTORI_DATA = {
         "desc": "While worn, your attacks cost less time — you act faster.",
         "effect": {
           "type": "haste",
-          "mult": 0.25
+          "mult": 0.5
         }
       },
       "Thorns": {
@@ -545,6 +545,18 @@ window.CANTORI_DATA = {
           "perTurn": 1,
           "turns": 5
         }
+      },
+      "Defense": {
+        "name": "Defense",
+        "icon": "✦",
+        "color": "#cccccc",
+        "proc": 1,
+        "slots": [
+          "armor",
+          "ring",
+          "necklace"
+        ],
+        "desc": "Increases amount of damage reduced from incoming attacks. "
       }
     }
   },
@@ -597,10 +609,24 @@ window.CANTORI_DATA = {
       "glyph": "|",
       "color": "#f6b845"
     },
-    "Vitality": {
+    "vitality": {
       "cat": "potion",
       "name": "Potion of Vitality",
       "effect": "Vitality",
+      "glyph": "!",
+      "color": "#cccccc"
+    },
+    "stone_skin": {
+      "cat": "potion",
+      "name": "Potion of Stone Skin",
+      "effect": "Stone Skin",
+      "glyph": "!",
+      "color": "#cccccc"
+    },
+    "Intelligence": {
+      "cat": "potion",
+      "name": "Potion of Intelligence",
+      "effect": "intelligence",
       "glyph": "!",
       "color": "#cccccc"
     }
