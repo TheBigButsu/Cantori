@@ -5,38 +5,38 @@ window.CANTORI_DATA = {
     "rat": {
       "name": "Rat",
       "hp": 8,
-      "atkMax": 3,
       "minFloor": 1,
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
       "acc": 8,
       "eva": 12,
-      "atkMin": 1
+      "atkMin": 1,
+      "atkMax": 5
     },
     "bat": {
       "name": "Bat",
-      "atkMax": 3,
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
       "hp": 5,
-      "acc": 9,
-      "eva": 20,
+      "acc": 27,
+      "eva": 40,
       "speed": 1.1,
-      "atkMin": 1
+      "atkMin": 1,
+      "atkMax": 4
     },
     "snake": {
       "name": "Snake",
       "hp": 8,
-      "atkMax": 4,
       "glyph": "s",
       "color": "#7ec98a",
       "minFloor": 2,
       "speed": 1,
       "acc": 10,
-      "eva": 25,
-      "atkMin": 1
+      "atkMin": 1,
+      "eva": 45,
+      "atkMax": 8
     },
     "spider": {
       "name": "Spider",
@@ -180,21 +180,21 @@ window.CANTORI_DATA = {
       "sub": "dagger",
       "name": "Dagger",
       "dmgMin": 1,
-      "dmgMax": 3,
-      "speed": 1.5,
+      "speed": 1.25,
       "tier": 1,
       "req": {
         "STR": 0
       },
       "glyph": "/",
       "color": "#cfc3a0",
-      "accuracy": 10
+      "accuracy": 9,
+      "dmgMax": 4
     },
     "sword": {
       "cat": "weapon",
       "sub": "sword",
       "name": "Sword",
-      "dmgMin": 3,
+      "dmgMin": 2,
       "dmgMax": 6,
       "speed": 1,
       "glyph": "/",
@@ -203,8 +203,8 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 10
       },
-      "accuracy": 5,
-      "rarity": 15
+      "rarity": 15,
+      "accuracy": 6
     },
     "mace": {
       "cat": "weapon",
@@ -290,8 +290,7 @@ window.CANTORI_DATA = {
       "variants": [
         "walk",
         "attack"
-      ],
-      "tier": 1
+      ]
     },
     "amulet_jade": {
       "cat": "necklace",
@@ -337,8 +336,6 @@ window.CANTORI_DATA = {
       "cat": "weapon",
       "sub": "bow",
       "name": "Short Bow",
-      "dmgMin": 2,
-      "dmgMax": 5,
       "speed": 1,
       "tier": 1,
       "req": {
@@ -347,8 +344,10 @@ window.CANTORI_DATA = {
       "range": 5,
       "glyph": "}",
       "color": "#b08a4a",
-      "accuracy": 5,
-      "rarity": 15
+      "rarity": 15,
+      "dmgMin": 0,
+      "dmgMax": 8,
+      "accuracy": -10
     },
     "Shitty_dagger": {
       "cat": "weapon",
@@ -529,7 +528,7 @@ window.CANTORI_DATA = {
         "desc": "While worn, your attacks cost less time — you act faster.",
         "effect": {
           "type": "haste",
-          "mult": 0.5
+          "mult": 0.25
         }
       },
       "Thorns": {
@@ -820,11 +819,11 @@ window.CANTORI_DATA = {
         5,
         5
       ],
-      "spawnEvery": 25,
       "exitStyle": "wall",
       "exitSprite": "exit_forest",
       "door": "bush",
-      "spawnCap": -30
+      "spawnEvery": 25,
+      "spawnCap": 100
     },
     {
       "key": "cave",
