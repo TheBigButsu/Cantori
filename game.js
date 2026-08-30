@@ -43,6 +43,8 @@
   let biomeIndex = 0;
   let biome = null;
   let bossActive = false;      // a boss is present and the exit is sealed
+  let turnMeter = 5;           // the top turn-timer bar: 5 turns of banked time, depleted by each action's cost
+  let lastActionCost = 1;      // the most recent action's time cost — colors the bar (hasted/slowed)
   let bossName = "";
   const biomeOf = (d) => Math.min(DATA.biomes.length - 1, Math.floor((d - 1) / 5));
   const floorInBiome = (d) => ((d - 1) % 5) + 1;
@@ -104,6 +106,7 @@
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
     player.healPending = 0;                    // queued heal-over-time from a potion
+    player.stun = 0;                           // turns you're dazed (e.g. slammed into a wall) — actions are wasted
     player.boons = new Set();                  // boons are earned fresh each run
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
@@ -998,6 +1001,7 @@
     bursts = [];
     streaks = [];
     spirals = [];
+    pendingNodeBlasts = [];
     screenFlash = null;
     snapPlayer();
     updateHUD();       // vitals + enemy counter reflect the new floor at once
@@ -1179,8 +1183,25 @@
     const r = player.hp / player.maxHp;
     el.className = "hp" + (r <= 0.3 ? " low" : r <= 0.6 ? " mid" : "");
   }
+  // 5-segment turn-timer bar at the top: fills left→right per turnMeter (0–5),
+  // colored green when the last action was hasted (cost<1), red when slowed
+  // (cost>1), amber at normal pace.
+  function updateTurnBar() {
+    const bar = document.getElementById("turnBar");
+    if (!bar) return;
+    bar.classList.toggle("hasted", lastActionCost < 1);
+    bar.classList.toggle("slowed", lastActionCost > 1);
+    const segs = bar.querySelectorAll(".tseg");
+    segs.forEach((seg, i) => {
+      const frac = Math.max(0, Math.min(1, turnMeter - i));
+      seg.classList.toggle("spent", frac <= 0);
+      const fill = seg.querySelector(".tfill");
+      if (fill) fill.style.width = (frac * 100) + "%";
+    });
+  }
   function updateHUD() {
     updateHP();
+    updateTurnBar();
     const lv = document.getElementById("lv");
     if (lv) lv.textContent = "Lv " + player.level;
 
@@ -1225,6 +1246,7 @@
       const heal = Math.min(player.maxHp - player.hp, 2 + Math.floor(player.level / 5));
       if (heal > 0) { player.hp += heal; floatText(player.x, player.y, "+" + heal, "#8ed69a"); updateHUD(); }
     }
+    if (target.type === "healing_node") golemNodeDeath(target);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
@@ -1301,6 +1323,7 @@
       if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
       const crit = Math.random() < critChance();       // 5%+ chance for 200%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
+      if (target.type === "golem") dmg = Math.max(1, dmg - golemShield(target));  // healing nodes shield the golem
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
@@ -1490,6 +1513,7 @@
   // Returns true if a turn was spent.
   function playerAct(dx, dy) {
     if (dead || (dx === 0 && dy === 0)) return false;
+    if (player.stun > 0) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return true; }
     const nx = player.x + dx, ny = player.y + dy;
 
     const mon = monsterAt(nx, ny);
@@ -1598,6 +1622,7 @@
   function restart() {
     dead = false;
     depth = 1;
+    turnMeter = 5; lastActionCost = 1;
     resetPlayer();
     setDepthLabel();
     updateHUD();
@@ -1942,6 +1967,184 @@
     }
   }
 
+  // ---- The Stone Golem (boss) ------------------------------------------------
+  // Live Healing Nodes shield the golem: -10 incoming damage per node (see the
+  // golem branch in attack()). Killing a node arms a delayed 5x5 blast at its
+  // spot — pendingNodeBlasts, ticked in worldTurn like the bomb trap's fuse.
+  const golemShield = (g) => 10 * monsters.filter((x) => x.type === "healing_node" && x.hp > 0).length;
+  let pendingNodeBlasts = [];
+  function golemAct(m) {
+    if (m.windup) { golemResolveWindup(m); return; }
+    const see = canSee(m);
+    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }
+    if (m.slamCd > 0) m.slamCd--;
+    // Healing-node respawn timer — only once the golem has phased below 50%.
+    if (m.phased) {
+      m.nodeCd = (m.nodeCd == null) ? randInt(20, 30) : m.nodeCd - 1;
+      if (m.nodeCd <= 0) {
+        m.nodeCd = randInt(20, 30);
+        const live = monsters.filter((x) => x.type === "healing_node" && x.hp > 0).length;
+        if (live < 2 && spawnNear("healing_node", m.x, m.y, 6, 1)) {
+          log("The Golem calls forth another stone guardian.", "hurt");
+        }
+      }
+    }
+    // Phase shift at 50% HP: knockback, maybe stun, and a pair of healing nodes — once.
+    if (!m.phased && m.hp <= m.maxHp * 0.5) { m.phased = true; golemPhaseShift(m); return; }
+    const d = cheb(m.x, m.y, player.x, player.y);
+    if (see && (m.slamCd | 0) <= 0 && d >= 2 && d <= 5) { golemBeginSlam(m); return; }
+    if (see && d >= 3 && lineOfSight(m.x, m.y, player.x, player.y) && Math.random() < 0.5) { golemBeginBoulder(m); return; }
+    if (d === 1) { attack(m, player); return; }
+    if (see) { stepMonsterTo(m, player.x, player.y); return; }
+    if (m.lastSeen) { stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y); if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null; return; }
+    patrolStep(m);
+  }
+  function golemResolveWindup(m) {
+    const w = m.windup;
+    w.turns--;
+    if (w.turns > 0) return;   // still telegraphing this turn — the golem takes no other action
+    m.windup = null;
+    if (w.kind === "boulder") golemFireBoulder(m, w); else golemFireSlam(m, w);
+  }
+  // Boulder Throw: 1-turn telegraph, then a straight rolling boulder to the
+  // first wall or the player, exploding in a 3×3 for 15–30.
+  function golemBeginBoulder(m) {
+    const dx = Math.sign(player.x - m.x) || 1, dy = Math.sign(player.y - m.y) || 0;
+    m.windup = { kind: "boulder", turns: 1, dx, dy };
+    floatText(m.x, m.y, "⚠", "#c9a24a");
+    sayMonster(m, "Grrrhh...", "#c9a24a");
+    log("The Golem hefts a boulder overhead!", "hurt");
+  }
+  function golemFireBoulder(m, w) {
+    const pass = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
+    let x = m.x, y = m.y;
+    for (let i = 0; i < 24; i++) {
+      const nx = x + w.dx, ny = y + w.dy;
+      if (!pass(nx, ny)) break;
+      x = nx; y = ny;
+      if (x === player.x && y === player.y) break;   // collides with the player early
+    }
+    spawnProjectile(m.x, m.y, x, y, "#9a8264");
+    spawnStreak(m.x, m.y, x, y, "#9a8264", 260);
+    spawnBurst(x, y, "#c9a24a");
+    let hit = false;
+    for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++) {
+      if (!inBounds(xx, yy)) continue;
+      floatText(xx, yy, "✸", "#c9a24a");
+      if (xx === player.x && yy === player.y) hit = true;
+    }
+    if (hit) {
+      const dmg = randInt(15, 30);
+      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+      log("The boulder slams down — you're caught in the blast! (-" + dmg + ")", "hurt");
+      updateHUD();
+      if (player.hp <= 0) die();
+    } else {
+      log("The boulder crashes into the ground nearby.");
+    }
+  }
+  // Ground Slam: a 2-turn telegraph (the golem stays fully attackable meanwhile),
+  // then a forward cone 3→5→7 tiles wide over 3 rows, 20–60 damage, 10-turn CD.
+  function golemConeTiles(gx, gy, dx, dy) {
+    const tiles = [];
+    for (let r = 1; r <= 3; r++) {
+      const half = r;                          // width 2r+1 → 3, 5, 7
+      const fx = gx + dx * r, fy = gy + dy * r;
+      for (let w = -half; w <= half; w++) {
+        const tx = dx !== 0 ? fx : fx + w;
+        const ty = dx !== 0 ? fy + w : fy;
+        if (inBounds(tx, ty)) tiles.push([tx, ty]);
+      }
+    }
+    return tiles;
+  }
+  function golemBeginSlam(m) {
+    let dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
+    if (Math.abs(player.x - m.x) >= Math.abs(player.y - m.y)) { dx = dx || 1; dy = 0; } else { dy = dy || 1; dx = 0; }
+    const tiles = golemConeTiles(m.x, m.y, dx, dy);
+    m.windup = { kind: "slam", turns: 2, dx, dy, tiles };
+    flashScreen("#7a5a2e", 260);
+    sayMonster(m, "BRACE!", "#e0a848");
+    log("The Golem plants its feet and winds up a ground slam!", "hurt");
+  }
+  function golemFireSlam(m, w) {
+    for (const [x, y] of w.tiles) floatText(x, y, "▨", "#e0a848");
+    flashScreen("#5a3e1e", 300);
+    m.slamCd = 10;
+    const hit = w.tiles.some(([x, y]) => x === player.x && y === player.y);
+    if (hit) {
+      const dmg = randInt(20, 60);
+      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
+      log("The ground slam catches you! (-" + dmg + ")", "hurt");
+      updateHUD();
+      if (player.hp <= 0) die();
+    } else {
+      log("You dodge clear of the ground slam.", "hit");
+    }
+  }
+  // Phase shift at 50% HP: knock the player back (up to 5 tiles, stopping at a
+  // wall — a wall stop stuns 1–3 turns), then call two Healing Nodes to its side.
+  function golemPhaseShift(m) {
+    const dx = Math.sign(player.x - m.x) || 1, dy = Math.sign(player.y - m.y) || 0;
+    let x = player.x, y = player.y, moved = 0, hitWall = false;
+    for (let i = 0; i < 5; i++) {
+      const nx = x + dx, ny = y + dy;
+      if (!inBounds(nx, ny) || map[ny][nx] === WALL) { hitWall = true; break; }
+      x = nx; y = ny; moved++;
+    }
+    if (moved > 0) { player.x = x; player.y = y; computeFOV(); snapPlayer(); }
+    spawnBurst(player.x, player.y, "#9a8a6a"); flashScreen("#4a3a20", 300);
+    if (hitWall) {
+      const stun = randInt(1, 3);
+      player.stun = (player.stun || 0) + stun;
+      floatText(player.x, player.y, "STUNNED", "#e0a848");
+      log("You're slammed into the wall and stunned for " + stun + " turns!", "hurt");
+    } else {
+      log("The Golem's backhand sends you reeling!", "hurt");
+    }
+    sayMonster(m, "RRAAAGH!", "#e0685a");
+    spawnNear("healing_node", m.x, m.y, 6, 2);
+    log("Cracks split the Golem's hide — it calls stone guardians to its side!", "hurt");
+    updateHUD();
+  }
+  // A Healing Node's death arms a 1-turn-telegraphed 5×5 blast at its spot:
+  // 0–20 damage to the player if they're caught in it, healing the golem by
+  // exactly the damage actually dealt (0 if the player dodges clear).
+  function golemNodeDeath(node) {
+    // turns:2 so it survives the tickNodeBlasts() call inside THIS same action
+    // (2→1) and only resolves on the player's next action (1→0) — a genuine
+    // 1-turn warning, not an instant same-action blast.
+    pendingNodeBlasts.push({ x: node.x, y: node.y, turns: 2 });
+    floatText(node.x, node.y, "⚠", "#ff8f4a");
+    log("The Healing Node cracks — it's about to burst!", "hurt");
+  }
+  function tickNodeBlasts() {
+    if (!pendingNodeBlasts.length) return;
+    for (const b of pendingNodeBlasts.slice()) {
+      if (--b.turns > 0) continue;
+      pendingNodeBlasts = pendingNodeBlasts.filter((x) => x !== b);
+      spawnBurst(b.x, b.y, "#ff8f4a"); flashScreen("#7a2e1e", 220);
+      for (let yy = b.y - 2; yy <= b.y + 2; yy++) for (let xx = b.x - 2; xx <= b.x + 2; xx++) {
+        if (inBounds(xx, yy)) floatText(xx, yy, "✸", "#ffb26a");
+      }
+      const inBlast = cheb(player.x, player.y, b.x, b.y) <= 2;
+      const dmg = inBlast ? randInt(0, 20) : 0;
+      if (dmg > 0) {
+        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+        log("The node explodes — you're caught in it! (-" + dmg + ")", "hurt");
+        updateHUD();
+      } else if (inBlast) {
+        log("The node bursts, but you're clear of the worst of it.");
+      }
+      const golem = monsters.find((x) => x.type === "golem" && x.hp > 0);
+      if (golem && dmg > 0) {
+        const heal = Math.min(golem.maxHp - golem.hp, dmg);
+        if (heal > 0) { golem.hp += heal; floatText(golem.x, golem.y, "+" + heal, "#8ed69a"); }
+      }
+      if (dead) return;
+    }
+  }
+
   function monsterAct(m) {
     if (m.hp <= 0) return;
     if (m.dots && m.dots.length) {              // burn/poison ticks at the start of its action
@@ -1952,7 +2155,9 @@
       }
     }
     if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
+    if (m.type === "healing_node") return;                       // passive — never acts, just shields the golem
     if (m.type === "piper") { piperAct(m); return; }             // the Pied Piper has its own playbook
+    if (m.type === "golem") { golemAct(m); return; }              // the Stone Golem has its own playbook
     if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }  // spotted: remember where
     else m.aware = false;                        // lost sight → it forgets you; re-emerging lets you strike first (dance around a tree/bush)
     const d = cheb(m.x, m.y, player.x, player.y);
@@ -1988,11 +2193,18 @@
   function worldTurn(cost) {
     cost = cost == null ? 1 : cost;
     turns++;
+    // Top turn-timer bar: 5 turns of banked time, drained by this action's cost
+    // (a hasted action costs less and drains it slower; a slowed one drains it
+    // faster). Wraps back up when it empties — a rolling pace indicator.
+    turnMeter -= cost;
+    while (turnMeter <= 0) turnMeter += 5;
+    lastActionCost = cost;
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }
     tickBombs(); if (dead) return;              // armed bomb traps count down and detonate
+    tickNodeBlasts(); if (dead) return;         // a killed Healing Node's telegraphed blast counts down
     panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
@@ -2067,6 +2279,7 @@
 
   function walkTo(tx, ty) {
     if (dead) return;
+    if (player.stun > 0 && !examineMode) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return; }
     if (examineMode) { describeTile(tx, ty); toggleExamine(false); updateHotbar(); return; }
     if (pendingThrow != null) { const idx = pendingThrow; executeThrow(idx, tx, ty); return; }
     if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "rush") {
@@ -2686,12 +2899,39 @@
       }
     }
 
+    // golem windup telegraph: a pulsing amber cone (slam) or aim line (boulder)
+    for (const m of monsters) {
+      if (!m.windup || m.hp <= 0) continue;
+      const pulse = 0.30 + 0.24 * Math.abs(Math.sin(now / 110));
+      let tiles = m.windup.tiles;
+      if (!tiles) {
+        tiles = []; let x = m.x, y = m.y;
+        for (let i = 0; i < 24; i++) {
+          const nx = x + m.windup.dx, ny = y + m.windup.dy;
+          if (!inBounds(nx, ny) || map[ny][nx] === WALL) break;
+          x = nx; y = ny; tiles.push([x, y]);
+          if (x === player.x && y === player.y) break;
+        }
+      }
+      for (const [x, y] of tiles) {
+        if (!inBounds(x, y) || !visible[y][x]) continue;
+        const px = SX(x), py = SY(y);
+        ctx.fillStyle = "rgba(224,152,40," + pulse.toFixed(3) + ")";
+        ctx.fillRect(px, py, tile, tile);
+        ctx.strokeStyle = "rgba(255,200,120,0.9)"; ctx.lineWidth = 2;
+        ctx.strokeRect(px + 1, py + 1, tile - 2, tile - 2);
+      }
+    }
+
     // monsters (glide + lunge + flash; bosses render larger)
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
       const [bx, by] = bumpOffset(m, now);
       const px = SX(m.rx + bx), py = SY(m.ry + by);
-      drawSpriteFit(SPRITES[m.type], px, py, m.boss ? 1.5 : 1);
+      if (!drawSpriteFit(SPRITES[m.type], px, py, m.boss ? 1.5 : 1)) {
+        const v = VERMIN[m.type];   // no sprite file for this type — fall back to its glyph
+        drawGlyphInto(ctx, px, py, tile, v ? v.glyph : "?", v ? v.color : "#c0c0c0");
+      }
       dim(px, py, (1 - litBright(m.x, m.y)) * 0.8);
       hitFlash(m, px, py, now);
       if (!m.boss && m.hp < m.maxHp) {
@@ -3706,6 +3946,7 @@
     rollGear: (f) => rollGearDrop(f != null ? f : depth),
     rollTrinket: (f) => rollTrinket(f != null ? f : depth),
     costs: () => ({ walk: walkCost(), attack: attackCost() }),
+    turnMeter: () => ({ turnMeter, lastActionCost }),
     offerBoons, pickBoon,
     giveBoon: (k) => { if (!player.boons) player.boons = new Set(); player.boons.add(k); if (k === "kethara") grantPurpleArmor(); if (k === "ourn") player.skills[OURN_KEY] = { rank: 1, cd: 0 }; updateHUD(); updateHotbar(); },
     addTrap: (key, x, y) => { traps.push({ x, y, key, revealed: true, sprung: false }); },
@@ -3734,13 +3975,13 @@
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
         weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
-        x: player.x, y: player.y, dead, explored: ex,
+        x: player.x, y: player.y, dead, explored: ex, stun: player.stun || 0,
         camX, camY, panX, panY,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0 })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -3763,6 +4004,10 @@
     useIdx: (i) => actItem(i),
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
     forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },
+    golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? golemShield(g) : 0; },
+    forceSlam: (i) => { const m = monsters[i]; if (m) { m.slamCd = 0; m.aware = true; } },
+    nodeBlasts: () => pendingNodeBlasts.map((b) => Object.assign({}, b)),
+    setMonsterHp: (i, hp) => { const m = monsters[i]; if (m) m.hp = Math.min(hp, m.maxHp); },
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),

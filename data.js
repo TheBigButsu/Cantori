@@ -175,6 +175,14 @@ window.CANTORI_DATA = {
       "glyph": "d",
       "color": "#e07030",
       "minFloor": 6
+    },
+    "healing_node": {
+      "name": "Healing Node",
+      "hp": 25,
+      "atkMin": 0,
+      "atkMax": 0,
+      "glyph": "◈",
+      "color": "#8ed69a"
     }
   },
   "gear": {

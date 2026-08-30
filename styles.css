@@ -43,6 +43,31 @@ body{
   padding:12px 16px 10px;
   border-bottom:1px solid var(--line);
 }
+#turnBar{
+  flex:none;
+  display:flex;
+  gap:3px;
+  padding:0 16px;
+  height:5px;
+  margin:0 0 1px;
+}
+.tseg{
+  flex:1;
+  height:100%;
+  background:rgba(240,168,56,.14);
+  border-radius:2px;
+  overflow:hidden;
+}
+.tseg .tfill{
+  display:block;
+  height:100%;
+  width:0%;
+  background:var(--amber);
+  transition:width .12s linear;
+}
+.tseg.spent .tfill{background:#5a4a2c}
+#turnBar.hasted .tfill{background:#8ed69a}
+#turnBar.slowed .tfill{background:#e0685a}
 #hud .mark{
   color:var(--amber);
   font-weight:700;
