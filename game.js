@@ -51,7 +51,9 @@
   // Stats → effects (INT / RES / LCK come later)
   const UNARMED_MIN = 2, UNARMED_MAX = 3;
   const HP_BASE = 13, HP_PER_VIT = 1;     // 1 point of VIT = 1 HP (warrior: 13 + VIT ≈ 20)
-  const ACC_BASE = 10, EVA_BASE = 1;      // DEX → accuracy & evasion
+  const ACC_BASE = 10, EVA_BASE = -3;     // DEX → accuracy & evasion. EVA_BASE tuned so a
+  // fresh level-1 warrior (DEX 4, starting light armor +3 eva) evades a baseline monster
+  // (MON_ACC 12) about 25% of the time — the spec's "default base player evasion = 25%".
   const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
@@ -101,6 +103,7 @@
     player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
+    player.healPending = 0;                    // queued heal-over-time from a potion
     player.boons = new Set();                  // boons are earned fresh each run
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
@@ -780,6 +783,54 @@
     }
     return seen;
   }
+  // Post-generation constraint: eliminate "open diagonal corners" — a 2×2 block
+  // where the wall pair and the floor pair each touch only at a single point
+  // (a checkerboard corner). Movement already treats this shape as blocked (see
+  // canStep's corner-cut rule), but nothing stopped the shadowcast FOV from
+  // peeking diagonally through the same gap — a see-through-the-wall mismatch.
+  // Fixing it at generation time (rather than patching the FOV algorithm) keeps
+  // "can I see it" and "can I walk to it" consistent everywhere.
+  function allRoomsReachable(rooms, sx, sy) {
+    const reach = floodReach(sx, sy, false);
+    return rooms.every((r) => { const c = roomCenter(r); return reach.has(c.y * MAP_W + c.x); });
+  }
+  function fixOpenCorners(rooms) {
+    if (!rooms.length) return;
+    const anchor = roomCenter(rooms[0]);
+    const solid = (x, y) => !inBounds(x, y) || map[y][x] === WALL;
+    // A local fix can create (or reveal) a new open corner in an adjacent 2×2
+    // block that an earlier pass already scanned past, so sweep to a fixed
+    // point — repeat full passes until one makes no changes (capped for safety).
+    for (let pass = 0; pass < 6; pass++) {
+      let changed = false;
+      for (let y = 0; y < MAP_H - 1; y++) {
+        for (let x = 0; x < MAP_W - 1; x++) {
+          const a = solid(x, y), b = solid(x + 1, y), c = solid(x, y + 1), d = solid(x + 1, y + 1);
+          let openCells;
+          if (a && d && !b && !c) openCells = [[x + 1, y], [x, y + 1]];        // wall NW/SE, floor NE/SW
+          else if (b && c && !a && !d) openCells = [[x, y], [x + 1, y + 1]];   // wall NE/SW, floor NW/SE
+          else continue;
+          // Prefer solidifying one of the two open (floor) cells — whichever keeps
+          // every room reachable. If neither is safe (both load-bearing), fall back
+          // to opening one of the wall cells instead — always connectivity-safe.
+          let fixed = false;
+          for (const [ox, oy] of openCells) {
+            if (map[oy][ox] !== FLOOR) continue;   // never wall over a door threshold
+            if ((ox === player.x && oy === player.y) || monsterAt(ox, oy) || itemAt(ox, oy)) continue;  // never bury an occupant
+            map[oy][ox] = WALL;
+            if (allRoomsReachable(rooms, anchor.x, anchor.y)) { fixed = true; break; }
+            map[oy][ox] = FLOOR;
+          }
+          if (!fixed) {
+            const wallCells = a && d ? [[x, y], [x + 1, y + 1]] : [[x + 1, y], [x, y + 1]];
+            map[wallCells[0][1]][wallCells[0][0]] = FLOOR;
+          }
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+  }
   function makeThornVaults(rooms, last) {
     const restricted = new Set();
     let candidates = [];
@@ -913,6 +964,7 @@
     biome = DATA.biomes[biomeIndex];
 
     placeDoors(rooms);
+    fixOpenCorners(rooms);   // no diagonal-only wall/floor touches — keeps sight & movement consistent
 
     const start = roomCenter(rooms[0]);
     player.x = start.x;
@@ -934,6 +986,7 @@
     }
     spawnItems(rooms);
     placeTrees(rooms, restricted);                     // obstacle trees in the larger rooms
+    fixOpenCorners(rooms);   // trees are wall tiles too — re-sweep for any new diagonal touches
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -1106,9 +1159,18 @@
   }
 
   // ---- HUD / log -----------------------------------------------------------
+  // A short scrollback (not just the latest line) — the box shows ~4 lines and
+  // auto-scrolls to the newest as messages come in.
+  const LOG_MAX_LINES = 60;
   function log(msg, tone) {
     const el = document.getElementById("log");
-    if (el) { el.textContent = msg; el.className = tone || ""; }
+    if (!el) return;
+    const line = document.createElement("div");
+    line.className = "logline" + (tone ? " " + tone : "");
+    line.textContent = msg;
+    el.appendChild(line);
+    while (el.children.length > LOG_MAX_LINES) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
   }
   function updateHP() {
     const el = document.getElementById("hp");
@@ -1283,16 +1345,27 @@
     if (biome.final) { win(); return; }
     map[y][x] = STAIRS;             // the way down opens where the boss fell
     explored[y][x] = true;
-    player.statPoints += 3;         // boss reward: 3 points to spend later
-    // Bosses are the only source of trinkets — always at least blue.
+    // Boss reward: 3 Potions of Insight (not raw points — you still have to drink
+    // them), a guaranteed-blue+ trinket, and a boon choice.
+    const granted = grantInsightPotions(3);
     const trink = rollTrinket(depth);
     if (trink) {
       const spot = nearestFreeFloor(x, y) || { x, y };
       items.push(Object.assign({ x: spot.x, y: spot.y }, trink));
       floatText(spot.x, spot.y, "✦", "#9ad0ff");
     }
-    log("The " + bossName + " falls — the way opens. (+3 stat points" + (trink ? ", a trinket glints nearby" : "") + ")", "hit");
+    log("The " + bossName + " falls — the way opens. (+" + granted + " Potions of Insight" + (trink ? ", a trinket glints nearby" : "") + ")", "hit");
     offerBoons();                   // a god extends a blessing: pick one of three
+  }
+  // Add n Insight potions to the pack (stacks), spilling to the floor if full.
+  function grantInsightPotions(n) {
+    let added = 0;
+    for (let i = 0; i < n; i++) {
+      if (invAdd({ key: "skill_point" })) { added++; continue; }
+      const spot = dropSpot();
+      if (spot) { items.push({ x: spot.x, y: spot.y, key: "skill_point" }); added++; }
+    }
+    return added;
   }
 
   // ---- Boons: pick one of three at each boss kill; effects are permanent -------
@@ -1362,7 +1435,8 @@
       const cls = DATA.classes[player.cls] || DATA.classes.warrior;
       player.stats[cls.main] += 2;             // main +2
       player.stats[cls.secondary] += 1;        // secondary +1
-      player.statPoints += 1;                  // free point (spend in the tree)
+      // No free skill point here — skill points now come only from Potions of
+      // Insight (1 guaranteed per floor, 3 more on a boss kill).
       const lu = cls.levelUp || {};            // flat per-level set (hp/mp/accuracy/evasion)
       player.lvlHp += lu.hp || 0;
       player.lvlAcc += lu.accuracy || 0;
@@ -1377,8 +1451,8 @@
       if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
       if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
       if (lu.crit) extra.push("+" + lu.crit + "% crit"); if (lu.critDmg) extra.push("+" + lu.critDmg + "% crit dmg");
-      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + ", +1 point" + (extra.length ? " · " + extra.join(", ") : ""), "hit");
-      const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra, ["+1 point"]);
+      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + (extra.length ? " · " + extra.join(", ") : ""), "hit");
+      const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra);
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
       threshold = player.level * 8;
@@ -1570,6 +1644,16 @@
     if (healed) floatText(player.x, player.y, "+" + healed, "#8ed69a");
     if (changed) updateHUD();
   }
+  // Drains the Potion of Healing overflow queue: up to VIT more HP per turn,
+  // on top of (not instead of) passive regen above.
+  function healQueueTick() {
+    if (!player.healPending || player.hp >= player.maxHp) { if (player.hp >= player.maxHp) player.healPending = 0; return; }
+    const amt = Math.min(player.healPending, Math.max(1, eff("VIT")), player.maxHp - player.hp);
+    if (amt <= 0) return;
+    player.hp += amt; player.healPending -= amt;
+    floatText(player.x, player.y, "+" + amt, "#8ed69a");
+    updateHUD();
+  }
 
   // Bresenham line of sight: true if no wall lies strictly between the tiles.
   function lineOfSight(x0, y0, x1, y1) {
@@ -1601,7 +1685,46 @@
     return null;
   }
 
+  // True shortest-path first-step toward (tx,ty) — a small BFS over the same
+  // canStep connectivity (corner-cut safe, thorns excluded), recomputed fresh
+  // each call. Replaces a 1-step-lookahead "closest neighbor" heuristic that
+  // could stall or oscillate against an inner diagonal corner (the neighbor
+  // that would cut distance is corner-blocked, and every other neighbor ties),
+  // which read as monsters getting "stuck" chasing around a bend.
+  function monsterPathStep(sx, sy, tx, ty) {
+    if (sx === tx && sy === ty) return null;
+    const key = (x, y) => y * MAP_W + x;
+    const prev = new Map();
+    prev.set(key(sx, sy), null);
+    const queue = [[sx, sy]];
+    let head = 0;
+    const MAX_NODES = 2600;   // ~ one full 51×51 floor — plenty, and a hard safety cap
+    while (head < queue.length && queue.length < MAX_NODES) {
+      const [cx, cy] = queue[head++];
+      if (cx === tx && cy === ty) break;
+      for (const [dx, dy] of DIRS8) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy) || isThorn(nx, ny)) continue;
+        // occupied tiles block passage, unless a tile IS the goal (so the search
+        // can still route a monster up next to the player or another monster)
+        if ((nx !== tx || ny !== ty) && (monsterAt(nx, ny) || (nx === player.x && ny === player.y))) continue;
+        const k = key(nx, ny);
+        if (prev.has(k)) continue;
+        prev.set(k, [cx, cy]);
+        queue.push([nx, ny]);
+      }
+    }
+    if (!prev.has(key(tx, ty))) return null;
+    let cur = [tx, ty], path = [];
+    while (cur) { path.push(cur); cur = prev.get(key(cur[0], cur[1])); }
+    path.reverse();
+    return path.length > 1 ? path[1] : null;   // path[0] is the monster's own tile
+  }
   function stepMonsterTo(m, tx, ty) {
+    const step = monsterPathStep(m.x, m.y, tx, ty);
+    if (step) { m.x = step[0]; m.y = step[1]; return; }
+    // No path found (e.g. fully boxed in this turn) — fall back to the old
+    // greedy "closest open neighbor" so the monster doesn't just freeze.
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
@@ -1881,6 +2004,7 @@
       if (dead) return;
     }
     regenTick();
+    healQueueTick();
     searchForTraps();
     maybeReinforce();
     updateHotbar();
@@ -3030,9 +3154,16 @@
   function applyEffect(effect) {
     const fx = String(effect || "").toLowerCase();
     if (fx === "heal") {
-      const amt = 8 + player.level * 2;
-      player.hp = Math.min(player.maxHp, player.hp + amt);
-      log("You drink a Potion of Healing. (+" + amt + ")", "hit");
+      // Rolls 90%–150% of max HP total. Only up to VIT of that heals THIS turn —
+      // the rest pools into a heal-over-time queue that ticks up to VIT more per
+      // turn (see healQueueTick), so a big potion doesn't instantly top you off.
+      const total = Math.round(player.maxHp * (0.9 + Math.random() * 0.6));
+      const cap = Math.max(1, eff("VIT"));
+      const now = Math.min(total, cap, player.maxHp - player.hp);
+      player.hp += now;
+      const queued = Math.max(0, total - now);
+      player.healPending = (player.healPending || 0) + queued;
+      log("You drink a Potion of Healing. (+" + now + (queued ? ", +" + queued + " queued to heal over time" : "") + ")", "hit");
     } else if (fx === "strength") {
       player.stats.STR += 1;
       log("Strength surges through your arms. (+1 STR)", "hit");
@@ -3311,9 +3442,15 @@
       return `<div class="cstat"><span>${k}<small>${effDesc[k]}</small></span><b>${val}</b></div>`;
     }).join("");
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
+    // Accuracy/Evasion, spelled out as chance-to-hit / chance-to-evade against a
+    // baseline foe (monster defaults), plus the exact formula behind them.
+    const accPct = Math.round(hitChance(playerAcc(), MON_EVA) * 100);
+    const evaPct = Math.round((1 - hitChance(MON_ACC, playerEva())) * 100);
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
+      `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
+      `<div class="cline cformula">hit% = 50% + (attacker acc − defender eva) × 3%, clamped 10–95%</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
@@ -3624,6 +3761,8 @@
       monsters.push(m); return true;
     },
     useIdx: (i) => actItem(i),
+    pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
+    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),
