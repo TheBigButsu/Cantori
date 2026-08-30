@@ -9,10 +9,10 @@ window.CANTORI_DATA = {
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
-      "acc": 8,
       "eva": 12,
       "atkMin": 1,
-      "atkMax": 5
+      "atkMax": 5,
+      "acc": 15
     },
     "bat": {
       "name": "Bat",
@@ -20,11 +20,11 @@ window.CANTORI_DATA = {
       "glyph": "b",
       "color": "#b491d6",
       "hp": 5,
-      "acc": 27,
-      "eva": 40,
       "speed": 1.1,
       "atkMin": 1,
-      "atkMax": 4
+      "atkMax": 4,
+      "eva": 30,
+      "acc": 30
     },
     "snake": {
       "name": "Snake",
@@ -35,8 +35,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "acc": 10,
       "atkMin": 1,
-      "eva": 45,
-      "atkMax": 8
+      "atkMax": 8,
+      "eva": 35
     },
     "spider": {
       "name": "Spider",
@@ -45,8 +45,8 @@ window.CANTORI_DATA = {
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
-      "acc": 8,
-      "eva": 6,
+      "acc": 15,
+      "eva": 10,
       "range": 4,
       "ranged": true,
       "atkMin": 1,
@@ -62,46 +62,48 @@ window.CANTORI_DATA = {
       "speed": 1,
       "minFloor": 2,
       "atkMin": 2,
-      "eva": 5
+      "eva": 15
     },
     "bee": {
       "name": "Bee",
       "hp": 15,
       "atkMin": 2,
       "atkMax": 6,
-      "acc": 11,
+      "acc": 9,
       "glyph": "e",
       "color": "#e6c34a",
       "minFloor": 3,
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "eva": 20
+      "eva": 25
     },
     "bear": {
       "name": "Bear",
       "hp": 12,
       "atkMin": 3,
       "atkMax": 5,
-      "acc": 14,
-      "eva": 1,
+      "acc": 15,
+      "eva": 6,
       "charge": true,
       "minFloor": 3,
       "glyph": "B",
-      "color": "#8a6a44"
+      "color": "#8a6a44",
+      "speed": 1
     },
     "harpy": {
       "name": "Harpy",
-      "atkMin": 4,
-      "atkMax": 8,
+      "atkMax": 12,
       "acc": 12,
       "eva": 14,
       "ranged": true,
       "range": 4,
       "glyph": "H",
       "color": "#6b6f7a",
-      "minFloor": 4,
-      "hp": 35
+      "minFloor": 6,
+      "hp": 35,
+      "speed": 1,
+      "atkMin": 2
     },
     "jackal": {
       "name": "Jackal",
@@ -121,46 +123,47 @@ window.CANTORI_DATA = {
     },
     "ghoul": {
       "name": "Ghoul",
-      "hp": 7,
+      "hp": 35,
       "atkMin": 3,
-      "atkMax": 5,
-      "minFloor": 1,
+      "atkMax": 9,
       "glyph": "G",
-      "color": "#9fb07a"
+      "color": "#9fb07a",
+      "minFloor": 6,
+      "charge": true
     },
     "wraith": {
       "name": "Wraith",
       "hp": 6,
       "atkMin": 3,
       "atkMax": 4,
-      "minFloor": 1,
       "glyph": "W",
-      "color": "#8fa0c0"
+      "color": "#8fa0c0",
+      "minFloor": 6
     },
     "phantom": {
       "name": "Phantom",
       "hp": 5,
       "atkMin": 2,
       "atkMax": 4,
-      "minFloor": 1,
       "glyph": "P",
-      "color": "#7ee0d0"
+      "color": "#7ee0d0",
+      "minFloor": 6
     },
     "imp": {
       "name": "Imp",
       "hp": 5,
       "atkMin": 3,
       "atkMax": 5,
-      "minFloor": 1,
       "glyph": "i",
-      "color": "#c0c0e0"
+      "color": "#c0c0e0",
+      "minFloor": 6
     },
     "ufetubus": {
       "name": "Ufetubus",
       "hp": 4,
       "atkMin": 2,
       "atkMax": 4,
-      "minFloor": 1,
+      "minFloor": 6,
       "glyph": "u",
       "color": "#6fb0d0"
     },
@@ -169,9 +172,9 @@ window.CANTORI_DATA = {
       "hp": 10,
       "atkMin": 4,
       "atkMax": 7,
-      "minFloor": 1,
       "glyph": "d",
-      "color": "#e07030"
+      "color": "#e07030",
+      "minFloor": 6
     }
   },
   "gear": {
@@ -188,7 +191,8 @@ window.CANTORI_DATA = {
       "glyph": "/",
       "color": "#cfc3a0",
       "accuracy": 9,
-      "dmgMax": 4
+      "dmgMax": 4,
+      "rarity": 25
     },
     "sword": {
       "cat": "weapon",
@@ -203,7 +207,7 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 10
       },
-      "rarity": 15,
+      "rarity": 25,
       "accuracy": 6
     },
     "mace": {
@@ -313,7 +317,7 @@ window.CANTORI_DATA = {
       "dmgMin": 4,
       "speed": 0.9,
       "accuracy": -15,
-      "rarity": 15
+      "rarity": 25
     },
     "spear": {
       "cat": "weapon",
@@ -330,7 +334,7 @@ window.CANTORI_DATA = {
       "glyph": "/",
       "color": "#c8b890",
       "accuracy": 3,
-      "rarity": 15
+      "rarity": 10
     },
     "bow": {
       "cat": "weapon",
@@ -344,10 +348,10 @@ window.CANTORI_DATA = {
       "range": 5,
       "glyph": "}",
       "color": "#b08a4a",
-      "rarity": 15,
       "dmgMin": 0,
       "dmgMax": 8,
-      "accuracy": -10
+      "accuracy": -10,
+      "rarity": 15
     },
     "Shitty_dagger": {
       "cat": "weapon",
@@ -752,63 +756,56 @@ window.CANTORI_DATA = {
         "wolf",
         "bee",
         "bear",
-        "harpy",
         "bat",
         "snake",
         "spider"
       ],
       "spawnMix": {
         "rat": [
-          40,
-          40,
+          60,
+          30,
           10,
-          5,
+          1,
           5
         ],
         "wolf": [
           1,
+          25,
           20,
           20,
-          15,
           0
         ],
         "spider": [
           3,
           3,
           5,
-          20,
+          15,
           0
         ],
         "bee": [
           null,
           4,
           15,
-          15,
+          24,
           0
         ],
         "bear": [
           null,
           null,
-          10,
-          15
-        ],
-        "harpy": [
-          null,
-          null,
-          3,
-          10
+          15,
+          25
         ],
         "bat": [
           40,
-          20,
+          25,
           15,
           5
         ],
         "snake": [
           null,
           20,
-          25,
-          15,
+          20,
+          10,
           0
         ]
       },
@@ -834,7 +831,8 @@ window.CANTORI_DATA = {
         "rat",
         "bat",
         "snake",
-        "spider"
+        "spider",
+        "harpy"
       ],
       "boss": "golem",
       "door": "door"
@@ -933,14 +931,14 @@ window.CANTORI_DATA = {
       },
       "baseHp": 18,
       "baseMp": 5,
-      "regenTurns": 300,
+      "regenTurns": 400,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
       "levelUp": {
         "hp": 5,
         "mp": 2,
-        "accuracy": 2,
+        "accuracy": 3,
         "evasion": 2,
         "crit": 1,
         "critDmg": 5
