@@ -1377,8 +1377,56 @@
       items.push(Object.assign({ x: spot.x, y: spot.y }, trink));
       floatText(spot.x, spot.y, "✦", "#9ad0ff");
     }
-    log("The " + bossName + " falls — the way opens. (+" + granted + " Potions of Insight" + (trink ? ", a trinket glints nearby" : "") + ")", "hit");
-    offerBoons();                   // a god extends a blessing: pick one of three
+    // Boss boon choice: 3 distinct "Boon of [Family]" runes drop on the floor —
+    // step onto one to claim it, and the other two fade away.
+    const boonsDropped = dropBossBoonChoices(x, y);
+    // Equipment set: a weapon, an armor, and a ring/necklace, rolled with access
+    // to tiers well beyond the current floor.
+    dropBossEquipmentSet(x, y);
+    log("The " + bossName + " falls — the way opens. (+" + granted + " Potions of Insight" + (trink ? ", a trinket glints nearby" : "") + (boonsDropped ? ", and blessings + spoils scattered about" : "") + ")", "hit");
+  }
+  // Scatter `count` items on distinct free floor tiles within `radius` of (cx,cy).
+  function distinctNearbySpots(cx, cy, radius, count) {
+    const spots = []; const seen = new Set();
+    for (let t = 0; t < 400 && spots.length < count; t++) {
+      const x = cx + randInt(-radius, radius), y = cy + randInt(-radius, radius);
+      if (!inBounds(x, y) || !passable(x, y) || map[y][x] === THORN) continue;
+      const k = y * MAP_W + x;
+      if (seen.has(k) || itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
+      seen.add(k); spots.push({ x, y });
+    }
+    while (spots.length < count) spots.push({ x: cx, y: cy });   // fallback: stack if truly cramped
+    return spots;
+  }
+  // Roll a gear item of a specific category (not the usual random-category pick).
+  function rollGearOfCat(cat, floor) {
+    const tier = _loot.pickTier(floor);
+    const key = _loot.pickTypeInTierCat(cat, tier) || _loot.pickAnyInCat(cat, tier) || GEAR_KEYS.find((k) => GEAR[k].cat === cat);
+    return key ? rollItem(key, floor) : null;
+  }
+  let boonGroupSeq = 0;
+  // Drop 3 boon-choice runes near (x,y); claiming one despawns the other two
+  // (handled in pickUp). Returns how many were dropped (0 if every boon is owned).
+  function dropBossBoonChoices(x, y) {
+    const all = DATA.boons || {};
+    const avail = Object.keys(all).filter((k) => !(player.boons && player.boons.has(k)));
+    if (!avail.length) return 0;
+    for (let i = avail.length - 1; i > 0; i--) { const j = randInt(0, i); const t = avail[i]; avail[i] = avail[j]; avail[j] = t; }
+    const pick = avail.slice(0, 3);
+    const groupId = ++boonGroupSeq;
+    const spots = distinctNearbySpots(x, y, 2, pick.length);
+    pick.forEach((k, i) => { const s = spots[i]; items.push({ x: s.x, y: s.y, boonKey: k, boonGroup: groupId }); });
+    return pick.length;
+  }
+  // Drop a weapon + armor + ring/necklace, rolled with tiers boosted well past
+  // the current floor — a boss's equipment reward should outclass normal drops.
+  function dropBossEquipmentSet(x, y) {
+    const bonusFloor = depth + 10;
+    const accCat = Math.random() < 0.5 ? "ring" : "necklace";
+    const drops = [rollGearOfCat("weapon", bonusFloor), rollGearOfCat("armor", bonusFloor), rollGearOfCat(accCat, bonusFloor)].filter(Boolean);
+    if (!drops.length) return;
+    const spots = distinctNearbySpots(x, y, 2, drops.length);
+    drops.forEach((it, i) => { const s = spots[i]; items.push(Object.assign({ x: s.x, y: s.y }, it)); floatText(s.x, s.y, "✦", "#f0c14b"); });
   }
   // Add n Insight potions to the pack (stacks), spilling to the floor if full.
   function grantInsightPotions(n) {
@@ -1588,6 +1636,14 @@
   function pickUp() {
     const it = itemAt(player.x, player.y);
     if (!it) return;
+    if (it.boonKey) {
+      const siblings = items.filter((x) => x.boonGroup === it.boonGroup && x !== it);
+      for (const s of siblings) spawnBurst(s.x, s.y, "#8a7a5a");
+      items = items.filter((x) => x.boonGroup !== it.boonGroup);
+      pickBoon(it.boonKey);
+      if (siblings.length) log("The other blessings fade away.");
+      return;
+    }
     if (it.key === "gold") {
       player.gold += it.amount;
       items = items.filter((x) => x !== it);
@@ -1635,6 +1691,7 @@
     boonPending = false;
     generateLevel();
     log("A new adventurer enters the dungeon.");
+    offerBoons();      // a god extends a blessing at the very start of the run too
   }
 
   // ---- Monster turns -------------------------------------------------------
@@ -2483,6 +2540,23 @@
     ctx.strokeStyle = "#a9791f";
     ctx.stroke();
   }
+  // A boss's boon-choice drop: a pulsing glowing rune (a diamond), tinted to
+  // the boon's own colour so all 3 choices read as distinct at a glance.
+  function drawBoonRune(px, py, color, now) {
+    const cx = px + tile / 2, cy = py + tile / 2;
+    const pulse = 0.6 + 0.35 * Math.abs(Math.sin(now / 260));
+    const g = ctx.createRadialGradient(cx, cy, tile * 0.05, cx, cy, tile * 0.55);
+    g.addColorStop(0, color); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = pulse * 0.5; ctx.fillStyle = g;
+    ctx.fillRect(px, py, tile, tile);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - tile * 0.26); ctx.lineTo(cx + tile * 0.22, cy); ctx.lineTo(cx, cy + tile * 0.26); ctx.lineTo(cx - tile * 0.22, cy);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = Math.max(1, tile * 0.04);
+    ctx.stroke();
+  }
   // Doors are drawn procedurally (no sprite dependency). Forest biomes render a
   // leafy bush that thins once pushed through; other biomes get a plank/stone
   // panel with a seam that splits open.
@@ -2876,7 +2950,8 @@
     for (const it of items) {
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
       const px = SX(it.x), py = SY(it.y);
-      if (it.key === "gold") drawCoin(px, py);
+      if (it.boonKey) drawBoonRune(px, py, ((DATA.boons || {})[it.boonKey] || {}).color || "#f0c14b", now);
+      else if (it.key === "gold") drawCoin(px, py);
       else {
         // no rarity glow on the ground — gear is unidentified until you use it, so a
         // dropped item shouldn't telegraph how good it is
@@ -3641,6 +3716,7 @@
     }
     const it = items.find((i) => i.x === x && i.y === y);
     if (it && visible[y][x]) {
+      if (it.boonKey) { const g = (DATA.boons || {})[it.boonKey] || {}; log("Boon of " + (g.name || it.boonKey) + " — " + (g.desc || "") + " Step onto it to claim it."); return; }
       if (it.key === "gold") { log(it.amount + " gold"); return; }
       const aff = isGear(it) ? itemAffixText(it) : "";
       log(itemName(it) + (aff ? " — " + aff : "")); return;
