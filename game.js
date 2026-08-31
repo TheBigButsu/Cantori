@@ -600,6 +600,44 @@
       if (!changed) break;
     }
   }
+  // A room-boundary breach whose far side goes nowhere further (a single dead
+  // 1-tile stub) invites exploration through a doorway that then dead-ends
+  // immediately. Wall the breach itself back up (even if a door already sits
+  // there — better no door than a fake one) whenever this happens; only
+  // reverts if that would somehow disconnect a room (a true dead end never
+  // carries connectivity, so this is belt-and-suspenders). Called once before
+  // doors are placed, then again after narrowRoomBreaches/fixOpenCorners —
+  // those later passes can themselves wall off the one branch that had kept
+  // an already-checked breach from reading as dead.
+  function sealDeadEndStubs(rooms) {
+    if (!rooms.length) return;
+    const anchor = roomCenter(rooms[0]);
+    const DIR4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const isOpen = (x, y) => inBounds(x, y) && (map[y][x] === FLOOR || map[y][x] === DOOR || map[y][x] === STAIRS);
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (const r of rooms) {
+        const inRoom = (x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+        for (const [x, y] of roomRing(r)) {
+          if (!inBounds(x, y) || (map[y][x] !== FLOOR && map[y][x] !== DOOR)) continue;
+          for (const [dx, dy] of DIR4) {
+            const nx = x + dx, ny = y + dy;
+            if (inRoom(nx, ny) || !isOpen(nx, ny)) continue;   // only the outward side, if open
+            const branches = DIR4.some(([dx2, dy2]) => {
+              const bx = nx + dx2, by = ny + dy2;
+              return !(bx === x && by === y) && isOpen(bx, by);
+            });
+            if (branches) continue;   // leads somewhere — leave it
+            const was = map[y][x];
+            map[y][x] = WALL;
+            if (allRoomsReachable(rooms, anchor.x, anchor.y)) changed = true;
+            else map[y][x] = was;   // load-bearing, keep it
+          }
+        }
+      }
+      if (!changed) break;
+    }
+  }
   // Breakdown of the finished level: how much is room floor vs corridor floor.
   function computeFill(rooms) {
     const inRoom = blankGrid(false);
@@ -1112,6 +1150,7 @@
     }
     connectRooms(rooms, attachEdges);
     thinCorridors(rooms);   // narrow any hallway blob left by overlapping/converging paths
+    sealDeadEndStubs(rooms);   // no doorway should invite exploration into a 1-tile dead end
     lastRooms = rooms; lastAttach = attachEdges.length;
 
     biomeIndex = biomeOf(depth);
@@ -1127,6 +1166,7 @@
 
     placeDoors(rooms);
     narrowRoomBreaches(rooms);   // one door per breach — close any extra undoored floor beside it
+    sealDeadEndStubs(rooms);   // re-check: narrowRoomBreaches can itself wall off a door's only branch
     fixOpenCorners(rooms);   // no diagonal-only wall/floor touches — keeps sight & movement consistent
 
     const start = roomCenter(rooms[0]);
@@ -3860,7 +3900,9 @@
       renderInv();
       return;
     }
+    const wasUnidentified = !identified.has(it.key);
     identified.add(it.key);      // using an item reveals what it is
+    if (wasUnidentified) log("It was a " + (def.name || it.key) + "!", "hit");
     takeOne(idx); selectedInvIdx = -1;
     applyEffect(def.effect);
     updateHUD();

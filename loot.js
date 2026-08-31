@@ -67,9 +67,11 @@ window.CantoriLoot = function (deps) {
       if (ekeys.length && Math.random() < 0.5) addEnchant(); else addStat();
     }
     // Identification: how much use it takes to learn this item's hidden properties.
-    //   idNeed = (tier + plus) * (1..10 + rarity rank),  white=1 … purple=4 … gold=5
+    //   idNeed = (tier + plus) * (1..10 + rarity rank) * 3,  white=1 … purple=4 … gold=5
+    // The ×3 keeps it from resolving inside a single fight (a white tier-1 item used to
+    // average ~6-7 hits — one or two fights — to fully identify).
     const rank = LOOT.rarities.findIndex((r) => r.key === rarity) + 1;
-    const idNeed = (tier + plus) * (randInt(1, 10) + (rank > 0 ? rank : 5));
+    const idNeed = (tier + plus) * (randInt(1, 10) + (rank > 0 ? rank : 5)) * 3;
     const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0;
     const inst = { key, rarity, plus, stats, enchants, idNeed, idXp: 0, identified: nothingHidden };
     // A base with `variants` picks one at drop (e.g. the Metrognome's walk/attack mode).
