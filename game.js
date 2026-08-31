@@ -61,12 +61,14 @@
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseHp != null ? cls.baseHp : HP_BASE) + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0); };
-  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills
-  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + armorSubEva() + passiveMod("eva");     // DEX + level + armor weight + skills
+  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills + boons
+  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + passiveMod("eva");     // DEX + level + armor weight + skills + boons
   // Critical hits: 5% chance to deal 200% damage by default, each grown by the
-  // class's per-level crit / critDmg gains (added, not multiplied).
+  // class's per-level crit / critDmg gains (added, not multiplied), plus Ourn's
+  // Perfectly Timed Blow (+1% per character level).
   const BASE_CRIT = 5, BASE_CRIT_DMG = 200;
-  const critChance = () => (BASE_CRIT + (player.lvlCrit || 0)) / 100;
+  const timedBlowBonus = () => (player.boons && player.boons.has("timed_blow")) ? player.level : 0;
+  const critChance = () => (BASE_CRIT + (player.lvlCrit || 0) + timedBlowBonus()) / 100;
   const critMult = () => (BASE_CRIT_DMG + (player.lvlCritDmg || 0)) / 100;
   const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
   // hit chance = attacker accuracy / (accuracy + defender evasion)
@@ -84,7 +86,12 @@
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
     lvlCrit: 0, lvlCritDmg: 0,                         // per-level crit% and crit-damage% gains
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
+    killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
+    secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
+    boonAcc: 0, boonEva: 0, boonHaste: 0,               // permanent flat bonuses from kill-counter boons
+    hasteBuff: 0,                                       // temporary % Haste from Speed of Light, decays 1/turn
   };
+  const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   // Equipment slots: cat -> which player field(s) it fills.
   const EQUIP_SLOTS = { weapon: ["weapon"], armor: ["armor"], ring: ["ring1", "ring2"], trinket: ["trinket"], necklace: ["necklace"] };
   const ALL_SLOTS = ["weapon", "armor", "ring1", "ring2", "trinket", "necklace"];
@@ -108,6 +115,9 @@
     player.healPending = 0;                    // queued heal-over-time from a potion
     player.stun = 0;                           // turns you're dazed (e.g. slammed into a wall) — actions are wasted
     player.boons = new Set();                  // boons are earned fresh each run
+    player.killCount = 0; player.secondChanceUsed = false;
+    player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
+    activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
     player.skills = {};
@@ -125,6 +135,8 @@
   let items = [];
   let traps = [];
   let walkPath = [];
+  let activeWalls = [];   // Kethara's Wall of Faith: temporary wall tiles awaiting reversion
+  let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
   const trapAt = (x, y) => traps.find((t) => t.x === x && t.y === y) || null;
 
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
@@ -181,8 +193,32 @@
   const isGear = (it) => it && GEAR[it.key];              // a rolled gear instance (vs consumable/gold)
   const rarityColor = (k) => (RARITY[k] ? RARITY[k].color : "#e6e0d2");
 
+  // Guild's Blessing: White drop% falls by 1 per character level, redistributed
+  // equally across Green/Blue/Purple (Gold untouched). Returns null (pure, unmodified
+  // roll) unless the boon is owned — loot.js falls back to its default table then.
+  function guildBlessingWeights() {
+    if (!(player.boons && player.boons.has("blessing"))) return null;
+    const w = {};
+    for (const r of LOOT.rarities) w[r.key] = Math.max(0, r.chance);
+    const reduction = Math.min(w.white || 0, player.level / 100);
+    w.white = Math.max(0, (w.white || 0) - reduction);
+    const targets = ["green", "blue", "purple"].filter((k) => w[k] != null);
+    if (targets.length && reduction > 0) { const share = reduction / targets.length; for (const k of targets) w[k] = (w[k] || 0) + share; }
+    return w;
+  }
+  // Guild's Refinement: doubles the max +X a drop can roll, and weights toward the
+  // higher end (best of two uniform rolls). Returns null (pure roll) if not owned.
+  function guildPlusRoll(floor) {
+    if (!(player.boons && player.boons.has("refinement"))) return null;
+    const maxP = Math.ceil((floor || 1) / 5) * 2;
+    return Math.max(randInt(0, maxP), randInt(0, maxP));
+  }
   // Roll logic lives in loot.js (a self-contained module) — wire it up here.
-  const _loot = window.CantoriLoot({ GEAR, GEAR_KEYS, LOOT, randInt: (lo, hi) => randInt(lo, hi) });
+  const _loot = window.CantoriLoot({
+    GEAR, GEAR_KEYS, LOOT, randInt: (lo, hi) => randInt(lo, hi),
+    getRarityWeights: () => guildBlessingWeights(),
+    rollPlus: (floor) => guildPlusRoll(floor),
+  });
   const rollRarity = _loot.rollRarity;
   const maxPlusForFloor = _loot.maxPlusForFloor;
   const rollItem = _loot.rollItem;
@@ -215,7 +251,23 @@
     for (const it of wornItems()) n += gStatBonus(it, statKey);
     return n;
   }
-  const eff = (statKey) => player.stats[statKey] + equipStat(statKey);   // base + gear
+  // Rarity → quality multiplier used by the Guild's Scribe's Intellect / Blacksmith's
+  // Arm boons: INT (or STR) rises with your gear's total upgrades weighted by quality.
+  const QUALITY_MULT = { white: 1.0, green: 1.5, blue: 2.0, purple: 3.0, gold: 5.0 };
+  const roundHalf = (n) => Math.round(n * 2) / 2;
+  function guildQualityBonus() {
+    let total = 0;
+    for (const it of wornItems()) { if (it.plus) total += it.plus * (QUALITY_MULT[it.rarity] || 1.0); }
+    return roundHalf(total);
+  }
+  const eff = (statKey) => {
+    let v = player.stats[statKey] + equipStat(statKey);   // base + gear
+    if (player.boons) {
+      if (statKey === "INT" && player.boons.has("scribe")) v += guildQualityBonus();
+      if (statKey === "STR" && player.boons.has("blacksmith")) v += guildQualityBonus();
+    }
+    return v;
+  };
   // Extra flat mitigation from "Defense" enchants worn on armor / jewelry.
   function wornDefense() {
     let d = 0;
@@ -265,6 +317,8 @@
         if (def && def.effect && def.effect.type === "haste") h += (def.effect.mult || 0);
       }
     }
+    h += (player.boonHaste || 0) / 100;    // Ourn's Dilating Pupils: permanent +1%/5 kills
+    h += (player.hasteBuff || 0) / 100;    // Ourn's Speed of Light: temporary, decaying buff
     return h;
   }
   const playerActSpeed = () => weaponSpeed() * (1 + wornHaste());
@@ -1242,14 +1296,50 @@
     if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
     gainXP(xp);
-    if (player.boons && player.boons.has("maelon")) {     // Maelon's Grace: lifesteal on every kill
-      const heal = Math.min(player.maxHp - player.hp, 2 + Math.floor(player.level / 5));
-      if (heal > 0) { player.hp += heal; floatText(player.x, player.y, "+" + heal, "#8ed69a"); updateHUD(); }
-    }
+    tickBoonKillCounters();
     if (target.type === "healing_node") golemNodeDeath(target);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
+  const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread"];
+  const maelonBoonCount = () => (player.boons ? MAELON_KEYS.filter((k) => player.boons.has(k)).length : 0);
+  // Kill-counter-driven boons: Maelon's Compost Pile (every 5), Kethara's Gift of
+  // the Faithful (every 10), Ourn's Future Sight (every 10) / Dilating Pupils
+  // (every 5) / The Pride Before The Fall (every 15, no floor — can go negative).
+  function tickBoonKillCounters() {
+    if (!player.boons || !player.boons.size) return;
+    player.killCount = (player.killCount || 0) + 1;
+    const kc = player.killCount;
+    if (player.boons.has("compost") && kc % 5 === 0) {
+      const s = STAT_KEYS.slice(0, 4)[randInt(0, 3)];   // STR/INT/VIT/DEX only
+      player.stats[s]++;
+      if (s === "VIT") player.maxHp = computeMaxHp();
+      floatText(player.x, player.y, "+1 " + s, "#e0685a");
+      log("Maelon's Compost Pile bears fruit. (+1 " + s + ")", "hit");
+    }
+    if (player.boons.has("gift") && kc % 10 === 0) {
+      player.stats.RES++;
+      floatText(player.x, player.y, "+1 RES", "#b491d6");
+      log("Kethara's Gift of the Faithful strengthens your resolve. (+1 RES)", "hit");
+    }
+    if (player.boons.has("foresight") && kc % 10 === 0) {
+      player.boonAcc = (player.boonAcc || 0) + 1; player.boonEva = (player.boonEva || 0) + 1;
+      floatText(player.x, player.y, "+1 ACC/EVA", "#9ad0ff");
+      log("Ourn's Future Sight sharpens your senses. (+1 Accuracy, +1 Evasion)", "hit");
+    }
+    if (player.boons.has("dilating") && kc % 5 === 0) {
+      player.boonHaste = (player.boonHaste || 0) + 1;
+      floatText(player.x, player.y, "+1% haste", "#9ad0ff");
+      log("Your pupils dilate a fraction further. (+1% Haste)", "hit");
+    }
+    if (player.boons.has("pride") && kc % 15 === 0) {
+      for (const s of STAT_KEYS) player.stats[s]--;
+      player.maxHp = computeMaxHp();
+      floatText(player.x, player.y, "-1 all", "#e0685a");
+      log("The Pride Before The Fall claims its due. (-1 to all stats)", "hurt");
+    }
+    updateHUD();
+  }
   // Fire an item's enchants at a target. `power` is the source's primary number
   // (weapon atk on your strike, armor def when you retaliate). Returns nothing;
   // handles the target's death from burst damage.
@@ -1272,7 +1362,7 @@
     for (const e of enchants) {
       if (target.hp <= 0) break;
       const def = LOOT.enchants[e] || {};
-      const proc = (def.proc != null ? def.proc : 1) + guildProcBonus();   // Blessing of the Guild: +level% to fire
+      const proc = def.proc != null ? def.proc : 1;
       if (Math.random() >= proc) continue;
       const fx = def.effect || {};
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
@@ -1329,6 +1419,18 @@
       floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
       const pre = surprise ? "Surprise! You strike the " : "You strike the ";
       if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
+      // Maelon's Merciful End: an execute threshold on a connecting hit.
+      if (target.hp > 0 && player.boons && player.boons.has("merciful") && target.hp / target.maxHp < player.level / 100) {
+        target.hp = 0; floatText(target.x, target.y, "EXECUTED", "#e0685a");
+      }
+      // Maelon's Leper Colony: chance to poison on a connecting hit.
+      if (target.hp > 0 && player.boons && player.boons.has("leper")) {
+        const poisonChance = Math.min(0.75, (player.level / 100) * maelonBoonCount());
+        if (Math.random() < poisonChance) {
+          addDot(target, { tag: "poison", dmg: 2, rounds: 5, icon: "☠", color: "#9ad06a" }, true);
+          floatText(target.x, target.y, "☠", "#9ad06a");
+        }
+      }
       if (target.hp <= 0) {
         killMonster(target, "dies");
       } else {
@@ -1352,7 +1454,27 @@
       updateHUD();
       const verb = bonus > 0 ? " charges you!" : attacker.ranged ? " strikes from afar." : " hits you.";
       log("The " + monName(attacker) + verb + " (-" + dmg + ")", "hurt");
-      if (player.hp <= 0) { die(); return; }
+      if (player.hp <= 0) {
+        // Maelon's Second Chance: intercept one fatal blow per run, then it's spent.
+        if (player.boons && player.boons.has("second_chance") && !player.secondChanceUsed) {
+          player.secondChanceUsed = true;
+          player.boons.delete("second_chance");
+          player.hp = player.maxHp;
+          flashScreen("#e0685a", 500);
+          floatText(player.x, player.y, "SAVED!", "#e0685a");
+          log("Maelon grants a Second Chance — you're pulled back from death's door! (Full heal, boon spent)", "hit");
+          updateHUD();
+        } else { die(); return; }
+      }
+      // Maelon's Endless Dread: a wounding blow risks the attacker fleeing in terror.
+      if (attacker.hp > 0 && player.boons && player.boons.has("dread")) {
+        const fearChance = ((eff("VIT") + eff("RES") + eff("LCK")) / 3) / 100;
+        if (Math.random() < fearChance) {
+          attacker.fleeing = (attacker.fleeing || 0) + 10;
+          floatText(attacker.x, attacker.y, "flees!", "#e0a848");
+          log("The " + monName(attacker) + " recoils in dread and flees!", "hit");
+        }
+      }
       // taking a hit is how you learn your worn defensive gear, and how its
       // enchants (armor, rings, trinket, necklace) lash back at the attacker
       for (const it of wornItems()) {
@@ -1470,25 +1592,27 @@
     player.boons.add(key);
     const g = (DATA.boons || {})[key] || {};
     log("You accept " + (g.name || "a boon") + ".", "hit");
-    if (key === "kethara") grantPurpleArmor();
-    if (key === "ourn") { player.skills[OURN_KEY] = { rank: 1, cd: 0 }; log("You gain Ourn's Blink — an activated skill (freeze time).", "hit"); }
+    // Guild's Artificer's Tools: 3-5 Scrolls of Upgrade, straight into the pack.
+    if (key === "artificer") {
+      const n = randInt(3, 5);
+      for (let i = 0; i < n; i++) {
+        if (!invAdd({ key: "scroll_upgrade" })) { const spot = dropSpot(); if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, { key: "scroll_upgrade" })); }
+      }
+      log("The Guild's artificers press " + n + " Scrolls of Upgrade into your hands.", "hit");
+    }
+    // Ourn's The Pride Before The Fall: +10 to every base stat, right away.
+    if (key === "pride") {
+      const beforeHp = player.maxHp;
+      for (const s of STAT_KEYS) player.stats[s] += 10;
+      player.maxHp = computeMaxHp();
+      player.hp += Math.max(0, player.maxHp - beforeHp);
+      floatText(player.x, player.y, "+10 ALL", "#9ad0ff");
+      log("The Pride Before The Fall floods you with power. (+10 to all stats)", "hit");
+    }
+    grantBoonSkills(key);   // wires up any active ability this boon unlocks (wall/pull/eye/anger/speed of light)
     updateHUD(); updateHotbar();
     if (charOpen) renderChar();
   }
-  // Kethara's Gift: a purple armor of a random tier, straight into your pack.
-  function grantPurpleArmor() {
-    const armors = GEAR_KEYS.filter((k) => GEAR[k].cat === "armor");
-    if (!armors.length) return;
-    const it = rollItem(armors[randInt(0, armors.length - 1)], depth, "purple");
-    it.identified = true;                          // a gift comes revealed
-    if (!invAdd(it)) {
-      const spot = dropSpot();
-      if (spot) items.push(Object.assign({ x: spot.x, y: spot.y }, it));
-    }
-    floatText(player.x, player.y, "🛡", "#b491d6");
-    log("Kethara conjures " + itemName(it) + " for you.", "hit");
-  }
-  const guildProcBonus = () => ((player.boons && player.boons.has("guild")) ? player.level / 100 : 0);
 
   function win() {
     dead = true;
@@ -2215,12 +2339,44 @@
     if (m.type === "healing_node") return;                       // passive — never acts, just shields the golem
     if (m.type === "piper") { piperAct(m); return; }             // the Pied Piper has its own playbook
     if (m.type === "golem") { golemAct(m); return; }              // the Stone Golem has its own playbook
+    // Maelon's Endless Dread: a terrified monster runs directly away from the player.
+    if (m.fleeing > 0) {
+      m.fleeing--;
+      const dx = Math.sign(m.x - player.x) || (Math.random() < 0.5 ? 1 : -1);
+      const dy = Math.sign(m.y - player.y) || (Math.random() < 0.5 ? 1 : -1);
+      const nx = m.x + dx, ny = m.y + dy;
+      if (inBounds(nx, ny) && passable(nx, ny) && !isThorn(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
+      return;
+    }
+    // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just the player.
+    if (m.berserk > 0) {
+      m.berserk--;
+      let nearest = null, nd = Infinity;
+      for (const o of monsters) {
+        if (o === m || o.hp <= 0 || o.type === "healing_node") continue;
+        const dd = cheb(m.x, m.y, o.x, o.y);
+        if (dd < nd) { nd = dd; nearest = o; }
+      }
+      const dPlayer = cheb(m.x, m.y, player.x, player.y);
+      if (nearest && nd <= dPlayer) {
+        if (nd === 1) { monsterVsMonster(m, nearest); return; }
+        stepMonsterTo(m, nearest.x, nearest.y);
+        return;
+      }
+      // no other target closer than the player → fall through to normal player-seeking behavior
+    }
     if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }  // spotted: remember where
     else m.aware = false;                        // lost sight → it forgets you; re-emerging lets you strike first (dance around a tree/bush)
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
     if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
+    // Kethara's Faith's Pull: an aware monster caught in the aura paths to its
+    // center instead of the player, for as long as the pull lasts.
+    if (pullZone && pullZone.turns > 0 && m.aware && cheb(m.x, m.y, pullZone.x, pullZone.y) <= 4) {
+      stepMonsterTo(m, pullZone.x, pullZone.y);
+      return;
+    }
     if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in (chargers line up)
     if (m.lastSeen) {                            // lost sight → head to where you were last seen
       stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
@@ -2228,6 +2384,19 @@
       return;
     }
     patrolStep(m);                               // no lead → wander
+  }
+  // A lightweight monster-vs-monster strike (Anger of Kethara only) — no crits,
+  // affixes, or identify progress; just a hit-chance roll and flat damage.
+  function monsterVsMonster(attacker, target) {
+    const acc = attacker.acc != null ? attacker.acc : MON_ACC;
+    const eva = target.eva != null ? target.eva : MON_EVA;
+    if (!rollHit(acc, eva)) { floatText(target.x, target.y, "miss", "#cfe6b0"); return; }
+    let dmg = randInt(attacker.atkMin, attacker.atkMax);
+    dmg = Math.round(dmg * 1.5);   // berserk hits harder
+    target.hp -= dmg;
+    flash(target);
+    floatText(target.x, target.y, "-" + dmg, "#ff8f84");
+    if (target.hp <= 0) killMonster(target, "is torn apart");
   }
 
   // Accrue identify-progress on one equipped item through *use* (a weapon when you
@@ -2259,6 +2428,18 @@
     for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
     if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
       player.stoneSkin = null; log("Your stone skin crumbles away.");
+    }
+    if (player.hasteBuff > 0) player.hasteBuff = Math.max(0, player.hasteBuff - 1);   // Speed of Light: decays 1%/turn
+    if (pullZone) { pullZone.turns--; if (pullZone.turns <= 0) pullZone = null; }      // Faith's Pull: expires after 5 turns
+    if (activeWalls.length) {                                                          // Wall of Faith: reverts after its life
+      const stillUp = [];
+      for (const w of activeWalls) {
+        w.turns--;
+        if (w.turns <= 0 && inBounds(w.x, w.y) && map[w.y][w.x] === WALL) { map[w.y][w.x] = FLOOR; }
+        else stillUp.push(w);
+      }
+      if (stillUp.length !== activeWalls.length) computeFOV();
+      activeWalls = stillUp;
     }
     tickBombs(); if (dead) return;              // armed bomb traps count down and detonate
     tickNodeBlasts(); if (dead) return;         // a killed Healing Node's telegraphed blast counts down
@@ -2343,6 +2524,20 @@
       const dir = [Math.sign(tx - player.x), Math.sign(ty - player.y)];
       if (dir[0] || dir[1]) executeRush(pendingSkill, dir); else { pendingSkill = null; updateHotbar(); }
       return;
+    }
+    if (pendingSkill && skillDef(pendingSkill)) {
+      const pk = skillDef(pendingSkill).kind;
+      if (pk === "wallcast" || pk === "pullcast") {
+        if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); return; }
+        if (pk === "wallcast") executeWallOfFaith(pendingSkill, tx, ty); else executeFaithsPull(pendingSkill, tx, ty);
+        return;
+      }
+      if (pk === "eyecast" || pk === "angercast") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
+        if (pk === "eyecast") executeEyeOfKethara(pendingSkill, tx, ty); else executeAngerOfKethara(pendingSkill, tx, ty);
+        return;
+      }
     }
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
@@ -3501,10 +3696,21 @@
       floatText(player.x, player.y, "★", "#f0c14b");
       log("Insight blooms — you gain a skill point.", "hit");
     } else if (fx === "poison") {
-      const amt = randInt(4, 8);
-      player.hp -= amt;
-      log("It was poison! (-" + amt + ")", "hurt");
-      if (player.hp <= 0) die();
+      if (player.boons && player.boons.has("leper")) {
+        log("Your body shrugs off the poison — Maelon's Leper Colony holds.", "hit");
+      } else {
+        const amt = randInt(4, 8);
+        player.hp -= amt;
+        log("It was poison! (-" + amt + ")", "hurt");
+        if (player.hp <= 0) die();
+      }
+    } else if (fx === "upgrade_item") {
+      const target = player.weapon || player.armor || wornItems()[0];
+      if (!target) { log("You have nothing equipped — the scroll's magic fizzles.", "hurt"); }
+      else {
+        target.plus = (target.plus || 0) + 1;
+        log("The scroll's magic seeps into your " + itemName(target) + ". (+" + target.plus + ")", "hit");
+      }
     } else if (fx === "map") {
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
       log("The layout of this level floods into your mind.");
@@ -3562,17 +3768,52 @@
     _skillCache = { cls, skills, byPos };
     return _skillCache;
   }
-  // Ourn's Blink — an active skill granted by the "ourn" boon (not a class-tree
-  // skill). It freezes every monster for 5 turns; cooldown scales with Intelligence.
-  const OURN_KEY = "ourn_blink";
-  const OURN_SKILL = { name: "Ourn's Blink", icon: "⏳", kind: "freeze", max: 1, ranks: [{ freeze: 5 }],
-    levels: ["Freeze every monster for 5 turns (free action). Cooldown 200 − INT×2."],
-    desc: "Still time — every monster freezes for 5 turns." };
-  const ournCooldown = () => Math.max(10, 200 - eff("INT") * 2);   // 200 − INT×2
+  // Active abilities unlocked by a boon (not part of the class skill tree). Each
+  // entry maps a skill key -> { boon: which boon unlocks it, skill: the skill def }.
+  // grantBoonSkills() wires the matching ones into player.skills when a boon is
+  // picked; classSkills() folds them into the tree so the rest of the UI (hotbar,
+  // number-key hotkeys, cooldowns) treats them exactly like a learned skill.
+  const BOON_SKILLS = {
+    speed_of_light: { boon: "speed_of_light", skill: {
+      name: "Speed of Light", icon: "⚡", kind: "sol", max: 1, ranks: [{}],
+      levels: ["25 MP — instant +100% Haste, decaying 1%/turn back to baseline. Cooldown 500 turns."],
+      desc: "The world slows around you — an instant, decaying burst of Haste.",
+    } },
+    wall_of_faith: { boon: "wall", skill: {
+      name: "Wall of Faith", icon: "🧱", kind: "wallcast", max: 1, ranks: [{}],
+      levels: ["Tap a tile — raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step."],
+      desc: "Raise a wall of stone, knocking back whatever stands in its way.",
+    } },
+    faiths_pull: { boon: "pull", skill: {
+      name: "Faith's Pull", icon: "🌀", kind: "pullcast", max: 1, ranks: [{}],
+      levels: ["Tap a tile — for 5 turns, every aware foe within a 9×9 aura paths toward its center instead of you."],
+      desc: "Bend the ground to Kethara's will, pulling foes toward one spot.",
+    } },
+    eye_of_kethara: { boon: "eye", skill: {
+      name: "Eye of Kethara", icon: "👁", kind: "eyecast", max: 1, ranks: [{}],
+      levels: ["Tap a foe — immobilize it for 25 turns. Cooldown 100 − RES."],
+      desc: "Fix a foe in place, unable to move or act.",
+    } },
+    anger_of_kethara: { boon: "anger", skill: {
+      name: "Anger of Kethara", icon: "😡", kind: "angercast", max: 1, ranks: [{}],
+      levels: ["Tap a foe — berserk it for 100 turns; it turns on whatever's nearest, not just you. Cooldown 100 − RES."],
+      desc: "Send a foe into a berserk rage against everything around it.",
+    } },
+  };
+  function grantBoonSkills(boonKey) {
+    for (const sk of Object.keys(BOON_SKILLS)) {
+      if (BOON_SKILLS[sk].boon === boonKey) {
+        player.skills[sk] = { rank: 1, cd: 0 };
+        log("You gain " + BOON_SKILLS[sk].skill.name + " — an activated ability.", "hit");
+      }
+    }
+  }
   function classSkills() {
     const base = treeSkills(player.cls).skills;
-    if (player.boons && player.boons.has("ourn")) return Object.assign({}, base, { [OURN_KEY]: OURN_SKILL });
-    return base;
+    if (!player.boons || !player.boons.size) return base;
+    const out = Object.assign({}, base);
+    for (const sk of Object.keys(BOON_SKILLS)) if (player.boons.has(BOON_SKILLS[sk].boon)) out[sk] = BOON_SKILLS[sk].skill;
+    return out;
   }
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
@@ -3613,18 +3854,97 @@
     if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
-    else if (d.kind === "freeze") executeOurn(key);
+    else if (d.kind === "sol") executeSpeedOfLight(key);
+    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast") beginTargetedSkill(key);
   }
-  // Ourn's Blink: stop time — freeze every living monster for 5 turns. A free
-  // action (the clock doesn't advance), so you get the full head start.
-  function executeOurn(key) {
-    const cur = skillCur(key) || { freeze: 5 };
-    let n = 0;
-    for (const m of monsters) if (m.hp > 0) { m.stun = Math.max(m.stun || 0, cur.freeze || 5); n++; }
-    flashScreen("#2f4f6a", 320); floatText(player.x, player.y, "⏳", "#9ad0ff");
-    log(n ? "Ourn stills time — every foe freezes for " + (cur.freeze || 5) + " turns." : "Ourn stills time, but nothing stirs here.", "hit");
-    player.skills[key].cd = ournCooldown();
-    updateHotbar(); updateHUD();
+  // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
+  function executeSpeedOfLight(key) {
+    const cost = 25;
+    if (player.mp < cost) { log("Not enough MP for Speed of Light (need " + cost + ")."); return; }
+    player.mp -= cost;
+    player.hasteBuff = 101;   // +1: this cast's own worldTurn() below ticks it once already
+    flashScreen("#ffe08a", 320); floatText(player.x, player.y, "⚡", "#ffe08a");
+    log("Speed of Light — the world slows around you. (+100% Haste, decaying)", "hit");
+    player.skills[key].cd = 500;
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Arm a tap-a-target boon ability (wall/pull/eye/anger) — the next tap on the
+  // board (walkTo) resolves it, same targeting UX as Rush's "choose a direction".
+  function beginTargetedSkill(key) {
+    pendingSkill = pendingSkill === key ? null : key;
+    const d = skillDef(key);
+    log(pendingSkill ? d.name + " — tap a target." : d.name + " cancelled.");
+    updateHotbar();
+  }
+  // Kethara's Wall of Faith: 5 tiles of stone along whichever axis (horizontal or
+  // vertical) most closely matches the direction to the tapped tile. Any monster
+  // caught on a cell is shoved back a step first, then the wall rises beneath it;
+  // a cell that can't be cleared is skipped (never traps a monster inside rock).
+  function executeWallOfFaith(key, tx, ty) {
+    pendingSkill = null;
+    const dx = tx - player.x, dy = ty - player.y;
+    const horiz = Math.abs(dx) >= Math.abs(dy);
+    let built = 0;
+    for (let i = -2; i <= 2; i++) {
+      const x = horiz ? tx + i : tx, y = horiz ? ty : ty + i;
+      if (!inBounds(x, y) || map[y][x] !== FLOOR) continue;
+      const m = monsterAt(x, y);
+      if (m) {
+        const pdx = Math.sign(x - player.x) || (horiz ? 0 : 1), pdy = Math.sign(y - player.y) || (horiz ? 1 : 0);
+        const nx = x + pdx, ny = y + pdy;
+        if (inBounds(nx, ny) && passable(nx, ny) && !isThorn(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
+        else continue;
+      }
+      activeWalls.push({ x, y, turns: 21 });   // +1: this cast's own worldTurn() below ticks it once already
+      map[y][x] = WALL;
+      built++;
+    }
+    if (!built) { log("Kethara's wall finds no purchase there."); updateHotbar(); return; }
+    computeFOV();
+    log("Kethara raises a wall of faith.", "hit");
+    player.skills[key].cd = 0;
+    updateHotbar();
+    worldTurn();
+  }
+  // Kethara's Faith's Pull: for 5 turns, every aware monster within a 9×9 aura
+  // (Chebyshev distance ≤4) centered on the tapped tile paths toward its center.
+  function executeFaithsPull(key, tx, ty) {
+    pendingSkill = null;
+    pullZone = { x: tx, y: ty, turns: 6 };   // +1: this cast's own worldTurn() below ticks it once already
+    floatText(tx, ty, "🌀", "#b491d6");
+    log("Kethara's faith pulls the ground taut around that spot.", "hit");
+    player.skills[key].cd = 0;
+    updateHotbar();
+    worldTurn();
+  }
+  // Kethara's Eye of Kethara: immobilize a targeted monster for 25 turns (reuses
+  // the existing stun mechanic — a stunned monster skips its turn entirely).
+  function executeEyeOfKethara(key, tx, ty) {
+    pendingSkill = null;
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    m.stun = Math.max(m.stun || 0, 25);
+    floatText(m.x, m.y, "◉", "#b491d6");
+    log("Kethara's Eye fixes upon the " + monName(m) + " — it cannot move.", "hit");
+    player.skills[key].cd = Math.max(0, 100 - eff("RES"));
+    updateHotbar();
+    worldTurn();
+  }
+  // Kethara's Anger of Kethara: berserk a targeted monster for 100 turns (this
+  // project's turn-count reading of the spec's "10 hours" — 1 hour = 10 turns,
+  // matching the golem's other tens-of-turns telegraphs/cooldowns).
+  const ANGER_TURNS = 100;
+  function executeAngerOfKethara(key, tx, ty) {
+    pendingSkill = null;
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    m.berserk = ANGER_TURNS; m.aware = true; m.lastSeen = { x: player.x, y: player.y };
+    floatText(m.x, m.y, "😡", "#e0685a");
+    log("Kethara's Anger consumes the " + monName(m) + " — it turns on everything nearby.", "hit");
+    player.skills[key].cd = Math.max(0, 100 - eff("RES"));
+    updateHotbar();
+    worldTurn();
   }
   function beginRush(key) {
     pendingSkill = pendingSkill === key ? null : key;
@@ -4024,7 +4344,7 @@
     costs: () => ({ walk: walkCost(), attack: attackCost() }),
     turnMeter: () => ({ turnMeter, lastActionCost }),
     offerBoons, pickBoon,
-    giveBoon: (k) => { if (!player.boons) player.boons = new Set(); player.boons.add(k); if (k === "kethara") grantPurpleArmor(); if (k === "ourn") player.skills[OURN_KEY] = { rank: 1, cd: 0 }; updateHUD(); updateHotbar(); },
+    giveBoon: (k) => pickBoon(k),
     addTrap: (key, x, y) => { traps.push({ x, y, key, revealed: true, sprung: false }); },
     springTrap: (i) => { if (traps[i]) triggerTrap(traps[i]); },
     throwAt: (idx, x, y) => executeThrow(idx, x, y),
@@ -4044,6 +4364,9 @@
       return {
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
         acc: playerAcc(), eva: playerEva(), lvlHp: player.lvlHp, level: player.level, xp: player.xp,
+        killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
+        boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, critChance: critChance(),
+        skillsAll: Object.keys(player.skills || {}),
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         boons: player.boons ? [...player.boons] : [], boonPending,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
@@ -4057,7 +4380,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0 })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0 })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -4078,6 +4401,7 @@
       monsters.push(m); return true;
     },
     useIdx: (i) => actItem(i),
+    equip: (i) => equipItem(i),
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
     forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },
     golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? golemShield(g) : 0; },
@@ -4090,6 +4414,16 @@
     walking: () => walkPath.length,
     tick: () => { if (!dead) worldTurn(); },
     turns: () => turns,
+    // ---- Boon-system test hooks ----
+    setKillCount: (n) => { player.killCount = n; },
+    setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },
+    setHasteBuff: (n) => { player.hasteBuff = n; },
+    setFleeing: (i, n) => { const m = monsters[i]; if (m) m.fleeing = n; },
+    setBerserk: (i, n) => { const m = monsters[i]; if (m) m.berserk = n; },
+    boonSkillCd: (k) => (player.skills[k] ? player.skills[k].cd : null),
+    wallState: () => activeWalls.map((w) => Object.assign({}, w)),
+    pullState: () => (pullZone ? Object.assign({}, pullZone) : null),
+    secondChanceUsed: () => player.secondChanceUsed,
   };
 
   // A draft from the editor is in play — show a badge so it's obvious, and let the

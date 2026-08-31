@@ -13,8 +13,16 @@
 window.CantoriLoot = function (deps) {
   "use strict";
   const GEAR = deps.GEAR, GEAR_KEYS = deps.GEAR_KEYS, LOOT = deps.LOOT, randInt = deps.randInt;
+  // Optional overrides (e.g. Guild boons in game.js). Both default to pure
+  // behavior — this module stays stateless unless a caller opts in.
+  //   getRarityWeights() -> { white, green, blue, purple, gold } | null   (Guild's Blessing)
+  //   rollPlus(floor)    -> integer plus | null                          (Guild's Refinement)
+  const getRarityWeights = typeof deps.getRarityWeights === "function" ? deps.getRarityWeights : null;
+  const rollPlusOverride = typeof deps.rollPlus === "function" ? deps.rollPlus : null;
 
   function rollRarity() {
+    const override = getRarityWeights && getRarityWeights();
+    if (override) return rollRarityFrom(override);
     let r = Math.random();
     for (const rar of LOOT.rarities) { if (rar.chance <= 0) continue; if (r < rar.chance) return rar.key; r -= rar.chance; }
     return "white";
@@ -37,7 +45,8 @@ window.CantoriLoot = function (deps) {
     const base = GEAR[key];
     const tier = base.tier || 1;
     const rarity = forcedRarity || rollRarity();
-    const plus = randInt(0, maxPlusForFloor(floor));
+    const overridePlus = rollPlusOverride && rollPlusOverride(floor);
+    const plus = (overridePlus != null) ? overridePlus : randInt(0, maxPlusForFloor(floor));
     const stats = [], enchants = [];
     // enchants eligible for this item's category (respecting each enchant's `slots`)
     const ekeys = Object.keys(LOOT.enchants).filter((k) => { const s = LOOT.enchants[k].slots; return !s || s.indexOf(base.cat) >= 0; });

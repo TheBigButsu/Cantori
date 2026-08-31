@@ -670,6 +670,14 @@ window.CANTORI_DATA = {
       "noDrop": true,
       "glyph": "!",
       "color": "#f0c14b"
+    },
+    "scroll_upgrade": {
+      "cat": "scroll",
+      "name": "Scroll of Upgrade",
+      "effect": "upgrade_item",
+      "noDrop": true,
+      "glyph": "?",
+      "color": "#f0c14b"
     }
   },
   "traps": {
@@ -696,28 +704,124 @@ window.CANTORI_DATA = {
     }
   },
   "boons": {
-    "guild": {
-      "name": "Blessing of the Guild",
-      "desc": "On-hit effects gain +1% chance to fire per character level.",
+    "artificer": {
+      "name": "Artificer's Tools",
+      "desc": "The Guild presses 3-5 Scrolls of Upgrade into your hands at once — each permanently upgrades an equipped item's +X by one, and can't be dropped.",
       "icon": "⚒",
       "color": "#f0c14b"
     },
-    "kethara": {
-      "name": "Kethara's Gift",
-      "desc": "Conjure a purple armor of a random tier — granted at once.",
-      "icon": "🛡",
-      "color": "#b491d6"
+    "scribe": {
+      "name": "Scribe's Intellect",
+      "desc": "Your INT rises with your gear: Total Equipment Upgrades × Quality Multiplier (White ×1.0 … Gold ×5.0), rounded to the nearest 0.5.",
+      "icon": "📜",
+      "color": "#f0c14b"
     },
-    "maelon": {
-      "name": "Maelon's Grace",
-      "desc": "Regain 2 + (level ÷ 5) HP on every kill.",
-      "icon": "✚",
+    "blacksmith": {
+      "name": "Blacksmith's Arm",
+      "desc": "Your STR rises with your gear: Total Equipment Upgrades × Quality Multiplier (White ×1.0 … Gold ×5.0), rounded to the nearest 0.5.",
+      "icon": "🔨",
+      "color": "#f0c14b"
+    },
+    "blessing": {
+      "name": "Guild's Blessing",
+      "desc": "White drop chance falls by 1% per character level, redistributed equally to Green/Blue/Purple.",
+      "icon": "✦",
+      "color": "#f0c14b"
+    },
+    "refinement": {
+      "name": "Guild's Refinement",
+      "desc": "Doubles the maximum +X a dropped item can roll, and weights the roll toward the higher end.",
+      "icon": "💎",
+      "color": "#f0c14b"
+    },
+    "compost": {
+      "name": "Compost Pile",
+      "desc": "Every 5th kill, gain +1 to a random stat (STR/INT/VIT/DEX).",
+      "icon": "🌱",
       "color": "#e0685a"
     },
-    "ourn": {
-      "name": "Ourn Blinks",
-      "desc": "Gain Ourn's Blink — an activated skill that freezes every monster for 5 turns. Cooldown 200 − INT×2.",
-      "icon": "⏳",
+    "second_chance": {
+      "name": "Second Chance",
+      "desc": "The first fatal blow you take this run is intercepted — a full heal, then this blessing is spent.",
+      "icon": "♻",
+      "color": "#e0685a"
+    },
+    "leper": {
+      "name": "Leper Colony",
+      "desc": "Immune to poison. On a connecting hit, a chance to poison your target — chance scales with your level and your Maelon blessings (capped at 75%).",
+      "icon": "☣",
+      "color": "#e0685a"
+    },
+    "merciful": {
+      "name": "Merciful End",
+      "desc": "On a connecting hit, if the target's health is below your level%, the blow is instantly fatal.",
+      "icon": "🗡",
+      "color": "#e0685a"
+    },
+    "dread": {
+      "name": "Endless Dread",
+      "desc": "When a foe wounds you, it risks fleeing in terror — chance equal to the average of your VIT/RES/LCK%.",
+      "icon": "💀",
+      "color": "#e0685a"
+    },
+    "wall": {
+      "name": "Wall of Faith",
+      "desc": "Active — tap a tile to raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step.",
+      "icon": "🧱",
+      "color": "#b491d6"
+    },
+    "pull": {
+      "name": "Faith's Pull",
+      "desc": "Active — tap a tile to bend a wide 9×9 swath of ground to Kethara's will for 5 turns, pulling every foe within it toward the center.",
+      "icon": "🌀",
+      "color": "#b491d6"
+    },
+    "gift": {
+      "name": "Gift of the Faithful",
+      "desc": "Every 10th kill, gain +1 RES.",
+      "icon": "🕊",
+      "color": "#b491d6"
+    },
+    "eye": {
+      "name": "Eye of Kethara",
+      "desc": "Active — tap a foe to fix it in place for 25 turns. Cooldown falls with RES.",
+      "icon": "👁",
+      "color": "#b491d6"
+    },
+    "anger": {
+      "name": "Anger of Kethara",
+      "desc": "Active — tap a foe to send it into a berserk rage, turning it on whatever's nearest. Cooldown falls with RES.",
+      "icon": "😡",
+      "color": "#b491d6"
+    },
+    "foresight": {
+      "name": "Future Sight",
+      "desc": "Every 10th kill, gain +1 Accuracy and +1 Evasion.",
+      "icon": "🔮",
+      "color": "#9ad0ff"
+    },
+    "timed_blow": {
+      "name": "Perfectly Timed Blow",
+      "desc": "Critical chance rises by 1% for every character level.",
+      "icon": "⏱",
+      "color": "#9ad0ff"
+    },
+    "dilating": {
+      "name": "Dilating Pupils",
+      "desc": "Every 5th kill, gain +1% Haste, permanently.",
+      "icon": "👀",
+      "color": "#9ad0ff"
+    },
+    "pride": {
+      "name": "The Pride Before The Fall",
+      "desc": "At once, +10 to all base stats. But every 15th kill after, -1 to all base stats — with no floor.",
+      "icon": "☄",
+      "color": "#9ad0ff"
+    },
+    "speed_of_light": {
+      "name": "Speed of Light",
+      "desc": "Active — 25 MP for an instant +100% Haste that decays 1%/turn back to baseline. Cooldown 500 turns.",
+      "icon": "⚡",
       "color": "#9ad0ff"
     }
   },
