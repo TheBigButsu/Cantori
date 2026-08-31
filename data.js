@@ -11,7 +11,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "eva": 12,
       "atkMin": 1,
-      "atkMax": 5,
+      "atkMax": 4,
       "acc": 15
     },
     "bat": {
@@ -23,7 +23,7 @@ window.CANTORI_DATA = {
       "speed": 1.1,
       "atkMin": 1,
       "atkMax": 4,
-      "eva": 30,
+      "eva": 20,
       "acc": 30
     },
     "snake": {
@@ -35,8 +35,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "acc": 10,
       "atkMin": 1,
-      "atkMax": 8,
-      "eva": 35
+      "eva": 30,
+      "atkMax": 6
     },
     "spider": {
       "name": "Spider",
@@ -50,15 +50,15 @@ window.CANTORI_DATA = {
       "range": 4,
       "ranged": true,
       "atkMin": 1,
-      "hp": 18
+      "hp": 12
     },
     "wolf": {
       "name": "Wolf",
       "acc": 10,
       "glyph": "W",
       "color": "#9aa0a8",
-      "hp": 28,
-      "atkMax": 8,
+      "hp": 16,
+      "atkMax": 6,
       "speed": 1,
       "minFloor": 2,
       "atkMin": 2,
@@ -66,7 +66,7 @@ window.CANTORI_DATA = {
     },
     "bee": {
       "name": "Bee",
-      "hp": 15,
+      "hp": 10,
       "atkMin": 2,
       "atkMax": 6,
       "acc": 9,
@@ -80,16 +80,16 @@ window.CANTORI_DATA = {
     },
     "bear": {
       "name": "Bear",
-      "hp": 12,
-      "atkMin": 3,
-      "atkMax": 5,
+      "hp": 35,
+      "atkMin": 2,
+      "atkMax": 4,
       "acc": 15,
       "eva": 6,
       "charge": true,
-      "minFloor": 3,
       "glyph": "B",
       "color": "#8a6a44",
-      "speed": 1
+      "speed": 1,
+      "minFloor": 4
     },
     "harpy": {
       "name": "Harpy",
@@ -218,7 +218,7 @@ window.CANTORI_DATA = {
       "rarity": 25,
       "accuracy": 6
     },
-    "mace": {
+    "big axe": {
       "cat": "weapon",
       "sub": "axe",
       "name": "Big axe",
@@ -390,6 +390,20 @@ window.CANTORI_DATA = {
       "defMax": 1,
       "tier": 0,
       "rarity": 0
+    },
+    "cloth": {
+      "cat": "armor",
+      "name": "Cloth",
+      "accuracy": 0,
+      "tier": 1,
+      "req": {
+        "STR": 0
+      },
+      "glyph": "/",
+      "color": "#cccccc",
+      "defMin": 0,
+      "defMax": 2,
+      "sub": "light"
     }
   },
   "loot": {
@@ -510,7 +524,14 @@ window.CANTORI_DATA = {
           "burstMult": 0.5,
           "dotTurns": 3
         },
-        "tier": 2
+        "tier": 2,
+        "tierValues": [
+          1,
+          3,
+          6,
+          10,
+          15
+        ]
       },
       "electric": {
         "name": "Charged",
@@ -527,7 +548,14 @@ window.CANTORI_DATA = {
           "type": "shock",
           "stunPer": 0.1,
           "burstMult": 0.5
-        }
+        },
+        "tierValues": [
+          1,
+          3,
+          6,
+          10,
+          15
+        ]
       },
       "Speed": {
         "name": "Speed",
@@ -542,7 +570,14 @@ window.CANTORI_DATA = {
         "effect": {
           "type": "haste",
           "mult": 0.25
-        }
+        },
+        "tierValues": [
+          1.1,
+          1.2,
+          1.3,
+          1.5,
+          1.8
+        ]
       },
       "Thorns": {
         "name": "Thorns",
@@ -557,7 +592,14 @@ window.CANTORI_DATA = {
         "effect": {
           "type": "thorns",
           "mult": 0.5
-        }
+        },
+        "tierValues": [
+          0.5,
+          0.75,
+          1,
+          1.5,
+          2.5
+        ]
       },
       "Poison": {
         "name": "Poison",
@@ -568,13 +610,20 @@ window.CANTORI_DATA = {
           "weapon",
           "ring"
         ],
-        "desc": "A small bite now (+2), then 1 damage per turn for several turns. Every proc stacks another dose.",
+        "desc": "A small bite now, then 1 damage per turn for several turns. Every proc stacks another dose.",
         "effect": {
           "type": "poison",
           "initial": 2,
           "perTurn": 1,
           "turns": 5
-        }
+        },
+        "tierValues": [
+          0.2,
+          0.5,
+          0.8,
+          1,
+          1.5
+        ]
       },
       "Defense": {
         "name": "Defense",
@@ -590,7 +639,14 @@ window.CANTORI_DATA = {
         "effect": {
           "type": "defense",
           "amount": 2
-        }
+        },
+        "tierValues": [
+          1,
+          2,
+          3,
+          5,
+          8
+        ]
       }
     }
   },
@@ -835,9 +891,9 @@ window.CANTORI_DATA = {
     },
     "golem": {
       "name": "Stone Golem",
-      "hp": 55,
-      "atkMin": 5,
-      "atkMax": 8
+      "atkMin": 1,
+      "hp": 400,
+      "atkMax": 25
     },
     "cultist": {
       "name": "Cultist",
@@ -877,7 +933,7 @@ window.CANTORI_DATA = {
         "rat": [
           60,
           30,
-          10,
+          15,
           1,
           5
         ],
@@ -891,14 +947,14 @@ window.CANTORI_DATA = {
         "spider": [
           3,
           3,
-          5,
+          10,
           15,
           0
         ],
         "bee": [
           null,
           4,
-          15,
+          20,
           24,
           0
         ],
@@ -1046,7 +1102,7 @@ window.CANTORI_DATA = {
       },
       "baseHp": 18,
       "baseMp": 5,
-      "regenTurns": 400,
+      "regenTurns": 350,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
@@ -1179,72 +1235,39 @@ window.CANTORI_DATA = {
               "Weapon damage + STR×2 damage, +1 range."
             ],
             "ranks": [
-              { "strMult": 1 },
-              { "strMult": 1.5 },
-              { "strMult": 2 },
-              { "strMult": 2, "range": 2 }
+              {
+                "strMult": 1
+              },
+              {
+                "strMult": 1.5
+              },
+              {
+                "strMult": 2
+              },
+              {
+                "strMult": 2,
+                "range": 2
+              }
             ],
             "req": [],
-            "reqAny": [[0, 0, 4], [0, 1, 4], [0, 2, 4]]
+            "reqAny": [
+              [
+                0,
+                0,
+                4
+              ],
+              [
+                0,
+                1,
+                4
+              ],
+              [
+                0,
+                2,
+                4
+              ]
+            ]
           },
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
-      ]
-    },
-    "duelist": {
-      "name": "Duelist",
-      "icon": "🗡",
-      "main": "DEX",
-      "secondary": "LCK",
-      "unlock": "start",
-      "start": {
-        "weapon": "dagger",
-        "armor": "leather"
-      },
-      "blurb": "Fast and precise — evasion and critical strikes.",
-      "stats": {
-        "STR": 5,
-        "INT": 5,
-        "VIT": 5,
-        "DEX": 5,
-        "RES": 5,
-        "LCK": 5
-      },
-      "levelUp": {},
-      "skillTree": [
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
           null,
           null,
           null,
@@ -1292,15 +1315,15 @@ window.CANTORI_DATA = {
       },
       "baseHp": 16,
       "baseMp": 6,
-      "regenTurns": 400,
+      "regenTurns": 350,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
       "levelUp": {
         "hp": 5,
         "mp": 2,
-        "accuracy": 3,
-        "evasion": 2,
+        "accuracy": 2,
+        "evasion": 3,
         "crit": 1,
         "critDmg": 5
       },
@@ -1321,10 +1344,21 @@ window.CANTORI_DATA = {
               "Same, and reduces this skill's cooldown by however much total damage it dealt."
             ],
             "ranks": [
-              { "dealDmg": false },
-              { "dealDmg": true },
-              { "dealDmg": true, "chain": true },
-              { "dealDmg": true, "chain": true, "cdRefund": true }
+              {
+                "dealDmg": false
+              },
+              {
+                "dealDmg": true
+              },
+              {
+                "dealDmg": true,
+                "chain": true
+              },
+              {
+                "dealDmg": true,
+                "chain": true,
+                "cdRefund": true
+              }
             ],
             "req": []
           },
@@ -1342,10 +1376,30 @@ window.CANTORI_DATA = {
               "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
             ],
             "ranks": [
-              { "dmgMin": 1, "dmgMax": 2, "speed": 2 },
-              { "dmgMin": 2, "dmgMax": 4, "speed": 2, "minLevel": 3 },
-              { "dmgMin": 4, "dmgMax": 12, "speed": 2, "minLevel": 6 },
-              { "dmgMin": 4, "dmgMax": 12, "speed": 2, "minLevel": 9, "statScale": true }
+              {
+                "dmgMin": 1,
+                "dmgMax": 2,
+                "speed": 2
+              },
+              {
+                "dmgMin": 2,
+                "dmgMax": 4,
+                "speed": 2,
+                "minLevel": 3
+              },
+              {
+                "dmgMin": 4,
+                "dmgMax": 12,
+                "speed": 2,
+                "minLevel": 6
+              },
+              {
+                "dmgMin": 4,
+                "dmgMax": 12,
+                "speed": 2,
+                "minLevel": 9,
+                "statScale": true
+              }
             ],
             "req": []
           },
