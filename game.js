@@ -19,8 +19,8 @@
   "use strict";
 
   // ---- Map model -----------------------------------------------------------
-  const MAP_W = 51;         // a big sprawling floor: same total room area, spread out
-  const MAP_H = 51;         // with long, winding, 3-wide corridors between chambers
+  const MAP_W = 47;         // a sprawling floor (~15% less area than the old 51×51)
+  const MAP_H = 47;         // joined by narrow, winding 1-wide hallways between chambers
   const FOV_RADIUS = 8;     // max line of sight: you see 8 tiles out (walls/closed
                             // doors block); rooms reveal as you move into them
 
@@ -544,12 +544,39 @@
       if (!best) break;
       carveCorridor(cen[best.a], cen[best.b]); union(best.a, best.b);
     }
-    // A few extra loops for alternate routes.
+    // A few extra loops for alternate routes — kept sparse so hallways don't pile
+    // up on each other into a wide blob where several rooms cluster together.
     for (let a = 0; a < rooms.length; a++) {
-      if (Math.random() > 0.4) continue;
+      if (Math.random() > 0.15) continue;
       let nb = -1, nd = Infinity;
       for (let b = 0; b < rooms.length; b++) { if (b === a) continue; const d = manh(a, b); if (d < nd) { nd = d; nb = b; } }
       if (nb >= 0) carveCorridor(cen[a], cen[nb]);
+    }
+  }
+  // Post-connection cleanup: where several rooms cluster close together, their
+  // separate 1-wide hallway paths (MST edges + the extra loops above) can thread
+  // through the same small region and merge into a wide, blobby open area rather
+  // than reading as proper halls. Thin any corridor floor tile with 3+ orthogonal
+  // floor neighbours back to wall, one at a time, reverting if that would
+  // disconnect any room — same tentative-apply/revert pattern as narrowRoomBreaches.
+  function thinCorridors(rooms) {
+    if (!rooms.length) return;
+    const anchor = roomCenter(rooms[0]);
+    const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+    for (let pass = 0; pass < 4; pass++) {
+      let changed = false;
+      for (let y = 1; y < MAP_H - 1; y++) {
+        for (let x = 1; x < MAP_W - 1; x++) {
+          if (map[y][x] !== FLOOR || inRoom(x, y)) continue;
+          const n4 = (map[y - 1][x] === FLOOR ? 1 : 0) + (map[y + 1][x] === FLOOR ? 1 : 0) +
+                     (map[y][x - 1] === FLOOR ? 1 : 0) + (map[y][x + 1] === FLOOR ? 1 : 0);
+          if (n4 < 3) continue;
+          map[y][x] = WALL;
+          if (allRoomsReachable(rooms, anchor.x, anchor.y)) changed = true;
+          else map[y][x] = FLOOR;   // load-bearing, keep it
+        }
+      }
+      if (!changed) break;
     }
   }
   // Breakdown of the finished level: how much is room floor vs corridor floor.
@@ -1039,7 +1066,7 @@
     const attachEdges = [];   // [roomIdx, partnerIdx, doorTile] for attached rooms (doorway, no hall)
     // Keep the TOTAL room area about the same as before — the same chambers spread
     // across a big floor, joined by 1-wide winding hallways (or a shared doorway).
-    const roomTarget = 340;
+    const roomTarget = 290;   // ~15% less than the old 340, matching the smaller map
     let roomArea = 0, guard = 0;
     while (roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
       // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
@@ -1063,6 +1090,7 @@
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
     connectRooms(rooms, attachEdges);
+    thinCorridors(rooms);   // narrow any hallway blob left by overlapping/converging paths
     lastRooms = rooms; lastAttach = attachEdges.length;
 
     biomeIndex = biomeOf(depth);
