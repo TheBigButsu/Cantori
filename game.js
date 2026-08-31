@@ -4531,5 +4531,6 @@
   updateHUD();
   updateHotbar();
   showDraftBadge();
+  offerBoons();      // a god extends a blessing at the very start of the run too — including the first one
   requestAnimationFrame(frame);
 })();
