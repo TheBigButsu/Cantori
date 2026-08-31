@@ -712,7 +712,7 @@
     const bar = document.createElement("div"); bar.className = "collbar";
     const h = document.createElement("h2"); h.textContent = "enchants — " + enchantRows.length; bar.appendChild(h); wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires per hit. tier (1–5) is a free-form power dial — the engine doesn't read it, use it however you like when picking the Effect block's numbers. Slots = which item types it can roll on. The Effect block drives what it DOES (a type + numbers the engine reads directly), and the description is shown to the player. Hit “</> code” to edit the whole enchant as raw JSON.";
+    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires per hit. The tier scaling table is a free-form reference — the engine doesn't read it, use it however you like when picking the Effect block's numbers. Slots = which item types it can roll on. The Effect block drives what it DOES (a type + numbers the engine reads directly), and the description is shown to the player. Hit “</> code” to edit the whole enchant as raw JSON.";
     wrap.appendChild(note);
     enchantRows.forEach((r, i) => {
       const o = r.obj;
@@ -742,15 +742,30 @@
       grid.appendChild(fld("icon", "icon", "text"));
       grid.appendChild(fld("color", "color", "color"));
       grid.appendChild(fld("proc rate (0–1)", "proc", "num"));
-      const tierWrap = document.createElement("label"); tierWrap.className = "bfield";
-      const tierLabel = document.createElement("span"); tierLabel.textContent = "tier (1–5)"; tierWrap.appendChild(tierLabel);
-      const tierSel = document.createElement("select");
-      for (let t = 1; t <= 5; t++) { const opt = document.createElement("option"); opt.value = t; opt.textContent = t; tierSel.appendChild(opt); }
-      tierSel.value = o.tier != null ? o.tier : 1;
-      tierSel.onchange = () => { o.tier = Number(tierSel.value); };
-      tierWrap.appendChild(tierSel);
-      grid.appendChild(tierWrap);
       card.appendChild(grid);
+      // Tier scaling: a 5-row table (not a single dropdown) so every level's value
+      // is visible and editable at once. Pre-filled with the "+1 base stat" curve
+      // used elsewhere in the game (the ring/necklace triangular formula: 1, 3, 6,
+      // 10, 15) as a sane starting point — the engine doesn't read this itself,
+      // it's here for you to reference while picking the Effect block's numbers.
+      if (!Array.isArray(o.tierValues) || o.tierValues.length !== 5) o.tierValues = [1, 3, 6, 10, 15];
+      const tierWrap = document.createElement("div"); tierWrap.className = "bfield wide";
+      const tierLabel = document.createElement("span"); tierLabel.textContent = "tier scaling (reference only — pick the Effect numbers to match)"; tierWrap.appendChild(tierLabel);
+      const tierTable = document.createElement("table"); tierTable.className = "tier-table";
+      const headRow = document.createElement("tr");
+      for (const h of ["Tier", "Value"]) { const th = document.createElement("th"); th.textContent = h; headRow.appendChild(th); }
+      tierTable.appendChild(headRow);
+      for (let t = 0; t < 5; t++) {
+        const row = document.createElement("tr");
+        const tdT = document.createElement("td"); tdT.textContent = "Tier " + (t + 1); row.appendChild(tdT);
+        const tdV = document.createElement("td");
+        const vinp = document.createElement("input"); vinp.type = "number"; vinp.step = "0.5"; vinp.value = o.tierValues[t];
+        vinp.oninput = () => { o.tierValues[t] = vinp.value === "" ? 0 : Number(vinp.value); };
+        tdV.appendChild(vinp); row.appendChild(tdV);
+        tierTable.appendChild(row);
+      }
+      tierWrap.appendChild(tierTable);
+      card.appendChild(tierWrap);
       const dwrap = document.createElement("label"); dwrap.className = "bfield wide";
       const dl = document.createElement("span"); dl.textContent = "description (shown to the player)"; dwrap.appendChild(dl);
       const dta = document.createElement("textarea"); dta.className = "edesc"; dta.rows = 2; dta.value = o.desc || "";
@@ -772,7 +787,7 @@
     });
     const add = document.createElement("div"); add.className = "addrow";
     const btn = document.createElement("button"); btn.textContent = "+ Add enchant";
-    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, tier: 1, slots: GEAR_CATS.slice(), desc: "", effect: { type: "burn", burstMult: 0.5, dotTurns: 3 } } }); render(); };
+    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, tierValues: [1, 3, 6, 10, 15], slots: GEAR_CATS.slice(), desc: "", effect: { type: "burn", burstMult: 0.5, dotTurns: 3 } } }); render(); };
     add.appendChild(btn); wrap.appendChild(add);
     return wrap;
   }

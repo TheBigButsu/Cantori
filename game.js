@@ -137,6 +137,7 @@
   let walkPath = [];
   let activeWalls = [];   // Kethara's Wall of Faith: temporary wall tiles awaiting reversion
   let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
+  let biomeScrollFloors = null;   // Set of 2 floor-in-biome numbers (1-5) that guarantee a Scroll of Upgrade this biome
   const trapAt = (x, y) => traps.find((t) => t.x === x && t.y === y) || null;
 
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
@@ -1025,6 +1026,14 @@
 
     biomeIndex = biomeOf(depth);
     biome = DATA.biomes[biomeIndex];
+    // Exactly 2 Scrolls of Upgrade guaranteed per biome (not per floor): pick 2 of
+    // its 5 floors, once, the first time we see this biome — re-rolled on entering
+    // the next one.
+    if (floorInBiome(depth) === 1 || !biomeScrollFloors) {
+      const floors = [1, 2, 3, 4, 5];
+      for (let i = floors.length - 1; i > 0; i--) { const j = randInt(0, i); const t = floors[i]; floors[i] = floors[j]; floors[j] = t; }
+      biomeScrollFloors = new Set(floors.slice(0, 2));
+    }
 
     placeDoors(rooms);
     fixOpenCorners(rooms);   // no diagonal-only wall/floor touches — keeps sight & movement consistent
@@ -1137,6 +1146,12 @@
     // it never rolls in the random pool (noDrop), so this is its only source.
     const sp = freeFloorSpot(rooms);
     if (sp) items.push({ x: sp.x, y: sp.y, key: "skill_point" });
+    // Exactly 2 Scrolls of Upgrade guaranteed per biome, on 2 of its 5 floors
+    // (picked in generateLevel) — also noDrop, so this is their only natural source.
+    if (biomeScrollFloors && biomeScrollFloors.has(floorInBiome(depth))) {
+      const su = freeFloorSpot(rooms);
+      if (su) items.push({ x: su.x, y: su.y, key: "scroll_upgrade" });
+    }
   }
 
   function spawnMonsters(rooms) {
