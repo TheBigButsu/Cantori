@@ -303,11 +303,12 @@
   const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorFlat() + stoneSkinHi();
   // The actual mitigation applied on a hit: roll a fresh block within the range.
   const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorFlat() + stoneSkinRoll();
-  // Weapon combat numbers (unarmed falls back to the base 2–3 fists).
-  const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin);
-  const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax);
+  // Weapon combat numbers (unarmed falls back to the base 2–3 fists, boosted by
+  // Brynn's Unarmed Master passive when no weapon is equipped).
+  const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin + passiveMod("dmgMin") + unarmedStatBonus());
+  const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax + passiveMod("dmgMax") + unarmedStatBonus());
   const weaponAccuracy = () => (player.weapon ? (GEAR[player.weapon.key].accuracy || 0) : 0);
-  const weaponSpeed = () => (player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1);
+  const weaponSpeed = () => { if (!player.weapon) { const s = passiveMod("speed"); if (s) return s; } return player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1; };
   // Weapon reach: 1 = melee (adjacent only). Spears/bows carry a range > 1 and
   // can strike a monster that far away with line of sight.
   const weaponRange = () => (player.weapon ? (GEAR[player.weapon.key].range || 1) : 1);
@@ -1647,6 +1648,34 @@
     return added;
   }
 
+  // ---- Character select: choose your hero at the start of each run -----------
+  let classSelectCb = null;   // the pending choice's callback, exposed for the pickClass dev hook
+  function offerClassSelect(cb) {
+    const roster = Object.keys(DATA.classes || {}).filter((k) => DATA.classes[k].unlock === "start");
+    const wrap = document.getElementById("classChoices");
+    if (!wrap || !roster.length) { cb((roster && roster[0]) || player.cls || "warrior"); return; }
+    const choose = (k) => {
+      const el = document.getElementById("classSelect"); if (el) el.hidden = true;
+      classPending = false; classSelectCb = null;
+      cb(k);
+    };
+    classSelectCb = choose;
+    wrap.innerHTML = "";
+    for (const k of roster) {
+      const c = DATA.classes[k] || {};
+      const btn = document.createElement("button");
+      btn.className = "class-choice"; btn.type = "button";
+      btn.innerHTML = `<span class="b-icon">${c.icon || "⚔"}</span>` +
+        `<span class="b-text"><span class="b-name">${c.name || k}</span>` +
+        `<span class="b-desc">${c.blurb || ""}</span></span>`;
+      btn.addEventListener("click", () => choose(k));
+      wrap.appendChild(btn);
+    }
+    walkPath = [];                  // don't let a queued walk fire under the modal
+    classPending = true;
+    document.getElementById("classSelect").hidden = false;
+  }
+
   // ---- Boons: pick one of three at each boss kill; effects are permanent -------
   function offerBoons() {
     const all = DATA.boons || {};
@@ -1890,6 +1919,9 @@
     if (over) over.hidden = false;
   }
 
+  // Starts (or restarts) a run as whatever class is currently set on player.cls —
+  // used directly by dev/test hooks. Real player-facing "new run" triggers go
+  // through beginNewRun() below, which asks for a character first.
   function restart() {
     dead = false;
     depth = 1;
@@ -1903,10 +1935,18 @@
     if (winEl) winEl.hidden = true;
     const boonEl = document.getElementById("boons");
     if (boonEl) boonEl.hidden = true;
+    const clsEl = document.getElementById("classSelect");
+    if (clsEl) clsEl.hidden = true;
     boonPending = false;
+    classPending = false;
+    classSelectCb = null;
     generateLevel();
     log("A new adventurer enters the dungeon.");
     offerBoons();      // a god extends a blessing at the very start of the run too
+  }
+  // Player-facing "start a new run" entry point: choose a hero, then restart() as them.
+  function beginNewRun() {
+    offerClassSelect((clsKey) => { player.cls = clsKey; restart(); });
   }
 
   // ---- Monster turns -------------------------------------------------------
@@ -1915,6 +1955,7 @@
   const CHARGE_MAX = 7;
   let turns = 0;
   let boonPending = false;    // a boss-reward boon choice is open — block play until picked
+  let classPending = false;   // the start-of-run character-select modal is open — block play until picked
 
   // Passive regeneration is a per-class "turns to reach full health" number, sped
   // up by Vitality:  effective = regenTurns − VIT × vitRegen.  Healing accrues
@@ -2641,6 +2682,12 @@
         executeSmite(pendingSkill, tx, ty);
         return;
       }
+      if (pk === "throwmon") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
+        executeThrowSkill(pendingSkill, tx, ty);
+        return;
+      }
     }
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
@@ -2761,7 +2808,7 @@
       .sort((a, b) => cheb(a.x, a.y, player.x, player.y) - cheb(b.x, b.y, player.x, player.y));
   }
   function cycleEnemyFocus() {
-    if (dead || mapOpen || invOpen || charOpen || boonPending) return;
+    if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return;
     const list = visibleEnemies();
     if (!list.length) { enemyFocusIdx = -1; log("No enemies in sight."); return; }
     enemyFocusIdx = (enemyFocusIdx + 1) % list.length;
@@ -3988,28 +4035,41 @@
     return names;
   }
   // Sum a passive-skill modifier (dmg/acc/eva/…) across learned passives whose
-  // condition (`when` = required weapon subtype) currently holds.
+  // condition (`when` = required weapon subtype, or "unarmed" = no weapon at all)
+  // currently holds.
   function passiveMod(field) {
     let v = 0; const sk = classSkills();
     for (const key in sk) {
       const d = sk[key]; if (d.kind !== "passive") continue;
       const st = player.skills[key]; if (!st || st.rank < 1) continue;
-      if (d.when && d.when !== weaponSub()) continue;
+      if (d.when === "unarmed") { if (player.weapon) continue; }
+      else if (d.when && d.when !== weaponSub()) continue;
       const r = d.ranks[st.rank - 1] || {}; if (r[field] != null) v += r[field];
     }
     return v;
+  }
+  // Brynn's Unarmed Master, rank 4: bare-fisted damage also scales with
+  // (DEX+VIT)/2, riding along the min/max bonus above.
+  function unarmedStatBonus() {
+    if (player.weapon) return 0;
+    const st = player.skills.unarmed_master; if (!st || st.rank < 1) return 0;
+    const d = classSkills().unarmed_master; if (!d) return 0;
+    const r = d.ranks[st.rank - 1];
+    return (r && r.statScale) ? Math.floor((eff("DEX") + eff("VIT")) / 2) : 0;
   }
 
   function learnSkill(key) {
     const d = skillDef(key), st = player.skills[key];
     if (!d || !st || st.rank >= d.max || player.statPoints <= 0) return;
     if (!prereqsMet(d)) { log("Requires " + (prereqNames(d).join(", ") || "a prerequisite") + " first.", ""); return; }
+    const nextDef = d.ranks[st.rank];
+    if (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) { log("Requires character level " + nextDef.minLevel + " first.", ""); return; }
     player.statPoints--; st.rank++;
     log((st.rank === 1 ? "Learned " : "Upgraded ") + d.name + " (rank " + st.rank + ").", "hit");
     renderChar(); updateHotbar();
   }
   function useSkill(key) {
-    if (dead || mapOpen || invOpen || charOpen || boonPending) return;
+    if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return;
     const st = player.skills[key], d = skillDef(key);
     if (!st || st.rank < 1 || !d) return;
     if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
@@ -4017,7 +4077,7 @@
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
     else if (d.kind === "sol") executeSpeedOfLight(key);
-    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" || d.kind === "smite") beginTargetedSkill(key);
+    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" || d.kind === "smite" || d.kind === "throwmon") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -4188,6 +4248,48 @@
     worldTurn();
   }
 
+  // Brynn's Throw: grab an adjacent monster and hurl it straight away from you
+  // until it collides with a wall or another monster. Damage (rank 2+) rides
+  // along attack() the same way Smite's STR bonus does — bonus = DEX, on top
+  // of the normal weapon roll. Rank 3+ also damages whatever it collides with;
+  // rank 4 refunds cooldown equal to the total damage dealt.
+  function executeThrowSkill(key, tx, ty) {
+    pendingSkill = null;
+    const cur = skillCur(key);
+    if (!cur) return;
+    const target = monsterAt(tx, ty);
+    if (!target || cheb(player.x, player.y, tx, ty) > 1) { log("Throw needs an adjacent target."); updateHotbar(); return; }
+    let dx = Math.sign(tx - player.x), dy = Math.sign(ty - player.y);
+    if (!dx && !dy) dx = 1;
+    let x = target.x, y = target.y, hitOther = null, steps = 0;
+    while (steps < 40) {
+      const nx = x + dx, ny = y + dy;
+      if (!inBounds(nx, ny) || isWall(nx, ny) || (nx === player.x && ny === player.y)) break;
+      const other = monsterAt(nx, ny);
+      if (other && other !== target) { hitOther = other; break; }
+      x = nx; y = ny; steps++;
+    }
+    target.x = x; target.y = y;
+    floatText(x, y, "→", "#cfe6ff");
+    log("You hurl the " + monName(target) + " backward!", "hit");
+    let dealt = 0;
+    if (cur.dealDmg) {
+      const before = target.hp;
+      attack(player, target, eff("DEX"));
+      dealt += Math.max(0, before - target.hp);
+      if (dead) return;
+    }
+    if (cur.chain && hitOther && hitOther.hp > 0) {
+      const before2 = hitOther.hp;
+      attack(player, hitOther, eff("DEX"));
+      dealt += Math.max(0, before2 - hitOther.hp);
+      if (dead) return;
+    }
+    player.skills[key].cd = cur.cdRefund ? Math.max(0, 100 - dealt) : 100;
+    updateHotbar(); updateHUD(); computeFOV();
+    worldTurn();
+  }
+
   // ---- Examine -------------------------------------------------------------
   function toggleExamine(force) {
     examineMode = force === undefined ? !examineMode : force;
@@ -4295,13 +4397,19 @@
     let html = `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>`;
     for (const key of keys) {
       const d = sk[key], st = player.skills[key];
-      const locked = st.rank === 0 && !prereqsMet(d);
+      const nextDef = st.rank < d.max ? d.ranks[st.rank] : null;
+      const levelGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
+      const prereqLocked = st.rank === 0 && !prereqsMet(d);
+      const locked = prereqLocked || !!levelGate;
       const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || fmt(d.ranks[st.rank - 1])) : null;
       const nextTxt = st.rank < d.max ? (d.levels[st.rank] || fmt(d.ranks[st.rank])) : "Maxed.";
       const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
       const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
       const kindTag = d.kind === "passive" ? " · passive" : "";
-      const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${prereqNames(d).join(", ") || "a prerequisite"}</div>` : "";
+      const reqParts = [];
+      if (prereqLocked) reqParts.push(prereqNames(d).join(", ") || "a prerequisite");
+      if (levelGate) reqParts.push("character level " + levelGate);
+      const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${reqParts.join(", ")}</div>` : "";
       html += `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
         `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
         `<div class="sdesc">${d.desc}</div>` + reqTxt +
@@ -4391,8 +4499,8 @@
     Numpad7: [-1, -1], Numpad9: [1, -1], Numpad1: [-1, 1], Numpad3: [1, 1],
   };
   window.addEventListener("keydown", (e) => {
-    if (dead) { if (e.key === "Enter" || e.key === " ") restart(); return; }
-    if (boonPending) return;                     // choose your boon first
+    if (dead) { if (e.key === "Enter" || e.key === " ") beginNewRun(); return; }
+    if (boonPending || classPending) return;      // choose your boon/character first
     const key = (e.key || "").toLowerCase();
     if (key === "c") { e.preventDefault(); toggleChar(); return; }
     if (charOpen) { if (e.key === "Escape" || key === "c") toggleChar(false); return; }
@@ -4424,7 +4532,7 @@
   { const en = document.getElementById("enemies"); if (en) en.addEventListener("click", cycleEnemyFocus); }
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending) return; walkPath = []; worldTurn(); }
+  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -4446,8 +4554,8 @@
 
   for (const id of ["gameover", "win"]) {
     const el = document.getElementById(id);
-    el.addEventListener("click", restart);
-    el.addEventListener("touchstart", (e) => { e.preventDefault(); restart(); }, { passive: false });
+    el.addEventListener("click", beginNewRun);
+    el.addEventListener("touchstart", (e) => { e.preventDefault(); beginNewRun(); }, { passive: false });
   }
 
   // ---- Mouse wheel zoom ----------------------------------------------------
@@ -4466,7 +4574,7 @@
     return [Math.floor(camX + colF), Math.floor(camY + rowF)];
   }
   canvas.addEventListener("touchstart", (e) => {
-    if (mapOpen || invOpen || charOpen || dead || boonPending) return;
+    if (mapOpen || invOpen || charOpen || dead || boonPending || classPending) return;
     if (e.touches.length === 2) {
       e.preventDefault();
       touchMode = "pinch";
@@ -4518,7 +4626,9 @@
 
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
-    descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart,
+    descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart, beginNewRun,
+    pickClass: (key) => { if (classSelectCb) classSelectCb(key); },
+    classRoster: () => Object.keys(DATA.classes || {}).filter((k) => DATA.classes[k].unlock === "start"),
     dname: (k) => displayName(k), dcolor: (k) => consumColor(k),
     stoneSkinTurns: () => (player.stoneSkin ? player.stoneSkin.turns : 0),
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
@@ -4535,6 +4645,8 @@
     addTrap: (key, x, y) => { traps.push({ x, y, key, revealed: true, sprung: false }); },
     springTrap: (i) => { if (traps[i]) triggerTrap(traps[i]); },
     throwAt: (idx, x, y) => executeThrow(idx, x, y),
+    throwSkillAt: (key, x, y) => executeThrowSkill(key, x, y),
+    setClass: (key) => { applyClass(key); renderChar(); updateHotbar(); updateHUD(); },
     anims: () => ({ projectiles: projectiles.length, streaks: streaks.length, spirals: spirals.length, bursts: bursts.length }),
     rooms: () => lastRooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
     attachInfo: () => ({ attached: lastAttach, total: lastRooms.length }),
@@ -4555,7 +4667,7 @@
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, critChance: critChance(),
         skillsAll: Object.keys(player.skills || {}),
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
-        boons: player.boons ? [...player.boons] : [], boonPending,
+        boons: player.boons ? [...player.boons] : [], boonPending, classPending,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
@@ -4642,6 +4754,6 @@
   updateHUD();
   updateHotbar();
   showDraftBadge();
-  offerBoons();      // a god extends a blessing at the very start of the run too — including the first one
+  beginNewRun();       // pick a hero, then the run's first boon — including this very first run
   requestAnimationFrame(frame);
 })();

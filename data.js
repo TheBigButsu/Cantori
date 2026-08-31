@@ -937,7 +937,7 @@ window.CANTORI_DATA = {
     },
     {
       "key": "cave",
-      "name": "Cave",
+      "name": "Caves",
       "floor": "floor",
       "wall": "wall",
       "monsters": [
@@ -951,25 +951,12 @@ window.CANTORI_DATA = {
       "door": "door"
     },
     {
-      "key": "tomb",
-      "name": "Tomb",
+      "key": "crypt",
+      "name": "Mummy's Crypt",
       "floor": "tomb_floor",
       "wall": "tomb_wall",
       "monsters": [
         "ghoul",
-        "wraith",
-        "phantom"
-      ],
-      "boss": "cultist",
-      "bossCount": 3,
-      "door": "door"
-    },
-    {
-      "key": "arcane",
-      "name": "Arcane Tomb",
-      "floor": "arcane_floor",
-      "wall": "arcane_wall",
-      "monsters": [
         "wraith",
         "phantom",
         "imp"
@@ -978,8 +965,22 @@ window.CANTORI_DATA = {
       "door": "door"
     },
     {
-      "key": "space",
-      "name": "The Beyond",
+      "key": "town",
+      "name": "Town",
+      "floor": "arcane_floor",
+      "wall": "arcane_wall",
+      "monsters": [
+        "jackal",
+        "hornet",
+        "imp"
+      ],
+      "boss": "cultist",
+      "bossCount": 3,
+      "door": "door"
+    },
+    {
+      "key": "lake",
+      "name": "Haunted Lake",
       "floor": "space_floor",
       "wall": "space_wall",
       "monsters": [
@@ -1027,6 +1028,7 @@ window.CANTORI_DATA = {
   "classes": {
     "warrior": {
       "name": "Chadwick",
+      "icon": "⚔",
       "main": "STR",
       "secondary": "VIT",
       "unlock": "start",
@@ -1215,6 +1217,7 @@ window.CANTORI_DATA = {
     },
     "duelist": {
       "name": "Duelist",
+      "icon": "🗡",
       "main": "DEX",
       "secondary": "LCK",
       "unlock": "start",
@@ -1236,6 +1239,116 @@ window.CANTORI_DATA = {
         [
           null,
           null,
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      ]
+    },
+    "monk": {
+      "name": "Brynn",
+      "icon": "👊",
+      "main": "DEX",
+      "secondary": "VIT",
+      "unlock": "start",
+      "stats": {
+        "STR": 4,
+        "INT": 3,
+        "VIT": 7,
+        "DEX": 8,
+        "RES": 3,
+        "LCK": 4
+      },
+      "start": {
+        "armor": "leather"
+      },
+      "baseHp": 16,
+      "baseMp": 6,
+      "regenTurns": 400,
+      "vitRegen": 2,
+      "mpRegenTurns": 600,
+      "intRegen": 2,
+      "levelUp": {
+        "hp": 5,
+        "mp": 2,
+        "accuracy": 3,
+        "evasion": 2,
+        "crit": 1,
+        "critDmg": 5
+      },
+      "blurb": "Fights best barehanded — hurls foes aside and lands harder the longer she goes unarmed.",
+      "skillTree": [
+        [
+          {
+            "name": "Throw",
+            "key": "throw",
+            "icon": "↩",
+            "kind": "throwmon",
+            "when": null,
+            "desc": "Grab an adjacent foe and hurl it away from you in a straight line until it collides with something. Cooldown 100 turns.",
+            "levels": [
+              "Throws the target backward until it collides with a wall or another monster. No damage.",
+              "Same, and the thrown target takes weapon + DEX damage.",
+              "Same, and also damages whatever else it collides with.",
+              "Same, and reduces this skill's cooldown by however much total damage it dealt."
+            ],
+            "ranks": [
+              { "dealDmg": false },
+              { "dealDmg": true },
+              { "dealDmg": true, "chain": true },
+              { "dealDmg": true, "chain": true, "cdRefund": true }
+            ],
+            "req": []
+          },
+          {
+            "name": "Unarmed Master",
+            "key": "unarmed_master",
+            "icon": "👊",
+            "kind": "passive",
+            "when": "unarmed",
+            "desc": "Mastery of empty-handed combat — bonuses apply only while no weapon is equipped.",
+            "levels": [
+              "+1 min / +2 max unarmed damage. Unarmed attack speed 2.",
+              "+2 min / +4 max unarmed damage. (requires character level 3)",
+              "+4 min / +12 max unarmed damage. (requires character level 6)",
+              "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
+            ],
+            "ranks": [
+              { "dmgMin": 1, "dmgMax": 2, "speed": 2 },
+              { "dmgMin": 2, "dmgMax": 4, "speed": 2, "minLevel": 3 },
+              { "dmgMin": 4, "dmgMax": 12, "speed": 2, "minLevel": 6 },
+              { "dmgMin": 4, "dmgMax": 12, "speed": 2, "minLevel": 9, "statScale": true }
+            ],
+            "req": []
+          },
           null,
           null,
           null

@@ -210,7 +210,8 @@
     renderTabs();
     const main = $("main");
     main.innerHTML = "";
-    if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
+    if (activeTab === "gear") main.appendChild(renderGearTables());
+    else if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
     else if (activeTab === "biomes") main.appendChild(renderBiomes());
     else if (activeTab === "classes") main.appendChild(renderClasses());
     else if (activeTab === "enchants") main.appendChild(renderEnchants());
@@ -244,20 +245,29 @@
     return dir === "desc" ? -r : r;
   }
 
-  function renderTable(coll) {
+  // opts (all optional): stateKey (separate sort/filter state, for split tables
+  // that share one coll), filterFn (row => bool, narrows which rows this table
+  // shows/counts), heading (label shown instead of coll), addBase/addLabel
+  // (key prefix + button text for "+ Add"), template (row seed), hint (false to
+  // suppress the tip paragraph, for split tables that share one hint above them).
+  function renderTable(coll, opts) {
+    opts = opts || {};
+    const stateKey = opts.stateKey || coll;
     const wrap = document.createElement("div");
     const spec = SPECS[coll];
 
     const bar = document.createElement("div"); bar.className = "collbar";
     const h = document.createElement("h2"); bar.appendChild(h);
     const filt = document.createElement("input");
-    filt.type = "text"; filt.className = "filter"; filt.placeholder = "filter…"; filt.value = filterText[coll] || "";
+    filt.type = "text"; filt.className = "filter"; filt.placeholder = "filter…"; filt.value = filterText[stateKey] || "";
     bar.appendChild(filt);
     wrap.appendChild(bar);
 
-    const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "Click a column header to sort by it (again to reverse); type in the filter box to narrow the list. " + tableHint(coll);
-    wrap.appendChild(note);
+    if (opts.hint !== false) {
+      const note = document.createElement("p"); note.className = "hint";
+      note.textContent = "Click a column header to sort by it (again to reverse); type in the filter box to narrow the list. " + tableHint(coll);
+      wrap.appendChild(note);
+    }
 
     const tw = document.createElement("div"); tw.className = "tablewrap";
     const table = document.createElement("table");
@@ -266,9 +276,9 @@
     for (const col of spec) {
       const th = document.createElement("th"); th.className = "sortable"; th.dataset.f = col.f;
       th.onclick = () => {
-        const s = sortState[coll];
+        const s = sortState[stateKey];
         if (s && s.f === col.f) s.dir = (s.dir === "asc" ? "desc" : "asc");
-        else sortState[coll] = { f: col.f, dir: "asc" };
+        else sortState[stateKey] = { f: col.f, dir: "asc" };
         rebuild();
       };
       htr.appendChild(th);
@@ -280,10 +290,11 @@
     tw.appendChild(table); wrap.appendChild(tw);
 
     const add = document.createElement("div"); add.className = "addrow";
-    const btn = document.createElement("button"); btn.textContent = "+ Add " + coll.replace(/s$/, "");
+    const addBase = opts.addBase || coll.replace(/s$/, "");
+    const btn = document.createElement("button"); btn.textContent = "+ Add " + (opts.addLabel || addBase);
     btn.onclick = () => {
-      filterText[coll] = "";   // clear the filter so the new row is visible
-      rows[coll].push({ key: uniqueKey(coll, "new_" + coll.replace(/s$/, "")), obj: clone(TEMPLATES[coll]) });
+      filterText[stateKey] = "";   // clear the filter so the new row is visible
+      rows[coll].push({ key: uniqueKey(coll, "new_" + addBase.replace(/[^a-z0-9]+/gi, "_")), obj: clone(opts.template || TEMPLATES[coll]) });
       render();
     };
     add.appendChild(btn); wrap.appendChild(add);
@@ -291,11 +302,12 @@
     // Recompute the filtered/sorted view and repaint just the header labels +
     // body (so typing in the filter box keeps focus).
     function rebuild() {
-      const q = (filterText[coll] || "").trim().toLowerCase();
-      let view = q ? rows[coll].filter((row) => rowMatches(coll, row, q)) : rows[coll].slice();
-      const st = sortState[coll];
+      const base = opts.filterFn ? rows[coll].filter(opts.filterFn) : rows[coll];
+      const q = (filterText[stateKey] || "").trim().toLowerCase();
+      let view = q ? base.filter((row) => rowMatches(coll, row, q)) : base.slice();
+      const st = sortState[stateKey];
       if (st) { const col = spec.find((c) => c.f === st.f); if (col) view.sort((a, b) => cmpRows(a, b, col, st.dir)); }
-      h.textContent = coll + " — " + (q ? view.length + " of " + rows[coll].length : rows[coll].length + " entries");
+      h.textContent = (opts.heading || coll) + " — " + (q ? view.length + " of " + base.length : base.length + " entries");
       const ths = thead.querySelectorAll("th");
       spec.forEach((col, idx) => {
         const on = st && st.f === col.f;
@@ -305,8 +317,32 @@
       tbody.innerHTML = "";
       view.forEach((row) => tbody.appendChild(renderRow(coll, row)));
     }
-    filt.oninput = () => { filterText[coll] = filt.value; rebuild(); };
+    filt.oninput = () => { filterText[stateKey] = filt.value; rebuild(); };
     rebuild();
+    return wrap;
+  }
+
+  // Gear gets its own tab layout: one table per equip category instead of one
+  // giant mixed table, so weapons/armor/jewelry each get their relevant columns
+  // to scan without wading through the rest.
+  const GEAR_GROUPS = [
+    { stateKey: "gear_weapon", heading: "weapons", addBase: "weapon", match: (cat) => cat === "weapon", template: Object.assign({}, TEMPLATES.gear, { cat: "weapon" }) },
+    { stateKey: "gear_armor", heading: "armor", addBase: "armor", match: (cat) => cat === "armor", template: Object.assign({}, TEMPLATES.gear, { cat: "armor", dmgMin: undefined, dmgMax: undefined, defMin: 1, defMax: 3 }) },
+    { stateKey: "gear_jewelry", heading: "rings & necklaces", addBase: "ring", addLabel: "ring/necklace", match: (cat) => cat === "ring" || cat === "necklace", template: Object.assign({}, TEMPLATES.gear, { cat: "ring", dmgMin: undefined, dmgMax: undefined }) },
+    { stateKey: "gear_trinket", heading: "trinkets", addBase: "trinket", match: (cat) => cat === "trinket", template: Object.assign({}, TEMPLATES.gear, { cat: "trinket", dmgMin: undefined, dmgMax: undefined }) },
+  ];
+  function renderGearTables() {
+    const wrap = document.createElement("div");
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = tableHint("gear");
+    wrap.appendChild(note);
+    for (const g of GEAR_GROUPS) {
+      wrap.appendChild(renderTable("gear", {
+        stateKey: g.stateKey, heading: g.heading, addBase: g.addBase, addLabel: g.addLabel,
+        template: g.template, hint: false,
+        filterFn: (row) => g.match(getField(row.obj, "cat")),
+      }));
+    }
     return wrap;
   }
 
@@ -451,7 +487,12 @@
         const ml2 = document.createElement("div"); ml2.className = "bmons-l"; ml2.textContent = "Spawn mix — % chance per floor (each floor should total ≤100%; over 100 turns red). “—” = the monster can't spawn on that floor yet (below its minFloor)."; mix.appendChild(ml2);
         const hdr = document.createElement("div"); hdr.className = "bmixrow head";
         const hn = document.createElement("span"); hn.className = "bmixname"; hdr.appendChild(hn);
-        for (let f = 1; f <= 5; f++) { const s = document.createElement("span"); s.className = "bmixw lbl"; s.textContent = "F" + f; hdr.appendChild(s); }
+        // Labels show the ABSOLUTE dungeon depth for this biome's slot (biome i covers
+        // depths i*5+1 .. i*5+5) — minFloor/spawnMix values themselves stay biome-relative
+        // (1-5), exactly as the engine reads them; this is a display-only fix so "Biome 2"
+        // reads F6-F10 instead of F1-F5 like every other card.
+        const depthBase = i * 5;
+        for (let f = 1; f <= 5; f++) { const s = document.createElement("span"); s.className = "bmixw lbl"; s.textContent = "F" + (depthBase + f); hdr.appendChild(s); }
         mix.appendChild(hdr);
         b.spawnMix = b.spawnMix || {};
         const colInputs = [[], [], [], [], []];
@@ -463,7 +504,7 @@
             const eligible = (mf != null && (f + 1) >= mf);
             if (!eligible) {                                  // locked: can't spawn on this floor
               const sp = document.createElement("span"); sp.className = "bmixw locked"; sp.textContent = "—";
-              sp.title = mf == null ? (k + " is disabled — set a minFloor on the Monsters tab") : (k + " can't spawn before floor " + mf);
+              sp.title = mf == null ? (k + " is disabled — set a minFloor on the Monsters tab") : (k + " can't spawn before floor " + (depthBase + mf) + " (biome-floor " + mf + ")");
               row.appendChild(sp); continue;
             }
             const inp = document.createElement("input"); inp.type = "number"; inp.className = "bmixw"; inp.min = "0"; inp.max = "100"; inp.placeholder = "0";

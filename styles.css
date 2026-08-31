@@ -525,7 +525,7 @@ body{
   letter-spacing:.16em;
   text-transform:uppercase;
 }
-#boons{
+#boons,#classSelect{
   position:fixed;
   inset:0;
   z-index:21;
@@ -537,20 +537,20 @@ body{
   backdrop-filter:blur(3px);
   padding:18px;
 }
-#boons[hidden]{display:none}
+#boons[hidden],#classSelect[hidden]{display:none}
 .boon-card{text-align:center;max-width:560px;width:100%}
 .boon-title{font-size:24px;font-weight:700;letter-spacing:.18em;color:#f0c14b}
 .boon-sub{margin-top:8px;color:var(--ink-dim);font-size:13px;letter-spacing:.05em}
 .boon-choices{margin-top:20px;display:flex;flex-direction:column;gap:12px}
-.boon-choice{
+.boon-choice,.class-choice{
   display:flex;align-items:center;gap:14px;text-align:left;cursor:pointer;
   background:#15110b;border:1px solid var(--line);border-radius:12px;
   padding:14px 16px;color:var(--ink);font-family:inherit;
   transition:border-color .12s, transform .06s;
 }
-.boon-choice:hover,.boon-choice:focus{border-color:var(--amber);outline:none}
-.boon-choice:active{transform:scale(.99)}
-.boon-choice .b-icon{font-size:28px;line-height:1;flex:0 0 auto;width:34px;text-align:center}
-.boon-choice .b-text{flex:1;min-width:0}
-.boon-choice .b-name{font-weight:700;letter-spacing:.04em;font-size:15px}
-.boon-choice .b-desc{margin-top:4px;color:var(--ink-dim);font-size:12.5px;line-height:1.45}
+.boon-choice:hover,.boon-choice:focus,.class-choice:hover,.class-choice:focus{border-color:var(--amber);outline:none}
+.boon-choice:active,.class-choice:active{transform:scale(.99)}
+.boon-choice .b-icon,.class-choice .b-icon{font-size:28px;line-height:1;flex:0 0 auto;width:34px;text-align:center}
+.boon-choice .b-text,.class-choice .b-text{flex:1;min-width:0}
+.boon-choice .b-name,.class-choice .b-name{font-weight:700;letter-spacing:.04em;font-size:15px}
+.boon-choice .b-desc,.class-choice .b-desc{margin-top:4px;color:var(--ink-dim);font-size:12.5px;line-height:1.45}
