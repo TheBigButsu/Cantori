@@ -1183,7 +1183,7 @@ window.CANTORI_DATA = {
               { "strMult": 2, "range": 2 }
             ],
             "req": [],
-            "reqAny": [[0, 0, 4], [0, 1, 4]]
+            "reqAny": [[0, 0, 4], [0, 1, 4], [0, 2, 4]]
           },
           null,
           null,
