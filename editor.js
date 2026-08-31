@@ -22,7 +22,7 @@
 
   const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses", "boons"];
   const JSON_COLLS = ["loot", "stats", "gods"];
-  const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS);
+  const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS).concat(["reference"]);
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   const GEAR_CATS = ["weapon", "armor", "ring", "trinket", "necklace"];
   const TIERS = 5, SLOTS = 5;   // skill tree: 5 tiers × 5 options
@@ -230,6 +230,7 @@
     else if (activeTab === "biomes") main.appendChild(renderBiomes());
     else if (activeTab === "classes") main.appendChild(renderClasses());
     else if (activeTab === "enchants") main.appendChild(renderEnchants());
+    else if (activeTab === "reference") main.appendChild(renderReference());
     else main.appendChild(renderJson(activeTab));
     setStatus("");
   }
@@ -474,7 +475,6 @@
       grid.appendChild(biomeField(b, "boss", "boss", "select", [""].concat(bossKeys)));
       grid.appendChild(biomeField(b, "bossCount", "bossCount", "num"));
       grid.appendChild(biomeField(b, "door style", "door", "select", ["door", "bush"]));
-      grid.appendChild(biomeField(b, "exitStyle", "exitStyle", "select", ["", "wall"]));
       grid.appendChild(biomeField(b, "exitSprite", "exitSprite", "text"));
       grid.appendChild(biomeField(b, "spawnEvery", "spawnEvery", "num"));
       grid.appendChild(biomeField(b, "spawnCap", "spawnCap", "num"));
@@ -848,6 +848,157 @@
     return wrap;
   }
 
+  // ---- Reference: a read-only page of every formula the engine actually uses.
+  // Nothing here is editable — it explains how the numbers on the other tabs
+  // get combined into what happens in a run. Keep it in sync by hand when a
+  // formula in game.js changes; there's no live link back to the code.
+  const REFERENCE = [
+    {
+      title: "Core stats",
+      rows: [
+        { name: "Effective stat", formula: "eff(stat) = player.stats[stat] + gear affix bonus", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
+        { name: "STR → damage", formula: "strBonus = max(0, floor((eff(STR) − weapon's STR requirement) / 4))", note: "Flat bonus added to every weapon hit. A weapon with no STR requirement (or being unarmed) always grants the full bonus." },
+        { name: "VIT → HP", formula: "+1 max HP per point", note: "Via computeMaxHp() below." },
+        { name: "DEX → acc/eva/crit", formula: "+1 accuracy, +1 evasion, +1% crit chance per point", note: "" },
+        { name: "INT → MP", formula: "+1 max MP per point", note: "Via computeMaxMp() below." },
+        { name: "RES → damage taken", formula: "−1% incoming damage per point", note: "Applied before armor — see Defense & Mitigation." },
+        { name: "LCK → luck", formula: "+1% enchant proc chance, +1% crit chance, +2% crit damage per point", note: "" },
+      ],
+    },
+    {
+      title: "Health & mana",
+      rows: [
+        { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + eff(VIT) + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
+        { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + eff(INT) + flat per-level MP gained", note: "" },
+        { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen); +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT." },
+        { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − eff(INT) × class.intRegen); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT." },
+      ],
+    },
+    {
+      title: "Accuracy & evasion",
+      rows: [
+        { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
+        { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
+        { name: "Hit chance", formula: "hitChance = clamp(10%, 95%, 50% + (attacker's acc − defender's eva) × 3%)", note: "Every point of acc-vs-eva edge is worth 3 percentage points of hit chance, floored at 10% and capped at 95%." },
+      ],
+    },
+    {
+      title: "Critical hits",
+      rows: [
+        { name: "Crit chance", formula: "critChance = (5% base + per-level crit + Ourn's Perfectly Timed Blow (+1%/character level) + eff(DEX) + eff(LCK)) / 100", note: "" },
+        { name: "Crit damage", formula: "critMult = (200% base + per-level crit dmg + eff(LCK) × 2) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
+      ],
+    },
+    {
+      title: "Damage — you hitting a monster",
+      rows: [
+        { name: "Weapon roll", formula: "random(weapon's dmg min, weapon's dmg max)", note: "Unarmed: 2–3, boosted by Brynn's Unarmed Master while no weapon is equipped." },
+        { name: "Total damage", formula: "total = weapon roll + strBonus + skill bonus (Smite/Rush/etc.) + flat passive bonus (Sword Master, etc.)", note: "" },
+        { name: "Surprise attack", formula: "total × 1.5", note: "Applies when the target hasn't noticed you yet." },
+        { name: "Critical hit", formula: "total × critMult", note: "Rolled independently of the surprise multiplier — both can apply to the same hit." },
+      ],
+    },
+    {
+      title: "Defense & mitigation — a monster hitting you",
+      rows: [
+        { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },
+        { name: "RES reduction", formula: "raw × max(0, 1 − eff(RES) / 100)", note: "Applied FIRST, as a % of the raw hit." },
+        { name: "Armor block", formula: "− random(armor's def min, def max) − armor subtype mitigation − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Armor subtype mitigation: light +0, medium +1, heavy +3, added on top of the item's own def range. Final damage is floored at 1 no matter how much is mitigated." },
+      ],
+    },
+    {
+      title: "Weapon / armor upgrades (+X)",
+      rows: [
+        { name: "Weapon +X", formula: "dmg min += (tier − 1) × plus,  dmg max += tier × 2 × plus", note: "Higher-tier gear scales much harder per point of +X." },
+        { name: "Armor +X", formula: "def min += (tier − 1) × plus,  def max += tier × 2 × plus", note: "Same shape as the weapon formula." },
+      ],
+    },
+    {
+      title: "Enchants",
+      rows: [
+        { name: "Proc chance", formula: "proc = enchant's own % (Enchants tab) + eff(LCK) / 100", note: "Passive always-on effects (Defense, Speed) are typically authored at 100% proc." },
+        { name: "Tiered value lookup", formula: "tierValues[clamp(1, 5, item's gear tier) − 1]", note: "Any enchant with a `tierValues` array (5 numbers) on the Enchants tab reads its number from the TIER of the item carrying it — an untiered item counts as tier 1. Falls back to the effect's flat legacy field if `tierValues` is absent." },
+        { name: "Poison", formula: "dose = round(weapon power × tiered %); stack += dose; each turn: hp −= stack, then stack −= 1", note: "Doses from repeated procs pile onto ONE running stack rather than layering separate timers — a big early stack keeps hurting as it winds down." },
+        { name: "Defense (enchant)", formula: "armor def min += tiered amount,  armor def max += tiered amount", note: "" },
+        { name: "Speed / haste", formula: "your speed multiplier includes (tiered value − 1) as an additive bonus", note: "So a tiered value of 1.8 alone means your attacks cost ×1.8 as fast; multiple haste sources (other items, Ourn's boons) stack additively around that." },
+        { name: "Burn", formula: "instant burst = power × burstMult (0.5 default); DOT = ceil(burst / 2) per turn for dotTurns (3 default)", note: "Refreshes to the newest proc rather than stacking — only one burn timer at a time." },
+        { name: "Shock", formula: "instant burst = power × burstMult (1.0 default); stun chance = (burst × stunPer (0.1 default)) / monster level", note: "" },
+        { name: "Thorns", formula: "reflect = round(incoming damage × mult (0.5 default))", note: "Fires back at whatever just hit you." },
+      ],
+    },
+    {
+      title: "Action speed & turn cost",
+      rows: [
+        { name: "Attack cost", formula: "1 / (weapon speed × (1 + total haste) [+1 if a Metrognome is tuned to attack speed])", note: "Lower cost = more actions per monster turn." },
+        { name: "Walk cost", formula: "1 normally, 0.5 with a Metrognome tuned to walk speed", note: "" },
+      ],
+    },
+    {
+      title: "Experience & leveling",
+      rows: [
+        { name: "XP to next level", formula: "threshold = current level × 8", note: "" },
+        { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion/crit/critDmg)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
+        { name: "Monster XP", formula: "ceil(monster's minFloor / 2)", note: "1 XP for a floor 1–2 monster, 2 for floor 3–4, 3 for floor 5+." },
+        { name: "Boss XP", formula: "15 + round(boss's max HP × 0.4)", note: "" },
+      ],
+    },
+    {
+      title: "Identification",
+      rows: [
+        { name: "Uses needed", formula: "idNeed = (tier + plus) × (random 1–10 + rarity rank)", note: "Rarity rank: white 1, green 2, blue 3, purple 4, gold 5. A plain white item with no plus/stats/enchants starts already identified." },
+        { name: "Progress", formula: "gains idXp on use/hits; identified once idXp ≥ idNeed", note: "" },
+      ],
+    },
+    {
+      title: "Loot rolls",
+      rows: [
+        { name: "Rarity", formula: "rolled from the Loot tab's rarity % weights", note: "Overridable by the Guild's Blessing boon." },
+        { name: "+X on a drop", formula: "random(0, ceil(floor / 5))", note: "" },
+        { name: "Affixes by rarity", formula: "white: nothing · green: 1 stat · blue: 1 stat + 1 enchant · purple: 1 stat + 1 enchant + (50/50) another stat or enchant · gold: 2 stats + 2 enchants", note: "Jewelry (ring/trinket/necklace) always gets at least one property even at white — a bare ring is worthless." },
+        { name: "Category / tier / item", formula: "each rolled from the Loot tab's category and tier-by-floor weight tables, then an item within that (category, tier) by its own rarity % (or an even split of whatever's left)", note: "" },
+      ],
+    },
+    {
+      title: "Potions",
+      rows: [
+        { name: "Healing", formula: "total = round(maxHP × (90%–150%)); now = min(total, eff(VIT), missing HP); rest queues as heal-over-time (up to eff(VIT) more per turn)", note: "A big potion doesn't instantly top you off if it outpaces your VIT." },
+        { name: "Strength / Vitality / Intelligence", formula: "flat +1 to the stat", note: "Vitality/Intelligence potions also grant the resulting max HP/MP increase immediately." },
+        { name: "Stone Skin", formula: "40 turns of bonus block, rolled between level/2 and (level + floor + eff(VIT))/2 each hit", note: "" },
+      ],
+    },
+    {
+      title: "Gold",
+      rows: [
+        { name: "Gold pile", formula: "random(2, 12) + depth × 2", note: "" },
+      ],
+    },
+  ];
+  function renderReference() {
+    const wrap = document.createElement("div");
+    wrap.className = "refwrap";
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "reference";
+    bar.appendChild(h); wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "Every formula the engine uses to turn the numbers on the other tabs into what happens in a run. Read-only — this page just explains how things combine; edit the actual values on Monsters, Gear, Classes, Loot, and Enchants.";
+    wrap.appendChild(note);
+    for (const sec of REFERENCE) {
+      const secEl = document.createElement("div"); secEl.className = "csec"; secEl.textContent = sec.title;
+      wrap.appendChild(secEl);
+      const list = document.createElement("div"); list.className = "reflist";
+      for (const row of sec.rows) {
+        const r = document.createElement("div"); r.className = "refrow";
+        const name = document.createElement("div"); name.className = "refname"; name.textContent = row.name;
+        const formula = document.createElement("div"); formula.className = "refformula"; formula.textContent = row.formula;
+        r.appendChild(name); r.appendChild(formula);
+        if (row.note) { const noteEl = document.createElement("div"); noteEl.className = "refnote"; noteEl.textContent = row.note; r.appendChild(noteEl); }
+        list.appendChild(r);
+      }
+      wrap.appendChild(list);
+    }
+    return wrap;
+  }
+
   function renderJson(coll) {
     const wrap = document.createElement("div");
     const bar = document.createElement("div"); bar.className = "collbar";
@@ -1092,7 +1243,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitStyle/exitSprite, door (\"bush\"/\"door\"), final.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), final. The exit always sits embedded in a wall, on every biome — that's not configurable here.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",

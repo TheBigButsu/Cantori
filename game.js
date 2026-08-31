@@ -1146,7 +1146,7 @@
     } else {
       bossActive = false;
       bossRoom = null;
-      placeExit(last);
+      placeExit(rooms, last);
       spawnMonsters(rooms);
     }
     spawnItems(rooms);
@@ -1270,18 +1270,38 @@
 
   // Place the level exit. "wall" style carves a gap in the border trees at the
   // edge of the last clearing (a path onward); otherwise it's stairs in a room.
-  function placeExit(room) {
-    const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2);
-    if (biome.exitStyle === "wall") {
-      const edges = [
-        [cx, room.y - 1], [cx, room.y + room.h],
-        [room.x - 1, cy], [room.x + room.w, cy],
-      ];
-      for (const [x, y] of edges) {
-        if (inBounds(x, y) && map[y][x] === WALL) { map[y][x] = STAIRS; return; }
-      }
+  // The exit always sits embedded in a wall — like a proper archway, never
+  // standing alone in open floor and never punched through a wall so thin
+  // that it's floor on both sides (a corridor right behind it). Scan a room's
+  // boundary ring (corners excluded) for a wall tile that's ALSO flanked by
+  // wall on both its perpendicular sides — a real wall FACE, not just a
+  // single wall pixel. Prefers `room` (the intended host); if that room has
+  // no such spot at all (its whole perimeter shared via doors/attachments),
+  // tries every other room, closest-generated-to-`room` first, before ever
+  // falling back to just standing it in the room's open center.
+  function placeExit(rooms, room) {
+    const flankedSpots = (r) => {
+      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
+      return ring.filter(([x, y]) => {
+        // North/south edge (y outside the room) → flank left/right; east/west edge → flank up/down.
+        const horiz = y < r.y || y >= r.y + r.h;
+        const [fax, fay] = horiz ? [x - 1, y] : [x, y - 1];
+        const [fbx, fby] = horiz ? [x + 1, y] : [x, y + 1];
+        return inBounds(fax, fay) && map[fay][fax] === WALL && inBounds(fbx, fby) && map[fby][fbx] === WALL;
+      });
+    };
+    const pick = (arr) => arr[randInt(0, arr.length - 1)];
+    const order = [room].concat(rooms.filter((r) => r !== room).slice().reverse());
+    for (const r of order) {
+      const flanked = flankedSpots(r);
+      if (flanked.length) { const [x, y] = pick(flanked); map[y][x] = STAIRS; return; }
     }
-    map[cy][cx] = STAIRS;
+    for (const r of order) {
+      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
+      if (ring.length) { const [x, y] = pick(ring); map[y][x] = STAIRS; return; }
+    }
+    // Absolute last resort — every room's whole perimeter is shared (doors/attachments).
+    map[Math.floor(room.y + room.h / 2)][Math.floor(room.x + room.w / 2)] = STAIRS;
   }
 
   // ---- Field of view (recursive shadowcasting) ----------------------------

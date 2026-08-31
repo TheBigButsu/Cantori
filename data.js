@@ -986,7 +986,6 @@ window.CANTORI_DATA = {
         5,
         5
       ],
-      "exitStyle": "wall",
       "exitSprite": "exit_forest",
       "door": "bush",
       "spawnEvery": 25,
