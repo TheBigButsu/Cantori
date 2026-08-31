@@ -1123,16 +1123,22 @@
 
     const rooms = [];
     const attachEdges = [];   // [roomIdx, partnerIdx, doorTile] for attached rooms (doorway, no hall)
+    // Boss floors get bigger, more open "arena" chambers and much more total
+    // room area relative to hallway — the fight (and the boon-choice drop
+    // after it) should read as open room combat, not a corridor skirmish.
+    const bossFloor = isBossDepth(depth);
     // Keep the TOTAL room area about the same as before — the same chambers spread
     // across a big floor, joined by 1-wide winding hallways (or a shared doorway).
-    const roomTarget = 290;   // ~15% less than the old 340, matching the smaller map
+    const roomTarget = bossFloor ? 620 : 290;   // ~15% less than the old 340, matching the smaller map
     let roomArea = 0, guard = 0;
     while (roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
       // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
-      // but kept to the familiar chamber size (~24–60 tiles).
-      let w = randInt(5, 9), h = randInt(4, 8);
+      // but kept to the familiar chamber size (~24–60 tiles) — bigger, arena-scale
+      // on a boss floor.
+      let w, h;
+      if (bossFloor) { w = randInt(9, 14); h = randInt(8, 12); } else { w = randInt(5, 9); h = randInt(4, 8); }
       if (Math.random() < 0.4) { const t = w; w = h; h = t; }
-      if (w * h > 60) continue;
+      if (w * h > (bossFloor ? 170 : 60)) continue;
       // A fraction of rooms are "attached": placed flush against another with just
       // a doorway between (no hallway). Kept under ~half so most rooms are still
       // joined by hallways; the rest are separate.
@@ -1726,6 +1732,32 @@
     while (spots.length < count) spots.push({ x: cx, y: cy });   // fallback: stack if truly cramped
     return spots;
   }
+  // Like distinctNearbySpots, but confined to one room's interior and spread
+  // at least `minSep` tiles apart — for drops where the player needs to see
+  // and reach EVERY spot on its own before committing to any one (a mutually-
+  // exclusive boon choice), rather than being funneled past one to reach the
+  // next in a corridor. Falls back to the radius scatter if the room can't
+  // fit `count` well-separated spots.
+  function distinctRoomSpots(room, count, cx, cy, minSep) {
+    if (room) {
+      const cand = [];
+      for (let y = room.y; y < room.y + room.h; y++) {
+        for (let x = room.x; x < room.x + room.w; x++) {
+          if (!passable(x, y) || map[y][x] === THORN) continue;
+          if (itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
+          cand.push([x, y]);
+        }
+      }
+      for (let i = cand.length - 1; i > 0; i--) { const j = randInt(0, i); const t = cand[i]; cand[i] = cand[j]; cand[j] = t; }
+      const spots = [];
+      for (const [x, y] of cand) {
+        if (spots.some((s) => Math.max(Math.abs(s.x - x), Math.abs(s.y - y)) < minSep)) continue;
+        spots.push({ x, y });
+        if (spots.length >= count) return spots;
+      }
+    }
+    return distinctNearbySpots(cx, cy, 2, count);   // room too small/absent — fall back
+  }
   // Roll a gear item of a specific category (not the usual random-category pick).
   function rollGearOfCat(cat, floor) {
     const tier = _loot.pickTier(floor);
@@ -1742,7 +1774,7 @@
     for (let i = avail.length - 1; i > 0; i--) { const j = randInt(0, i); const t = avail[i]; avail[i] = avail[j]; avail[j] = t; }
     const pick = avail.slice(0, 3);
     const groupId = ++boonGroupSeq;
-    const spots = distinctNearbySpots(x, y, 2, pick.length);
+    const spots = distinctRoomSpots(bossRoom, pick.length, x, y, 3);
     pick.forEach((k, i) => { const s = spots[i]; items.push({ x: s.x, y: s.y, boonKey: k, boonGroup: groupId }); });
     return pick.length;
   }
@@ -4804,7 +4836,7 @@
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0 })),
-        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
+        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault, boonKey: it.boonKey || null, boonGroup: it.boonGroup || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
