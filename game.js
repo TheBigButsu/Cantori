@@ -3412,6 +3412,7 @@
   let invOpen = false;
   function toggleInv(force) {
     invOpen = force === undefined ? !invOpen : force;
+    pendingUpgrade = false;   // opening or closing the pack cancels any in-progress target pick
     if (invOpen) { selectedInvIdx = -1; selectedEquip = null; toggleMap(false); toggleChar(false); toggleExamine(false); renderInv(); }
     document.getElementById("inv").hidden = !invOpen;
     document.getElementById("btnBag").classList.toggle("on", invOpen);
@@ -3430,6 +3431,7 @@
   let selectedInvIdx = -1;
   let selectedEquip = null;    // an equipped slot key selected for its detail/actions
   let pendingThrow = null;
+  let pendingUpgrade = false;  // a Scroll of Upgrade is armed, awaiting a target item
   const EQUIP_ROWS = [["Weapon", "weapon"], ["Armor", "armor"], ["Ring", "ring1"], ["Ring", "ring2"], ["Trinket", "trinket"], ["Necklace", "necklace"]];
   const entryDef = (e) => (isGear(e) ? GEAR[e.key] : CONSUM[e.key]);
   const entryGlyph = (e) => { const d = entryDef(e); return (d && d.glyph) || "?"; };
@@ -3497,6 +3499,24 @@
   const mkBtn = (label, cls, fn) => { const b = document.createElement("button"); if (cls) b.className = cls; b.textContent = label; b.addEventListener("click", fn); return b; };
   function renderInvDetail() {
     const d = document.getElementById("invDetail");
+    // A Scroll of Upgrade is armed → the next equipped slot or gear item tapped
+    // is the candidate; show it with a Confirm/Cancel prompt instead of its
+    // normal actions, and consume nothing until Confirm is pressed.
+    if (pendingUpgrade) {
+      const target = selectedEquip ? player[selectedEquip] : (isGear(player.inv[selectedInvIdx]) ? player.inv[selectedInvIdx] : null);
+      const acts = document.createElement("div"); acts.className = "inv-actions";
+      if (!target) {
+        d.innerHTML = '<div class="d-empty">Choose an equipped weapon, armor, ring, trinket, or necklace to upgrade.</div>';
+        acts.appendChild(mkBtn("Cancel", "danger", () => { pendingUpgrade = false; renderInv(); }));
+        d.appendChild(acts);
+        return;
+      }
+      d.innerHTML = detailHeaderHTML(target) + `<div class="d-sub" style="margin-top:6px">Upgrade to +${(target.plus || 0) + 1}?</div>`;
+      acts.appendChild(mkBtn("Confirm", "primary", () => confirmUpgrade(target)));
+      acts.appendChild(mkBtn("Cancel", "danger", () => { pendingUpgrade = false; selectedInvIdx = -1; selectedEquip = null; renderInv(); }));
+      d.appendChild(acts);
+      return;
+    }
     // An equipped slot is selected → show it, with Unequip / Drop.
     if (selectedEquip && player[selectedEquip]) {
       const e = player[selectedEquip];
@@ -3545,7 +3565,30 @@
     const it = player.inv[idx];
     if (!it) return;
     if (isGear(it)) equipItem(idx);
+    else if (CONSUM[it.key] && CONSUM[it.key].effect === "upgrade_item") beginUpgrade();
     else useConsumable(idx);
+  }
+  // Scroll of Upgrade: arms target-picking mode instead of applying at once —
+  // the next equipped slot or inventory gear item tapped becomes the candidate,
+  // shown with a Confirm/Cancel prompt in the detail panel (see renderInvDetail).
+  function beginUpgrade() {
+    pendingUpgrade = true;
+    selectedInvIdx = -1; selectedEquip = null;
+    log("Scroll of Upgrade — choose an equipped weapon, armor, ring, trinket, or necklace.");
+    renderInv();
+  }
+  function confirmUpgrade(target) {
+    target.plus = (target.plus || 0) + 1;
+    const sIdx = player.inv.findIndex((i) => i.key === "scroll_upgrade");   // re-found by key: robust to any index drift
+    if (sIdx >= 0) takeOne(sIdx);
+    log("The scroll's magic seeps into your " + itemName(target) + ". (+" + target.plus + ")", "hit");
+    floatText(player.x, player.y, "+1", "#f0c14b");
+    pendingUpgrade = false;
+    selectedInvIdx = -1; selectedEquip = null;
+    updateHUD();
+    worldTurn();
+    if (dead) { toggleInv(false); return; }
+    renderInv();
   }
   function equipItem(idx) {
     const it = player.inv[idx];
@@ -3704,13 +3747,6 @@
         log("It was poison! (-" + amt + ")", "hurt");
         if (player.hp <= 0) die();
       }
-    } else if (fx === "upgrade_item") {
-      const target = player.weapon || player.armor || wornItems()[0];
-      if (!target) { log("You have nothing equipped — the scroll's magic fizzles.", "hurt"); }
-      else {
-        target.plus = (target.plus || 0) + 1;
-        log("The scroll's magic seeps into your " + itemName(target) + ". (+" + target.plus + ")", "hit");
-      }
     } else if (fx === "map") {
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
       log("The layout of this level floods into your mind.");
@@ -3796,7 +3832,7 @@
     } },
     anger_of_kethara: { boon: "anger", skill: {
       name: "Anger of Kethara", icon: "😡", kind: "angercast", max: 1, ranks: [{}],
-      levels: ["Tap a foe — berserk it for 100 turns; it turns on whatever's nearest, not just you. Cooldown 100 − RES."],
+      levels: ["Tap a foe — berserk it for 10 turns; it turns on whatever's nearest, not just you. Cooldown 100 − RES."],
       desc: "Send a foe into a berserk rage against everything around it.",
     } },
   };
@@ -3931,10 +3967,8 @@
     updateHotbar();
     worldTurn();
   }
-  // Kethara's Anger of Kethara: berserk a targeted monster for 100 turns (this
-  // project's turn-count reading of the spec's "10 hours" — 1 hour = 10 turns,
-  // matching the golem's other tens-of-turns telegraphs/cooldowns).
-  const ANGER_TURNS = 100;
+  // Kethara's Anger of Kethara: berserk a targeted monster for 10 turns.
+  const ANGER_TURNS = 10;
   function executeAngerOfKethara(key, tx, ty) {
     pendingSkill = null;
     const m = monsterAt(tx, ty);
@@ -4402,6 +4436,9 @@
     },
     useIdx: (i) => actItem(i),
     equip: (i) => equipItem(i),
+    upgradePending: () => pendingUpgrade,
+    confirmUpgradeOn: (slotKey) => { if (pendingUpgrade && player[slotKey]) confirmUpgrade(player[slotKey]); },
+    cancelUpgrade: () => { pendingUpgrade = false; },
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
     forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },
     golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? golemShield(g) : 0; },
