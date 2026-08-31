@@ -1129,17 +1129,17 @@ window.CANTORI_DATA = {
             "req": []
           },
           {
-            "name": "Axe Master",
-            "key": "axe_master",
-            "icon": "🪓",
+            "name": "Sword Master",
+            "key": "sword_master",
+            "icon": "⚔",
             "kind": "passive",
-            "when": "axe",
-            "desc": "Mastery of the axe — passive bonuses that apply while an axe is equipped.",
+            "when": "sword",
+            "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
             "levels": [
-              "+1 damage for axes",
-              "+2 damage for axes",
-              "+4 damage for axes",
-              "+6 damage and +15 accuracy for axes"
+              "+1 damage for swords",
+              "+2 damage for swords",
+              "+4 damage for swords",
+              "+6 damage and +15 accuracy for swords"
             ],
             "ranks": [
               {

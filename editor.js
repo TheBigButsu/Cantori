@@ -615,7 +615,7 @@
     // 5×5 skill tree (Diablo-style: cells are a skill or a blank space)
     const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 slots"; wrap.appendChild(th);
     const tnote = document.createElement("p"); tnote.className = "hint";
-    tnote.textContent = "Leave slots blank to shape the tree. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first), and a wiring row: key (engine id), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Axe Master are fully wired examples.";
+    tnote.textContent = "Leave slots blank to shape the tree. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first), and a wiring row: key (engine id), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Sword Master are fully wired examples.";
     wrap.appendChild(tnote);
     const allSkills = [];   // gather named skills for the prereq picker
     for (let t = 0; t < TIERS; t++) for (let s = 0; s < SLOTS; s++) { const c = o.skillTree[t][s]; if (c && c.name) allSkills.push({ t, s, name: c.name }); }
