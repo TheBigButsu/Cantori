@@ -858,6 +858,7 @@
       rows: [
         { name: "Effective stat", formula: "eff(stat) = player.stats[stat] + gear affix bonus", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
         { name: "STR → damage", formula: "strBonus = max(0, floor((eff(STR) − weapon's STR requirement) / 4))", note: "Flat bonus added to every weapon hit. A weapon with no STR requirement (or being unarmed) always grants the full bonus." },
+        { name: "Stat requirements", formula: "every stat in an item's `req` (Gear tab) must be met by eff(stat) or it can't be equipped at all", note: "A hard gate, not a soft penalty — e.g. Chain Mail's req.STR 15 blocks equipping below 15 STR outright." },
         { name: "VIT → HP", formula: "+1 max HP per point", note: "Via computeMaxHp() below." },
         { name: "DEX → acc/eva/crit", formula: "+1 accuracy, +1 evasion, +1% crit chance per point", note: "" },
         { name: "INT → MP", formula: "+1 max MP per point", note: "Via computeMaxMp() below." },
@@ -970,6 +971,15 @@
       title: "Gold",
       rows: [
         { name: "Gold pile", formula: "random(2, 12) + depth × 2", note: "" },
+      ],
+    },
+    {
+      title: "Merchant floor",
+      rows: [
+        { name: "When it appears", formula: "inserted right after every non-final boss kill, before the next biome's floor 1", note: "A peaceful, monster-free floor — doesn't consume a depth number." },
+        { name: "Sell price", formula: "gearTier(item) × 2 gold", note: "Gear only, from your pack (not equipped slots). Flat — rarity/plus/enchants don't change it." },
+        { name: "Potion price", formula: "20 gold flat", note: "3 stock slots, any potion except Insight; a slot restocks the instant it's bought." },
+        { name: "Fountain full heal", formula: "(biome index + 1) × 20 gold", note: "20g after Forest, 40g after Caves, and so on." },
       ],
     },
   ];

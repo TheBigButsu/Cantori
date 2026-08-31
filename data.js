@@ -1494,63 +1494,6 @@ window.CANTORI_DATA = {
         ]
       ]
     },
-    "warden": {
-      "name": "Warden",
-      "main": "VIT",
-      "secondary": "STR",
-      "unlock": "town",
-      "start": {
-        "weapon": "big axe",
-        "armor": "chain"
-      },
-      "blurb": "Immovable. Trades speed for raw durability.",
-      "stats": {
-        "STR": 5,
-        "INT": 5,
-        "VIT": 5,
-        "DEX": 5,
-        "RES": 5,
-        "LCK": 5
-      },
-      "levelUp": {},
-      "skillTree": [
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
-      ]
-    }
   },
   "gods": {
     "kethara": {

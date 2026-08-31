@@ -491,6 +491,39 @@ body{
   letter-spacing:.08em;
 }
 
+/* Merchant floor: shopkeeper (buy/sell) + fountain (full heal) */
+#shop{
+  position:fixed;inset:0;z-index:19;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  background:rgba(6,4,2,.82);
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+}
+#shop[hidden]{display:none}
+#shop .inv-card{max-height:88vh;overflow-y:auto}
+.shop-section{margin-top:14px}
+.shop-label{color:var(--amber);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.shop-stock,.shop-sell{display:flex;flex-direction:column;gap:6px}
+.shop-row{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:9px;background:#0c0905;
+  cursor:pointer;-webkit-user-select:none;user-select:none;
+}
+.shop-row:active{background:rgba(240,168,56,.12)}
+.shop-row[disabled],.shop-row.disabled{opacity:.45;cursor:default;pointer-events:none}
+.shop-row .s-ic{flex:none;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:#15110b;border-radius:6px}
+.shop-row .s-ic canvas{width:24px;height:24px;image-rendering:pixelated}
+.shop-row .s-name{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shop-row .s-price{flex:none;color:#f0c14b;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.shop-empty{color:var(--ink-dim);font-size:12px;padding:6px 2px}
+
+#fountain{
+  position:fixed;inset:0;z-index:19;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(6,4,2,.88);
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+}
+#fountain[hidden]{display:none}
+
 /* Death / victory screens */
 #gameover, #win{
   position:fixed;

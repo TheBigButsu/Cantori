@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css?v=73">
+  <link rel="stylesheet" href="./styles.css?v=74">
 </head>
 <body>
   <div id="app">
@@ -91,6 +91,35 @@
     </div>
   </div>
 
+  <div id="shop" hidden>
+    <div class="inv-card">
+      <div class="inv-head">
+        <span>MERCHANT</span>
+        <span class="inv-head-right">
+          <span id="shopGold">0 gold</span>
+          <button id="shopClose" type="button" aria-label="Close">✕</button>
+        </span>
+      </div>
+      <div class="shop-section">
+        <div class="shop-label">For Sale — tap to buy</div>
+        <div class="shop-stock" id="shopStock"></div>
+      </div>
+      <div class="shop-section">
+        <div class="shop-label">Sell Your Gear — tap to sell</div>
+        <div class="shop-sell" id="shopSell"></div>
+      </div>
+      <div class="inv-hint">✕ to leave the merchant</div>
+    </div>
+  </div>
+
+  <div id="fountain" hidden>
+    <div class="go-card">
+      <div class="go-title">FOUNTAIN</div>
+      <div class="go-sub" id="fountainSub"></div>
+      <div class="inv-actions" id="fountainActions" style="justify-content:center;margin-top:10px"></div>
+    </div>
+  </div>
+
   <div id="classSelect" hidden>
     <div class="boon-card">
       <div class="boon-title">CHOOSE YOUR HERO</div>
@@ -123,8 +152,8 @@
     </div>
   </div>
 
-  <script src="./data.js?v=73"></script>
-  <script src="./loot.js?v=73"></script>
-  <script src="./game.js?v=73"></script>
+  <script src="./data.js?v=74"></script>
+  <script src="./loot.js?v=74"></script>
+  <script src="./game.js?v=74"></script>
 </body>
 </html>

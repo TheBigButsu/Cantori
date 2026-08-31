@@ -50,6 +50,18 @@
   const floorInBiome = (d) => ((d - 1) % 5) + 1;
   const isBossDepth = (d) => floorInBiome(d) === 5;
 
+  // ---- Merchant floor: a peaceful, monster-free floor inserted after every
+  // boss kill (doesn't consume a depth number — `depth` stays put while it's
+  // visited, so biome/floor math is untouched). A shopkeeper buys gear from
+  // your pack and sells 3 auto-restocking potions; a fountain sells a full heal.
+  let inShop = false;
+  let shopKeeper = null;     // {x, y} — wall-mounted, like a torch
+  let fountain = null;       // {x, y} — wall-mounted, like a torch
+  let shopStock = [];        // 3 potion keys currently for sale
+  let shopHealCost = 0;      // gold cost of the fountain's full heal, fixed for this shop visit
+  const SHOP_POTION_PRICE = 20;
+  const sellPrice = (inst) => gearTier(inst.key) * 2;
+
   // Stats → effects (INT / RES / LCK come later)
   const UNARMED_MIN = 2, UNARMED_MAX = 3;
   const HP_BASE = 13, HP_PER_VIT = 1;     // 1 point of VIT = 1 HP (warrior: 13 + VIT ≈ 20)
@@ -59,6 +71,14 @@
   const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
+  // Stat requirements (e.g. armor/weapon req.STR) gate whether a piece can be
+  // equipped at all — met once every listed stat is at or above its threshold.
+  const gearReqUnmet = (inst) => {
+    const req = inst && GEAR[inst.key] && GEAR[inst.key].req;
+    if (!req) return null;
+    for (const stat of Object.keys(req)) if (eff(stat) < req[stat]) return { stat, need: req[stat], have: eff(stat) };
+    return null;
+  };
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseHp != null ? cls.baseHp : HP_BASE) + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0); };
   // maxMp = INT-based mana (1 point of INT = 1 MP) + flat per-level MP from the class's levelUp set
@@ -458,6 +478,17 @@
     if (!pool.length) return CONSUM_KEYS[0];
     // Honour each consumable's `weight` (default 1) so authored rarity matters —
     // e.g. healing common, the newer specialty potions rarer.
+    let total = 0; for (const k of pool) total += Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1);
+    if (total <= 0) return pool[randInt(0, pool.length - 1)];
+    let r = Math.random() * total;
+    for (const k of pool) { r -= Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1); if (r <= 0) return k; }
+    return pool[pool.length - 1];
+  }
+  // The merchant's stock: any potion except Potion of Insight (that one's earned,
+  // never bought), same weight-honouring pick as floor loot.
+  function weightedShopPotionKey() {
+    const pool = CONSUM_KEYS.filter((k) => CONSUM[k].cat === "potion" && k !== "skill_point");
+    if (!pool.length) return null;
     let total = 0; for (const k of pool) total += Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1);
     if (total <= 0) return pool[randInt(0, pool.length - 1)];
     let r = Math.random() * total;
@@ -1215,6 +1246,53 @@
     updateHUD();       // vitals + enemy counter reflect the new floor at once
   }
 
+  // A small, single-room, monster-free floor: no fight, just a shopkeeper and a
+  // fountain built into the walls (exactly like a torch bracket) and stairs
+  // onward. `depth`/`biome` are left untouched by the caller, so this floor
+  // still reads (and renders) as belonging to the biome just cleared.
+  function generateShopLevel() {
+    map = blankGrid(WALL);
+    explored = blankGrid(false);
+    beenSeen = blankGrid(false);
+    visible = blankGrid(false);
+    torches = [];
+    walkPath = [];
+    monsters = [];
+    items = [];
+    traps = [];
+    turns = 0;
+    bossActive = false;
+    bossRoom = null;
+
+    const w = 15, h = 9;
+    const x = Math.floor((MAP_W - w) / 2), y = Math.floor((MAP_H - h) / 2);
+    const room = { x, y, w, h };
+    carveRoom(room);
+    lastRooms = [room]; lastAttach = 0;
+
+    player.x = x + 1;
+    player.y = y + Math.floor(h / 2);
+    map[y + Math.floor(h / 2)][x + w - 2] = STAIRS;
+    shopKeeper = { x: x + 4, y: y - 1 };
+    fountain = { x: x + w - 5, y: y - 1 };
+    shopStock = [weightedShopPotionKey(), weightedShopPotionKey(), weightedShopPotionKey()];
+    shopHealCost = (biomeOf(depth) + 1) * 20;
+
+    genStats = computeFill([room]);
+    computeFOV();
+    setDepthLabel();
+    floaters = [];
+    speeches = [];
+    projectiles = [];
+    bursts = [];
+    streaks = [];
+    spirals = [];
+    pendingNodeBlasts = [];
+    screenFlash = null;
+    snapPlayer();
+    updateHUD();
+  }
+
   // ---- Monster & boss factories -------------------------------------------
   function makeMonster(type, x, y) {
     // copy the whole template so ability flags (evasion/charge/ranged/range) carry over
@@ -1461,6 +1539,7 @@
     const el = document.getElementById("depthLabel");
     if (!el) return;
     const b = DATA.biomes[biomeOf(depth)];
+    if (inShop) { el.textContent = b.name + "  —  Merchant"; return; }
     el.textContent = b.name + "  " + floorInBiome(depth) + "/5" + (isBossDepth(depth) ? "  ⚔" : "");
   }
 
@@ -2053,6 +2132,21 @@
   }
 
   function descend() {
+    if (inShop) {   // leaving the merchant floor — now actually advance to the next depth
+      inShop = false;
+      shopKeeper = null; fountain = null; shopStock = [];
+      depth++;
+      setDepthLabel();
+      generateLevel();
+      log("You descend to depth " + depth + ".");
+      return;
+    }
+    if (isBossDepth(depth)) {   // stairs out of a just-cleared boss room lead to the merchant first
+      inShop = true;
+      generateShopLevel();
+      log("You find a merchant's den.");
+      return;
+    }
     depth++;
     setDepthLabel();
     generateLevel();
@@ -2077,6 +2171,8 @@
     dead = false;
     depth = 1;
     turnMeter = 5; lastActionCost = 1;
+    inShop = false; shopKeeper = null; fountain = null; shopStock = [];
+    toggleShop(false); toggleFountain(false);
     resetPlayer();
     setDepthLabel();
     updateHUD();
@@ -2846,6 +2942,20 @@
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
     const adjacent = cheb(player.x, player.y, tx, ty) === 1;
+    // tap the shopkeeper or fountain (merchant floor only, wall-mounted like a
+    // torch) — adjacent opens their UI directly; otherwise walk up to them first.
+    if (shopKeeper && shopKeeper.x === tx && shopKeeper.y === ty) {
+      if (adjacent) { toggleShop(true); return; }
+      const spot = adjacentReachableFloor(tx, ty);
+      if (spot) { const path = findPath(player.x, player.y, spot.x, spot.y); if (path.length) { walkPath = path; return; } }
+      return;
+    }
+    if (fountain && fountain.x === tx && fountain.y === ty) {
+      if (adjacent) { toggleFountain(true); return; }
+      const spot = adjacentReachableFloor(tx, ty);
+      if (spot) { const path = findPath(player.x, player.y, spot.x, spot.y); if (path.length) { walkPath = path; return; } }
+      return;
+    }
     // tap a wall torch to take it — if it's not adjacent, walk to a tile beside it
     // and lift it automatically on arrival (torches sit on wall tiles, so we can't
     // path onto the torch itself).
@@ -3150,6 +3260,38 @@
     ctx.fillStyle = shade("#ffe08a", b);
     ctx.fill();
   }
+  // The shopkeeper: a robed figure standing in a recessed wall alcove, same
+  // "built into the wall" convention as a torch bracket.
+  function drawShopkeeper(px, py, b) {
+    const cx = px + tile / 2, cy = py + tile * 0.62;
+    ctx.fillStyle = "rgba(10,7,4,0.35)";
+    ctx.fillRect(px + tile * 0.1, py, tile * 0.8, tile);
+    // robe
+    ctx.beginPath();
+    ctx.moveTo(cx, py + tile * 0.30);
+    ctx.lineTo(cx + tile * 0.24, py + tile * 0.92);
+    ctx.lineTo(cx - tile * 0.24, py + tile * 0.92);
+    ctx.closePath();
+    ctx.fillStyle = shade("#8a5a3c", b);
+    ctx.fill();
+    // head
+    ctx.beginPath(); ctx.arc(cx, py + tile * 0.24, tile * 0.14, 0, Math.PI * 2);
+    ctx.fillStyle = shade("#e0b888", b); ctx.fill();
+    // a gold coin glint (marks it as the merchant, not just any figure)
+    ctx.beginPath(); ctx.arc(cx + tile * 0.16, cy - tile * 0.02, tile * 0.06, 0, Math.PI * 2);
+    ctx.fillStyle = shade("#f0c14b", b); ctx.fill();
+  }
+  // A fountain: a stone basin with a gently bobbing water surface.
+  function drawFountain(px, py, b, now) {
+    const cx = px + tile / 2, cy = py + tile * 0.62;
+    const bob = Math.sin(now / 400 + (px + py)) * tile * 0.02;
+    ctx.fillStyle = shade("#6a6a72", b);
+    ctx.beginPath(); ctx.ellipse(cx, cy, tile * 0.32, tile * 0.20, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = shade("#7ec8d8", b);
+    ctx.beginPath(); ctx.ellipse(cx, cy + bob, tile * 0.24, tile * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = shade("#c8d8dc", b); ctx.lineWidth = Math.max(1, tile * 0.05);
+    ctx.beginPath(); ctx.ellipse(cx, cy + bob, tile * 0.24, tile * 0.13, 0, 0, Math.PI * 2); ctx.stroke();
+  }
   // A discovered trap: a dark plate + a coloured ring so it reads at a glance, with
   // a distinct icon per type — a live spiral (teleport), an arrow, or a bomb whose
   // fuse shows its countdown while armed.
@@ -3417,6 +3559,13 @@
       if (!inBounds(tr.x, tr.y) || !explored[tr.y][tr.x]) continue;
       const vis = visible[tr.y][tr.x];
       drawTorch(SX(tr.x), SY(tr.y), vis ? litBright(tr.x, tr.y) : MEM, now);
+    }
+    // merchant floor fixtures (wall-mounted, same convention as torches)
+    if (shopKeeper && inBounds(shopKeeper.x, shopKeeper.y) && explored[shopKeeper.y][shopKeeper.x]) {
+      drawShopkeeper(SX(shopKeeper.x), SY(shopKeeper.y), visible[shopKeeper.y][shopKeeper.x] ? litBright(shopKeeper.x, shopKeeper.y) : MEM);
+    }
+    if (fountain && inBounds(fountain.x, fountain.y) && explored[fountain.y][fountain.x]) {
+      drawFountain(SX(fountain.x), SY(fountain.y), visible[fountain.y][fountain.x] ? litBright(fountain.x, fountain.y) : MEM, now);
     }
 
     // route markers
@@ -3721,6 +3870,109 @@
     document.getElementById("inv").hidden = !invOpen;
     document.getElementById("btnBag").classList.toggle("on", invOpen);
   }
+
+  // ---- Merchant floor: shopkeeper (buy/sell) + fountain (full heal) --------
+  let shopOpen = false;
+  let fountainOpen = false;
+  function toggleShop(force) {
+    shopOpen = force === undefined ? !shopOpen : force;
+    if (shopOpen) { toggleMap(false); toggleChar(false); toggleInv(false); toggleExamine(false); renderShop(); }
+    const el = document.getElementById("shop");
+    if (el) el.hidden = !shopOpen;
+  }
+  function renderShop() {
+    document.getElementById("shopGold").textContent = player.gold + " gold";
+    const stockHost = document.getElementById("shopStock");
+    stockHost.innerHTML = "";
+    const potions = shopStock.filter(Boolean);
+    if (!potions.length) stockHost.innerHTML = '<div class="shop-empty">Sold out.</div>';
+    shopStock.forEach((key, i) => {
+      if (!key) return;
+      const def = CONSUM[key];
+      const row = document.createElement("div");
+      row.className = "shop-row";
+      const canAfford = player.gold >= SHOP_POTION_PRICE && player.inv.length < INV_MAX;
+      if (!canAfford) row.classList.add("disabled");
+      const ic = document.createElement("span"); ic.className = "s-ic";
+      const cv = document.createElement("canvas"); cv.width = 48; cv.height = 48;
+      const cc = cv.getContext("2d"); cc.imageSmoothingEnabled = false;
+      drawGlyphInto(cc, 0, 0, 48, def.glyph || "!", def.color || "#cfc3a0");
+      ic.appendChild(cv);
+      const nm = document.createElement("span"); nm.className = "s-name"; nm.textContent = def.name;
+      const pr = document.createElement("span"); pr.className = "s-price"; pr.textContent = SHOP_POTION_PRICE + "g";
+      row.appendChild(ic); row.appendChild(nm); row.appendChild(pr);
+      row.addEventListener("click", () => buyPotion(i));
+      stockHost.appendChild(row);
+    });
+    const sellHost = document.getElementById("shopSell");
+    sellHost.innerHTML = "";
+    const sellable = [];
+    player.inv.forEach((it, i) => { if (isGear(it)) sellable.push({ it, i }); });
+    if (!sellable.length) sellHost.innerHTML = '<div class="shop-empty">Nothing in your pack to sell.</div>';
+    for (const { it, i } of sellable) {
+      const row = document.createElement("div");
+      row.className = "shop-row";
+      const ic = document.createElement("span"); ic.className = "s-ic";
+      const cv = document.createElement("canvas"); cv.width = 48; cv.height = 48;
+      const cc = cv.getContext("2d"); cc.imageSmoothingEnabled = false;
+      renderIconInto(cc, 0, 0, 48, it);
+      ic.appendChild(cv);
+      const nm = document.createElement("span"); nm.className = "s-name"; nm.textContent = itemName(it);
+      const pr = document.createElement("span"); pr.className = "s-price"; pr.textContent = sellPrice(it) + "g";
+      row.appendChild(ic); row.appendChild(nm); row.appendChild(pr);
+      row.addEventListener("click", () => sellGear(i));
+      sellHost.appendChild(row);
+    }
+  }
+  function buyPotion(slot) {
+    const key = shopStock[slot];
+    if (!key) return;
+    if (player.gold < SHOP_POTION_PRICE) { log("Not enough gold."); return; }
+    if (!invAdd({ key, count: 1 })) { log("Your pack is full."); return; }
+    player.gold -= SHOP_POTION_PRICE;
+    log("You buy a " + CONSUM[key].name + ".");
+    shopStock[slot] = weightedShopPotionKey();   // the stall restocks the slot immediately
+    renderShop();
+    updateHUD();
+  }
+  function sellGear(idx) {
+    const it = player.inv[idx];
+    if (!it || !isGear(it)) return;
+    const price = sellPrice(it);
+    player.gold += price;
+    player.inv.splice(idx, 1);
+    log("You sell the " + itemName(it) + " for " + price + " gold.");
+    renderShop();
+    updateHUD();
+  }
+  function toggleFountain(force) {
+    fountainOpen = force === undefined ? !fountainOpen : force;
+    if (fountainOpen) { toggleMap(false); toggleChar(false); toggleInv(false); toggleExamine(false); toggleShop(false); renderFountain(); }
+    const el = document.getElementById("fountain");
+    if (el) el.hidden = !fountainOpen;
+  }
+  function renderFountain() {
+    const sub = document.getElementById("fountainSub");
+    const acts = document.getElementById("fountainActions");
+    acts.innerHTML = "";
+    if (player.hp >= player.maxHp) {
+      sub.textContent = "The water shimmers, but you're already at full health.";
+    } else {
+      sub.textContent = "Drink for a full heal — " + shopHealCost + " gold?";
+      const buy = mkBtn("Drink (" + shopHealCost + "g)", "primary", useFountain);
+      if (player.gold < shopHealCost) buy.disabled = true;
+      acts.appendChild(buy);
+    }
+    acts.appendChild(mkBtn("Leave", "", () => toggleFountain(false)));
+  }
+  function useFountain() {
+    if (player.gold < shopHealCost || player.hp >= player.maxHp) return;
+    player.gold -= shopHealCost;
+    player.hp = player.maxHp;
+    log("You drink from the fountain and feel fully restored.", "hit");
+    updateHUD();
+    toggleFountain(false);
+  }
   function playerAtk() {
     const b = strBonus() + player.atkBonus;
     return (weaponDmgMin() + b) + "–" + (weaponDmgMax() + b);
@@ -3835,10 +4087,13 @@
     const e = player.inv[selectedInvIdx];
     if (!e) { d.innerHTML = '<div class="d-empty">Tap an item, or an equipped slot, to see its actions.</div>'; return; }
     const def = entryDef(e) || {};
-    d.innerHTML = detailHeaderHTML(e);
+    const unmet = isGear(e) ? gearReqUnmet(e) : null;
+    d.innerHTML = detailHeaderHTML(e) + (unmet ? `<div class="d-sub" style="color:#e0705a">Requires ${unmet.need} ${unmet.stat} (have ${unmet.have})</div>` : "");
     const acts = document.createElement("div"); acts.className = "inv-actions";
     const other = isGear(e) ? "Equip" : def.cat === "potion" ? "Drink" : def.cat === "scroll" ? "Read" : "Use";
-    acts.appendChild(mkBtn(other, "primary", () => actItem(selectedInvIdx)));
+    const eqBtn = mkBtn(other, "primary", () => actItem(selectedInvIdx));
+    if (unmet) { eqBtn.disabled = true; eqBtn.style.opacity = "0.5"; }
+    acts.appendChild(eqBtn);
     acts.appendChild(mkBtn("Throw", "", () => beginThrow(selectedInvIdx)));
     acts.appendChild(mkBtn("Drop", "danger", () => dropItem(selectedInvIdx)));
     d.appendChild(acts);
@@ -3901,6 +4156,8 @@
   function equipItem(idx) {
     const it = player.inv[idx];
     if (!it || !isGear(it)) return;
+    const unmet = gearReqUnmet(it);
+    if (unmet) { log("You need " + unmet.need + " " + unmet.stat + " to use the " + itemName(it) + " (have " + unmet.have + ")."); return; }
     const cat = GEAR[it.key].cat;
     const slots = EQUIP_SLOTS[cat] || ["weapon"];
     const slot = slots.find((s) => !player[s]) || slots[0];   // first empty slot, else swap the first
@@ -4486,6 +4743,8 @@
     }
     const torch = torches.find((tr) => tr.x === x && tr.y === y);
     if (torch) { log("A wall torch — tap it to take it; fire clears thorns."); return; }
+    if (shopKeeper && shopKeeper.x === x && shopKeeper.y === y) { log("A merchant — tap to buy potions or sell your gear."); return; }
+    if (fountain && fountain.x === x && fountain.y === y) { log("A fountain — tap to pay for a full heal."); return; }
     const t = map[y][x];
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
@@ -4657,6 +4916,8 @@
   window.addEventListener("keydown", (e) => {
     if (dead) { if (e.key === "Enter" || e.key === " ") beginNewRun(); return; }
     if (boonPending || classPending) return;      // choose your boon/character first
+    if (shopOpen) { if (e.key === "Escape") toggleShop(false); return; }
+    if (fountainOpen) { if (e.key === "Escape") toggleFountain(false); return; }
     const key = (e.key || "").toLowerCase();
     if (key === "c") { e.preventDefault(); toggleChar(); return; }
     if (charOpen) { if (e.key === "Escape" || key === "c") toggleChar(false); return; }
@@ -4688,13 +4949,18 @@
   { const en = document.getElementById("enemies"); if (en) en.addEventListener("click", cycleEnemyFocus); }
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return; walkPath = []; worldTurn(); }
+  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
   const invOverlay = document.getElementById("inv");
   invOverlay.addEventListener("click", (e) => { if (e.target === invOverlay) toggleInv(false); });
   document.getElementById("invClose").addEventListener("click", () => toggleInv(false));
+
+  // merchant floor: shop card + fountain confirm, tap-outside closes either
+  { const el = document.getElementById("shop"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleShop(false); }); }
+  { const el = document.getElementById("shopClose"); if (el) el.addEventListener("click", () => toggleShop(false)); }
+  { const el = document.getElementById("fountain"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleFountain(false); }); }
 
   // character screen: tabs, close, tap-outside
   document.getElementById("charClose").addEventListener("click", () => toggleChar(false));
@@ -4783,11 +5049,14 @@
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
     descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart, beginNewRun,
+    toggleShop, toggleFountain, buyPotion: (i) => buyPotion(i), sellGear: (i) => sellGear(i), useFountain: () => useFountain(),
     pickClass: (key) => { if (classSelectCb) classSelectCb(key); },
     classRoster: () => Object.keys(DATA.classes || {}).filter((k) => DATA.classes[k].unlock === "start"),
     dname: (k) => displayName(k), dcolor: (k) => consumColor(k),
     stoneSkinTurns: () => (player.stoneSkin ? player.stoneSkin.turns : 0),
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
+    setGold: (n) => { player.gold = n; updateHUD(); },
+    setStat: (k, v) => { if (player.stats[k] != null) player.stats[k] = v; updateHUD(); },
     give: (k) => { if (GEAR[k]) invAdd(rollItem(k, depth)); else if (defOf(k)) invAdd({ key: k }); },
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
@@ -4832,6 +5101,9 @@
         x: player.x, y: player.y, dead, explored: ex, stun: player.stun || 0,
         camX, camY, panX, panY,
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
+        inShop, shopKeeper: shopKeeper ? { x: shopKeeper.x, y: shopKeeper.y } : null,
+        fountain: fountain ? { x: fountain.x, y: fountain.y } : null,
+        shopStock: shopStock.slice(), shopHealCost, shopOpen, fountainOpen,
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
