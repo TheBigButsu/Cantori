@@ -230,19 +230,25 @@
   // Copy an item instance without its map position (for pack/equip moves).
   function stripPos(it) { const o = Object.assign({}, it); delete o.x; delete o.y; delete o.amount; return o; }
 
-  // Effective numbers for an instance (base + plus).
-  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (inst.plus || 0);
-  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + (inst.plus || 0);
+  // Effective numbers for an instance (base + plus). A weapon/armor's +X scales
+  // with its tier: min rises by (tier-1) per point, max by tier*2 per point — so
+  // a tier-1 item's +1 is worth +0~2 and a tier-2 item's +1 is worth +1~4.
+  const gearTier = (key) => GEAR[key].tier || 1;
+  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (gearTier(inst.key) - 1) * (inst.plus || 0);
+  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + gearTier(inst.key) * 2 * (inst.plus || 0);
   // Armor blocks a random amount each hit, rolled between defMin and defMax. A
-  // legacy flat `def` still works — it becomes both ends of the range.
+  // legacy flat `def` still works — it becomes both ends of the range. Its +X
+  // scales the same way as weapon damage, by tier.
   const baseDefMin = (key) => { const g = GEAR[key]; return g.defMin != null ? g.defMin : (g.def || 0); };
   const baseDefMax = (key) => { const g = GEAR[key]; return g.defMax != null ? g.defMax : (g.def != null ? g.def : (g.defMin || 0)); };
-  const gDefMin = (inst) => baseDefMin(inst.key) + (inst.plus || 0);
-  const gDefMax = (inst) => baseDefMax(inst.key) + (inst.plus || 0);
+  const gDefMin = (inst) => baseDefMin(inst.key) + (gearTier(inst.key) - 1) * (inst.plus || 0);
+  const gDefMax = (inst) => baseDefMax(inst.key) + gearTier(inst.key) * 2 * (inst.plus || 0);
   const gDef = (inst) => gDefMax(inst);   // top-end block (enchant power, parallels weapon dmgMax)
+  // A stat affix's +X is additive-triangular: +1 = 1, +2 = 1+2 = 3, +3 = 1+2+3 = 6…
+  const triangular = (n) => (n * (n + 1)) / 2;
   const gStatBonus = (inst, statKey) => {
     let n = 0;
-    for (const s of inst.stats || []) if (s.stat === statKey) n += s.val + (inst.plus || 0);
+    for (const s of inst.stats || []) if (s.stat === statKey) n += s.val + triangular(inst.plus || 0);
     return n;
   };
   // Sum a stat bonus across every equipped item (weapon, armor, rings, trinket, necklace).
@@ -3503,10 +3509,11 @@
     // is the candidate; show it with a Confirm/Cancel prompt instead of its
     // normal actions, and consume nothing until Confirm is pressed.
     if (pendingUpgrade) {
-      const target = selectedEquip ? player[selectedEquip] : (isGear(player.inv[selectedInvIdx]) ? player.inv[selectedInvIdx] : null);
+      const raw = selectedEquip ? player[selectedEquip] : (isGear(player.inv[selectedInvIdx]) ? player.inv[selectedInvIdx] : null);
+      const target = (raw && GEAR[raw.key].cat !== "trinket") ? raw : null;   // trinkets can't be upgraded
       const acts = document.createElement("div"); acts.className = "inv-actions";
       if (!target) {
-        d.innerHTML = '<div class="d-empty">Choose an equipped weapon, armor, ring, trinket, or necklace to upgrade.</div>';
+        d.innerHTML = '<div class="d-empty">Choose an equipped weapon, armor, ring, or necklace to upgrade. (Trinkets can\'t be upgraded.)</div>';
         acts.appendChild(mkBtn("Cancel", "danger", () => { pendingUpgrade = false; renderInv(); }));
         d.appendChild(acts);
         return;
@@ -3574,7 +3581,7 @@
   function beginUpgrade() {
     pendingUpgrade = true;
     selectedInvIdx = -1; selectedEquip = null;
-    log("Scroll of Upgrade — choose an equipped weapon, armor, ring, trinket, or necklace.");
+    log("Scroll of Upgrade — choose an equipped weapon, armor, ring, or necklace.");
     renderInv();
   }
   function confirmUpgrade(target) {
@@ -4437,7 +4444,7 @@
     useIdx: (i) => actItem(i),
     equip: (i) => equipItem(i),
     upgradePending: () => pendingUpgrade,
-    confirmUpgradeOn: (slotKey) => { if (pendingUpgrade && player[slotKey]) confirmUpgrade(player[slotKey]); },
+    confirmUpgradeOn: (slotKey) => { const it = player[slotKey]; if (pendingUpgrade && it && GEAR[it.key].cat !== "trinket") confirmUpgrade(it); },
     cancelUpgrade: () => { pendingUpgrade = false; },
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
     forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },

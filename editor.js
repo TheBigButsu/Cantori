@@ -712,7 +712,7 @@
     const bar = document.createElement("div"); bar.className = "collbar";
     const h = document.createElement("h2"); h.textContent = "enchants — " + enchantRows.length; bar.appendChild(h); wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires per hit. Slots = which item types it can roll on. The Effect block drives what it DOES (a type + numbers the engine reads directly), and the description is shown to the player. Hit “</> code” to edit the whole enchant as raw JSON.";
+    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires per hit. tier (1–5) is a free-form power dial — the engine doesn't read it, use it however you like when picking the Effect block's numbers. Slots = which item types it can roll on. The Effect block drives what it DOES (a type + numbers the engine reads directly), and the description is shown to the player. Hit “</> code” to edit the whole enchant as raw JSON.";
     wrap.appendChild(note);
     enchantRows.forEach((r, i) => {
       const o = r.obj;
@@ -742,6 +742,14 @@
       grid.appendChild(fld("icon", "icon", "text"));
       grid.appendChild(fld("color", "color", "color"));
       grid.appendChild(fld("proc rate (0–1)", "proc", "num"));
+      const tierWrap = document.createElement("label"); tierWrap.className = "bfield";
+      const tierLabel = document.createElement("span"); tierLabel.textContent = "tier (1–5)"; tierWrap.appendChild(tierLabel);
+      const tierSel = document.createElement("select");
+      for (let t = 1; t <= 5; t++) { const opt = document.createElement("option"); opt.value = t; opt.textContent = t; tierSel.appendChild(opt); }
+      tierSel.value = o.tier != null ? o.tier : 1;
+      tierSel.onchange = () => { o.tier = Number(tierSel.value); };
+      tierWrap.appendChild(tierSel);
+      grid.appendChild(tierWrap);
       card.appendChild(grid);
       const dwrap = document.createElement("label"); dwrap.className = "bfield wide";
       const dl = document.createElement("span"); dl.textContent = "description (shown to the player)"; dwrap.appendChild(dl);
@@ -764,7 +772,7 @@
     });
     const add = document.createElement("div"); add.className = "addrow";
     const btn = document.createElement("button"); btn.textContent = "+ Add enchant";
-    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, slots: GEAR_CATS.slice(), desc: "", effect: { type: "burn", burstMult: 0.5, dotTurns: 3 } } }); render(); };
+    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, tier: 1, slots: GEAR_CATS.slice(), desc: "", effect: { type: "burn", burstMult: 0.5, dotTurns: 3 } } }); render(); };
     add.appendChild(btn); wrap.appendChild(add);
     return wrap;
   }
