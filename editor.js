@@ -52,6 +52,21 @@
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
+    // Armor's own column set: no weapon-only damage columns, plus an evasion stat
+    // (on top of the flat light/medium/heavy subtype bonus the engine already applies).
+    armor: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
+      { f: "sub", label: "subtype", type: "select", opts: ["", "dagger", "sword", "axe", "spear", "bow", "light", "medium", "heavy"] },
+      { f: "name", type: "text", cls: "name" },
+      { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "range", type: "num" },
+      { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
+      { f: "evasion", type: "num" },
+      { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
+      { f: "reqSTR", label: "req STR", type: "num" },
+      { f: "glyph", type: "text" }, { f: "color", type: "color" },
+    ],
     consumables: [
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["potion", "scroll", "tool"] },
@@ -225,8 +240,8 @@
     return getField(row.obj, col.f);   // "" when missing
   }
   // Does a row match the filter text? (any column contains the string)
-  function rowMatches(coll, row, q) {
-    for (const col of SPECS[coll]) {
+  function rowMatches(coll, row, q, spec) {
+    for (const col of (spec || SPECS[coll])) {
       const v = cellValue(row, col);
       if (v != null && String(v).toLowerCase().indexOf(q) >= 0) return true;
     }
@@ -254,7 +269,7 @@
     opts = opts || {};
     const stateKey = opts.stateKey || coll;
     const wrap = document.createElement("div");
-    const spec = SPECS[coll];
+    const spec = opts.spec || SPECS[coll];
 
     const bar = document.createElement("div"); bar.className = "collbar";
     const h = document.createElement("h2"); bar.appendChild(h);
@@ -304,7 +319,7 @@
     function rebuild() {
       const base = opts.filterFn ? rows[coll].filter(opts.filterFn) : rows[coll];
       const q = (filterText[stateKey] || "").trim().toLowerCase();
-      let view = q ? base.filter((row) => rowMatches(coll, row, q)) : base.slice();
+      let view = q ? base.filter((row) => rowMatches(coll, row, q, spec)) : base.slice();
       const st = sortState[stateKey];
       if (st) { const col = spec.find((c) => c.f === st.f); if (col) view.sort((a, b) => cmpRows(a, b, col, st.dir)); }
       h.textContent = (opts.heading || coll) + " — " + (q ? view.length + " of " + base.length : base.length + " entries");
@@ -315,7 +330,7 @@
         ths[idx].classList.toggle("on", !!on);
       });
       tbody.innerHTML = "";
-      view.forEach((row) => tbody.appendChild(renderRow(coll, row)));
+      view.forEach((row) => tbody.appendChild(renderRow(coll, row, spec)));
     }
     filt.oninput = () => { filterText[stateKey] = filt.value; rebuild(); };
     rebuild();
@@ -327,7 +342,7 @@
   // to scan without wading through the rest.
   const GEAR_GROUPS = [
     { stateKey: "gear_weapon", heading: "weapons", addBase: "weapon", match: (cat) => cat === "weapon", template: Object.assign({}, TEMPLATES.gear, { cat: "weapon" }) },
-    { stateKey: "gear_armor", heading: "armor", addBase: "armor", match: (cat) => cat === "armor", template: Object.assign({}, TEMPLATES.gear, { cat: "armor", dmgMin: undefined, dmgMax: undefined, defMin: 1, defMax: 3 }) },
+    { stateKey: "gear_armor", heading: "armor", addBase: "armor", match: (cat) => cat === "armor", spec: SPECS.armor, template: Object.assign({}, TEMPLATES.gear, { cat: "armor", dmgMin: undefined, dmgMax: undefined, defMin: 1, defMax: 3, evasion: 0 }) },
     { stateKey: "gear_jewelry", heading: "rings & necklaces", addBase: "ring", addLabel: "ring/necklace", match: (cat) => cat === "ring" || cat === "necklace", template: Object.assign({}, TEMPLATES.gear, { cat: "ring", dmgMin: undefined, dmgMax: undefined }) },
     { stateKey: "gear_trinket", heading: "trinkets", addBase: "trinket", match: (cat) => cat === "trinket", template: Object.assign({}, TEMPLATES.gear, { cat: "trinket", dmgMin: undefined, dmgMax: undefined }) },
   ];
@@ -339,15 +354,15 @@
     for (const g of GEAR_GROUPS) {
       wrap.appendChild(renderTable("gear", {
         stateKey: g.stateKey, heading: g.heading, addBase: g.addBase, addLabel: g.addLabel,
-        template: g.template, hint: false,
+        template: g.template, spec: g.spec, hint: false,
         filterFn: (row) => g.match(getField(row.obj, "cat")),
       }));
     }
     return wrap;
   }
 
-  function renderRow(coll, row) {
-    const spec = SPECS[coll];
+  function renderRow(coll, row, spec) {
+    spec = spec || SPECS[coll];
     const tr = document.createElement("tr");
     for (const col of spec) {
       const td = document.createElement("td");
@@ -1069,7 +1084,7 @@
   function tableHint(coll) {
     return ({
       monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
-      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range); JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype nudges evasion: light +2, medium 0, heavy −3. tier drives affix size AND groups drops. rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
+      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range) plus its own evasion stat; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype ALSO nudges evasion on top of the item's own value: light +3, medium 0, heavy −3. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
       boons: "After each boss, the player is offered 3 of these at random and picks 1 (lasts the run). name / icon / color / description are all editable here. The EFFECT of each boon is wired in code by its key — guild (on-hit proc +level%), kethara (grant a purple armor), maelon (heal on kill), ourn (grants the Ourn's Blink freeze skill). Renaming/retuning text is safe; a brand-new key will show and be pickable but has no effect until it's coded.",

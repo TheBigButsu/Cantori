@@ -64,7 +64,7 @@
   // maxMp = INT-based mana (1 point of INT = 1 MP) + flat per-level MP from the class's levelUp set
   const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseMp != null ? cls.baseMp : 0) + eff("INT") + (player.lvlMp || 0); };
   const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills + boons
-  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + passiveMod("eva");     // DEX + level + armor weight + skills + boons
+  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + armorEvasion() + passiveMod("eva");     // DEX + level + armor weight/item + skills + boons
   // Critical hits: 5% chance to deal 200% damage by default, each grown by the
   // class's per-level crit / critDmg gains (added, not multiplied), Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% per point) and
@@ -279,14 +279,28 @@
     }
     return v;
   };
-  // Extra flat mitigation from "Defense" enchants worn on armor / jewelry.
+  // An enchant effect's tiered value for the item bearing it (its gear def's own
+  // tier, clamped into the tierValues range — untiered starter gear reads as
+  // tier 1), falling back to a flat legacy field for enchants authored without
+  // tierValues. tierValues lives on the enchant definition itself (a sibling of
+  // `effect`), matching the editor's own "+ Add enchant" template shape.
+  function enchantTierValue(def, it, fallback) {
+    const tv = def && def.tierValues;
+    if (Array.isArray(tv) && tv.length) {
+      const t = Math.min(tv.length, Math.max(1, (it && GEAR[it.key] && gearTier(it.key)) || 1));
+      return tv[t - 1];
+    }
+    return fallback;
+  }
+  // Extra flat mitigation from "Defense" enchants worn on armor / jewelry —
+  // tiered by the item bearing the enchant, added to both min and max block.
   function wornDefense() {
     let d = 0;
     for (const it of wornItems()) {
       if (!it || !it.enchants) continue;
       for (const e of it.enchants) {
         const def = LOOT.enchants[e];
-        if (def && def.effect && def.effect.type === "defense") d += (def.effect.amount || 0);
+        if (def && def.effect && def.effect.type === "defense") d += enchantTierValue(def, it, def.effect.amount || 0);
       }
     }
     return d;
@@ -319,14 +333,21 @@
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
   const armorSubEva = () => { const a = armorSub(); return a ? (a.eva || 0) : 0; };
   const armorSubMit = () => { const a = armorSub(); return a ? (a.mit || 0) : 0; };
-  // Passive "haste" from worn Speed enchants — makes your attacks cost less time.
+  // A worn armor piece's own evasion stat (on top of the flat subtype bonus above).
+  const armorEvasion = () => (player.armor ? (GEAR[player.armor.key].evasion || 0) : 0);
+  // Passive "haste" from worn Speed enchants — makes your attacks cost less time,
+  // tiered by the item bearing the enchant.
   function wornHaste() {
     let h = 0;
     for (const it of wornItems()) {
       if (!it || !it.enchants) continue;
       for (const e of it.enchants) {
         const def = LOOT.enchants[e];
-        if (def && def.effect && def.effect.type === "haste") h += (def.effect.mult || 0);
+        // Speed's tierValues are the item's own total speed multiplier (e.g. 1.1 =
+        // ×1.1, tier5's 1.8 = ×1.8 alone) — converted to the additive fraction this
+        // formula stacks, so a single tier-N item lands on exactly that multiplier
+        // while still combining normally with other worn items and haste buffs.
+        if (def && def.effect && def.effect.type === "haste") h += enchantTierValue(def, it, 1 + (def.effect.mult || 0)) - 1;
       }
     }
     h += (player.boonHaste || 0) / 100;    // Ourn's Dilating Pupils: permanent +1%/5 kills
@@ -1438,21 +1459,30 @@
   // Fire an item's enchants at a target. `power` is the source's primary number
   // (weapon atk on your strike, armor def when you retaliate). Returns nothing;
   // handles the target's death from burst damage.
-  // Apply a damage-over-time stack to a monster. `stack:true` adds a fresh,
-  // independent stack (poison); `stack:false` refreshes the single existing one
-  // of that tag (burn — only ever one at a time).
-  function addDot(m, dot, stack) {
+  // Refresh a single-instance damage-over-time (burn — only ever one at a time).
+  function addDot(m, dot) {
     if (!m.dots) m.dots = [];
-    if (stack) { m.dots.push(dot); return; }
     const ex = m.dots.find((d) => d.tag === dot.tag);
     if (ex) Object.assign(ex, dot); else m.dots.push(dot);
   }
+  // Poison doesn't refresh or layer independent doses — every proc adds its
+  // magnitude onto whatever's already ticking. Each turn the stack deals its
+  // current total, then decays by 1 (see monsterAct), so a big early stack
+  // keeps hurting as it winds down while the player backs off.
+  function addPoison(m, amount) {
+    if (amount <= 0) return;
+    if (!m.dots) m.dots = [];
+    const ex = m.dots.find((d) => d.tag === "poison");
+    if (ex) ex.dmg += amount;
+    else m.dots.push({ tag: "poison", dmg: amount, icon: "☠", color: "#9ad06a" });
+  }
 
   // Fire an item's enchants at a target. `power` is the source's primary number
-  // (weapon atk on your strike, armor def when you retaliate). Each enchant is
-  // driven by its `effect` block in the data (type + params), so new enchants can
-  // be authored in the editor without touching this code.
-  function procEnchants(enchants, target, power, incoming) {
+  // (weapon atk on your strike, armor def when you retaliate). `item` is the
+  // instance bearing the enchant, used to look up its tier for tierValues.
+  // Each enchant is driven by its `effect` block in the data (type + params),
+  // so new enchants can be authored in the editor without touching this code.
+  function procEnchants(enchants, target, power, incoming, item) {
     if (!enchants || !enchants.length || target.hp <= 0) return;
     for (const e of enchants) {
       if (target.hp <= 0) break;
@@ -1465,13 +1495,14 @@
         case "burn": {                                  // instant burst + a short DOT that stacks only once
           const burst = Math.max(1, Math.ceil(power * (fx.burstMult != null ? fx.burstMult : 0.5)));
           target.hp -= burst; flash(target); floatText(target.x, target.y, "🔥-" + burst, "#ff8f4a");
-          addDot(target, { tag: "burn", dmg: Math.max(1, Math.ceil(burst / 2)), rounds: fx.dotTurns || 3, icon: "🔥", color: "#ff8f4a" }, false);
+          addDot(target, { tag: "burn", dmg: Math.max(1, Math.ceil(burst / 2)), rounds: fx.dotTurns || 3, icon: "🔥", color: "#ff8f4a" });
           break;
         }
-        case "poison": {                                // small hit now, then 1/turn — and it stacks
-          const init = fx.initial != null ? fx.initial : 2;
-          target.hp -= init; flash(target); floatText(target.x, target.y, "☠-" + init, "#9ad06a");
-          addDot(target, { tag: "poison", dmg: fx.perTurn || 1, rounds: fx.turns || 5, icon: "☠", color: "#9ad06a" }, true);
+        case "poison": {                                // adds a tiered dose to the running poison stack
+          const mult = enchantTierValue(def, item, 0.2);
+          const dose = Math.max(1, Math.round(power * mult));
+          addPoison(target, dose);
+          floatText(target.x, target.y, "☠+" + dose, "#9ad06a");
           break;
         }
         case "shock": {                                 // burst + a scaling stun chance
@@ -1522,7 +1553,7 @@
       if (target.hp > 0 && player.boons && player.boons.has("leper")) {
         const poisonChance = Math.min(0.75, (player.level / 100) * maelonBoonCount());
         if (Math.random() < poisonChance) {
-          addDot(target, { tag: "poison", dmg: 2, rounds: 5, icon: "☠", color: "#9ad06a" }, true);
+          addPoison(target, 2);
           floatText(target.x, target.y, "☠", "#9ad06a");
         }
       }
@@ -1531,7 +1562,7 @@
       } else {
         log(pre + monName(target) + ". (-" + dmg + ")", "hit");
         // weapon enchants proc on a connecting hit (power = weapon damage)
-        if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon));
+        if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon), null, player.weapon);
       }
     } else {
       bump(attacker, player.x, player.y);
@@ -1578,7 +1609,7 @@
       for (const it of wornItems()) {
         if (GEAR[it.key].cat === "weapon") continue;
         gainIdentify(it, 1);
-        if (attacker.hp > 0 && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it), dmg);
+        if (attacker.hp > 0 && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it), dmg, it);
       }
     }
   }
@@ -2497,7 +2528,10 @@
     if (m.dots && m.dots.length) {              // burn/poison ticks at the start of its action
       for (const dot of m.dots.slice()) {
         m.hp -= dot.dmg; flash(m); floatText(m.x, m.y, dot.icon + "-" + dot.dmg, dot.color);
-        if (--dot.rounds <= 0) m.dots = m.dots.filter((x) => x !== dot);
+        // Poison has no fixed duration — its own stack decays by 1 each tick,
+        // fading out once spent. Burn (and anything else) still runs on rounds.
+        if (dot.tag === "poison") { if (--dot.dmg <= 0) m.dots = m.dots.filter((x) => x !== dot); }
+        else if (--dot.rounds <= 0) m.dots = m.dots.filter((x) => x !== dot);
         if (m.hp <= 0) { killMonster(m, dot.tag === "poison" ? "succumbs to poison" : "burns away"); return; }
       }
     }
@@ -3856,7 +3890,7 @@
       const m = monsterAt(tx, ty);
       if (m && CONSUM[one.key].effect === "poison") {
         const d = randInt(3, 6); m.hp -= d; flash(m); floatText(m.x, m.y, "☠-" + d, "#9ad06a");
-        addDot(m, { tag: "poison", dmg: 2, rounds: 5, icon: "☠", color: "#9ad06a" }, true);
+        addPoison(m, 2);
         log("The " + nm + " bursts over the " + monName(m) + "!", "hit");
         if (m.hp <= 0) killMonster(m, "succumbs to poison");
       } else {
