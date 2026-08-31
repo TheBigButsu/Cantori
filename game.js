@@ -1968,8 +1968,14 @@
     return path.length > 1 ? path[1] : null;   // path[0] is the monster's own tile
   }
   function stepMonsterTo(m, tx, ty) {
+    // monsterPathStep lets the GOAL tile itself be occupied (so a path can still
+    // route up to it) — but if that goal happens to be the very next step (the
+    // monster is already adjacent to it), committing the move would stack two
+    // monsters on one tile. Every monster must have its own tile, so re-check
+    // occupancy here before actually moving; fall through to the greedy
+    // heuristic below (which already excludes occupied tiles) if it's blocked.
     const step = monsterPathStep(m.x, m.y, tx, ty);
-    if (step) { m.x = step[0]; m.y = step[1]; return; }
+    if (step && !monsterAt(step[0], step[1]) && !(step[0] === player.x && step[1] === player.y)) { m.x = step[0]; m.y = step[1]; return; }
     // No path found (e.g. fully boxed in this turn) — fall back to the old
     // greedy "closest open neighbor" so the monster doesn't just freeze.
     let best = null, bestD = Infinity;
@@ -3859,12 +3865,12 @@
     } },
     wall_of_faith: { boon: "wall", skill: {
       name: "Wall of Faith", icon: "🧱", kind: "wallcast", max: 1, ranks: [{}],
-      levels: ["Tap a tile — raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step."],
+      levels: ["Tap a tile — raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step. Cooldown 150 turns."],
       desc: "Raise a wall of stone, knocking back whatever stands in its way.",
     } },
     faiths_pull: { boon: "pull", skill: {
       name: "Faith's Pull", icon: "🌀", kind: "pullcast", max: 1, ranks: [{}],
-      levels: ["Tap a tile — for 5 turns, every aware foe within a 9×9 aura paths toward its center instead of you."],
+      levels: ["Tap a tile — for 5 turns, every aware foe within a 9×9 aura paths toward its center instead of you. Cooldown 150 turns."],
       desc: "Bend the ground to Kethara's will, pulling foes toward one spot.",
     } },
     eye_of_kethara: { boon: "eye", skill: {
@@ -3981,7 +3987,7 @@
     if (!built) { log("Kethara's wall finds no purchase there."); updateHotbar(); return; }
     computeFOV();
     log("Kethara raises a wall of faith.", "hit");
-    player.skills[key].cd = 0;
+    player.skills[key].cd = 150;
     updateHotbar();
     worldTurn();
   }
@@ -3992,7 +3998,7 @@
     pullZone = { x: tx, y: ty, turns: 6 };   // +1: this cast's own worldTurn() below ticks it once already
     floatText(tx, ty, "🌀", "#b491d6");
     log("Kethara's faith pulls the ground taut around that spot.", "hit");
-    player.skills[key].cd = 0;
+    player.skills[key].cd = 150;
     updateHotbar();
     worldTurn();
   }

@@ -766,13 +766,13 @@ window.CANTORI_DATA = {
     },
     "wall": {
       "name": "Wall of Faith",
-      "desc": "Active — tap a tile to raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step.",
+      "desc": "Active — tap a tile to raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step. Cooldown 150 turns.",
       "icon": "🧱",
       "color": "#b491d6"
     },
     "pull": {
       "name": "Faith's Pull",
-      "desc": "Active — tap a tile to bend a wide 9×9 swath of ground to Kethara's will for 5 turns, pulling every foe within it toward the center.",
+      "desc": "Active — tap a tile to bend a wide 9×9 swath of ground to Kethara's will for 5 turns, pulling every foe within it toward the center. Cooldown 150 turns.",
       "icon": "🌀",
       "color": "#b491d6"
     },
