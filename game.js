@@ -792,6 +792,42 @@
   function roomDoors(r) {
     return roomRing(r).filter(([x, y]) => isDoor(x, y));
   }
+  // After placeDoors, a corridor (or an attached-room seam) can touch a room's
+  // ring at more than one adjacent tile — placeDoors' "no two doors touching"
+  // rule only turns one of them into a door, leaving the rest as plain,
+  // undoored floor right beside it (a hallway entrance that visually has no
+  // door plugging it). Narrow every such multi-tile breach down to its one
+  // door, walling off the extra floor — but only where that never disconnects
+  // the map (a tile that's load-bearing for some other corridor is left alone).
+  function narrowRoomBreaches(rooms) {
+    if (!rooms.length) return;
+    const anchor = roomCenter(rooms[0]);
+    for (const r of rooms) {
+      const ringFloor = roomRing(r).filter(([x, y]) => inBounds(x, y) && (map[y][x] === FLOOR || map[y][x] === DOOR));
+      const used = new Set();
+      for (const [x, y] of ringFloor) {
+        const key = x + "," + y;
+        if (used.has(key)) continue;
+        const cluster = [[x, y]]; used.add(key);
+        let head = 0;
+        while (head < cluster.length) {
+          const [cx, cy] = cluster[head++];
+          for (const [ox, oy] of ringFloor) {
+            const ok = ox + "," + oy;
+            if (used.has(ok)) continue;
+            if (Math.max(Math.abs(ox - cx), Math.abs(oy - cy)) <= 1) { used.add(ok); cluster.push([ox, oy]); }
+          }
+        }
+        if (cluster.length < 2 || !cluster.some(([cx, cy]) => map[cy][cx] === DOOR)) continue;
+        for (const [cx, cy] of cluster) {
+          if (map[cy][cx] !== FLOOR) continue;   // leave doors alone, only close plain floor
+          if ((cx === player.x && cy === player.y) || monsterAt(cx, cy) || itemAt(cx, cy)) continue;
+          map[cy][cx] = WALL;
+          if (!allRoomsReachable(rooms, anchor.x, anchor.y)) map[cy][cx] = FLOOR;   // revert if load-bearing
+        }
+      }
+    }
+  }
   function freeFloorInRoom(r) {
     for (let t = 0; t < 40; t++) {
       const x = randInt(r.x, r.x + r.w - 1), y = randInt(r.y, r.y + r.h - 1);
@@ -1040,6 +1076,7 @@
     }
 
     placeDoors(rooms);
+    narrowRoomBreaches(rooms);   // one door per breach — close any extra undoored floor beside it
     fixOpenCorners(rooms);   // no diagonal-only wall/floor touches — keeps sight & movement consistent
 
     const start = roomCenter(rooms[0]);
