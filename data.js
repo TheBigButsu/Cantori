@@ -1025,7 +1025,7 @@ window.CANTORI_DATA = {
   },
   "classes": {
     "warrior": {
-      "name": "Warrior",
+      "name": "Chadwick",
       "main": "STR",
       "secondary": "VIT",
       "unlock": "start",
@@ -1162,7 +1162,28 @@ window.CANTORI_DATA = {
           null
         ],
         [
-          null,
+          {
+            "name": "Smite",
+            "key": "smite",
+            "icon": "💥",
+            "kind": "smite",
+            "when": null,
+            "desc": "A single devastating blow, empowered by your Strength. Tap a foe within range. Cooldown 100 turns, 5 MP.",
+            "levels": [
+              "Weapon damage + STR damage.",
+              "Weapon damage + STR×1.5 damage.",
+              "Weapon damage + STR×2 damage.",
+              "Weapon damage + STR×2 damage, +1 range."
+            ],
+            "ranks": [
+              { "strMult": 1 },
+              { "strMult": 1.5 },
+              { "strMult": 2 },
+              { "strMult": 2, "range": 2 }
+            ],
+            "req": [],
+            "reqAny": [[0, 0, 4], [0, 1, 4]]
+          },
           null,
           null,
           null,

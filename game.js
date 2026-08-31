@@ -61,16 +61,18 @@
   const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseHp != null ? cls.baseHp : HP_BASE) + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0); };
+  // maxMp = INT-based mana (1 point of INT = 1 MP) + flat per-level MP from the class's levelUp set
+  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseMp != null ? cls.baseMp : 0) + eff("INT") + (player.lvlMp || 0); };
   const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills + boons
   const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + passiveMod("eva");     // DEX + level + armor weight + skills + boons
   // Critical hits: 5% chance to deal 200% damage by default, each grown by the
-  // class's per-level crit / critDmg gains (added, not multiplied), plus Ourn's
-  // Perfectly Timed Blow (+1% per character level).
+  // class's per-level crit / critDmg gains (added, not multiplied), Ourn's
+  // Perfectly Timed Blow (+1% per character level), DEX (+1% per point) and
+  // LCK (+1% chance per point, +2% crit damage per point).
   const BASE_CRIT = 5, BASE_CRIT_DMG = 200;
   const timedBlowBonus = () => (player.boons && player.boons.has("timed_blow")) ? player.level : 0;
-  const critChance = () => (BASE_CRIT + (player.lvlCrit || 0) + timedBlowBonus()) / 100;
-  const critMult = () => (BASE_CRIT_DMG + (player.lvlCritDmg || 0)) / 100;
-  const vitResist = () => Math.floor(eff("VIT") / 5);                  // VIT → damage resist
+  const critChance = () => (BASE_CRIT + (player.lvlCrit || 0) + timedBlowBonus() + eff("DEX") + eff("LCK")) / 100;
+  const critMult = () => (BASE_CRIT_DMG + (player.lvlCritDmg || 0) + eff("LCK") * 2) / 100;
   // hit chance = attacker accuracy / (accuracy + defender evasion)
   // To-hit is difference-based and easy to read: 50% at even acc/eva, then ±3%
   // for each point of accuracy over (or under) evasion, clamped to 10%–95%.
@@ -106,10 +108,9 @@
     player.ring1 = null; player.ring2 = null; player.trinket = null; player.necklace = null;
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
-    player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0;   // reset per-level bonuses
+    player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
     player.lvlCrit = 0; player.lvlCritDmg = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
-    player.maxMp = c.baseMp || 0; player.mp = player.maxMp;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
     player.healPending = 0;                    // queued heal-over-time from a potion
@@ -129,6 +130,8 @@
     }
     player.maxHp = computeMaxHp();             // after gear, so VIT affixes count
     player.hp = player.maxHp;
+    player.maxMp = computeMaxMp();             // after gear, so INT affixes/quality bonuses count
+    player.mp = player.maxMp;
   }
   function resetPlayer() { applyClass(player.cls || "warrior"); }
   let monsters = [];
@@ -1338,6 +1341,7 @@
       const s = STAT_KEYS.slice(0, 4)[randInt(0, 3)];   // STR/INT/VIT/DEX only
       player.stats[s]++;
       if (s === "VIT") player.maxHp = computeMaxHp();
+      if (s === "INT") { player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp + 1, player.maxMp); }
       floatText(player.x, player.y, "+1 " + s, "#e0685a");
       log("Maelon's Compost Pile bears fruit. (+1 " + s + ")", "hit");
     }
@@ -1359,6 +1363,7 @@
     if (player.boons.has("pride") && kc % 15 === 0) {
       for (const s of STAT_KEYS) player.stats[s]--;
       player.maxHp = computeMaxHp();
+      player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
       floatText(player.x, player.y, "-1 all", "#e0685a");
       log("The Pride Before The Fall claims its due. (-1 to all stats)", "hurt");
     }
@@ -1386,7 +1391,7 @@
     for (const e of enchants) {
       if (target.hp <= 0) break;
       const def = LOOT.enchants[e] || {};
-      const proc = def.proc != null ? def.proc : 1;
+      const proc = (def.proc != null ? def.proc : 1) + eff("LCK") / 100;   // LCK: flat +% to all proc effects
       if (Math.random() >= proc) continue;
       const fx = def.effect || {};
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
@@ -1471,7 +1476,10 @@
         return;
       }
       let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
-      dmg = Math.max(1, dmg - armorBlock() - vitResist());
+      // RES applies first, as a % reduction of the raw hit; armor (and other
+      // flat mitigation) then reduces whatever's left.
+      const resMult = Math.max(0, 1 - eff("RES") / 100);
+      dmg = Math.max(1, Math.round(dmg * resMult) - armorBlock());
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
@@ -1643,10 +1651,12 @@
     }
     // Ourn's The Pride Before The Fall: +10 to every base stat, right away.
     if (key === "pride") {
-      const beforeHp = player.maxHp;
+      const beforeHp = player.maxHp, beforeMp = player.maxMp;
       for (const s of STAT_KEYS) player.stats[s] += 10;
       player.maxHp = computeMaxHp();
       player.hp += Math.max(0, player.maxHp - beforeHp);
+      player.maxMp = computeMaxMp();
+      player.mp += Math.max(0, player.maxMp - beforeMp);
       floatText(player.x, player.y, "+10 ALL", "#9ad0ff");
       log("The Pride Before The Fall floods you with power. (+10 to all stats)", "hit");
     }
@@ -1679,7 +1689,10 @@
       player.lvlEva += lu.evasion || 0;
       player.lvlCrit += lu.crit || 0;
       player.lvlCritDmg += lu.critDmg || 0;
-      player.maxMp += lu.mp || 0; player.mp = Math.min(player.maxMp, player.mp + (lu.mp || 0));
+      player.lvlMp += lu.mp || 0;
+      const nmMp = computeMaxMp();
+      player.mp = Math.min(nmMp, player.mp + (nmMp - player.maxMp));   // gain by the max-MP increase
+      player.maxMp = nmMp;
       const nm = computeMaxHp();
       player.hp = Math.min(nm, player.hp + (nm - player.maxHp));   // heal by the max-HP gain
       player.maxHp = nm;
@@ -2585,6 +2598,12 @@
         if (pk === "eyecast") executeEyeOfKethara(pendingSkill, tx, ty); else executeAngerOfKethara(pendingSkill, tx, ty);
         return;
       }
+      if (pk === "smite") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
+        executeSmite(pendingSkill, tx, ty);
+        return;
+      }
     }
     if (walkPath.length) { walkPath = []; return; }           // tap while travelling = stop
     if (!inBounds(tx, ty)) return;
@@ -3486,7 +3505,7 @@
   const entryName = (e) => (isGear(e) ? itemName(e) : displayName(e.key));
   function renderInv() {
     document.getElementById("invGold").textContent = player.gold + " gold";
-    const df = defRange(armorDefMin() + vitResist(), armorDefMax() + vitResist());
+    const df = defRange(armorDefMin(), armorDefMax());
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const withGear = (k) => { const g = equipStat(k); return eff(k) + (g ? `<span style="color:#7ec98a">(+${g})</span>` : ""); };
     const statLine = `STR ${withGear("STR")} · VIT ${withGear("VIT")} · DEX ${withGear("DEX")} · INT ${withGear("INT")} · RES ${withGear("RES")} · LCK ${withGear("LCK")}`;
@@ -3593,6 +3612,7 @@
     player.inv.push(it);
     log("You put away the " + itemName(it) + ".");
     player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
     updateHUD(); worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
@@ -3605,6 +3625,7 @@
     items.push(Object.assign({ x: spot.x, y: spot.y }, it));
     log("You drop the " + itemName(it) + ".");
     player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
     updateHUD(); worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
@@ -3633,6 +3654,7 @@
     floatText(player.x, player.y, "+1", "#f0c14b");
     pendingUpgrade = false;
     selectedInvIdx = -1; selectedEquip = null;
+    player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);   // Scribe's Intellect scales with gear quality
     updateHUD();
     worldTurn();
     if (dead) { toggleInv(false); return; }
@@ -3652,6 +3674,8 @@
     log(verb + itemName(it) + ".");
     player.maxHp = computeMaxHp();               // VIT affixes can change max HP
     player.hp = Math.min(player.hp, player.maxHp);
+    player.maxMp = computeMaxMp();               // INT affixes/quality bonuses can change max MP
+    player.mp = Math.min(player.mp, player.maxMp);
     updateHUD();
     worldTurn();               // equipping takes a turn
     if (dead) { toggleInv(false); return; }
@@ -3775,7 +3799,10 @@
       player.hp += Math.max(0, player.maxHp - before);   // the freshly-gained HP is granted too
       log("Vigor floods your body. (+1 VIT)", "hit");
     } else if (fx === "intelligence") {
+      const before = player.maxMp;
       player.stats.INT += 1;
+      player.maxMp = computeMaxMp();
+      player.mp += Math.max(0, player.maxMp - before);   // the freshly-gained MP is granted too
       log("Your mind sharpens. (+1 INT)", "hit");
     } else if (fx === "stone skin" || fx === "stone_skin" || fx === "stoneskin") {
       player.stoneSkin = { turns: 40 };
@@ -3842,7 +3869,7 @@
         name: cell.name, icon: cell.icon || "✦", desc: cell.desc || "",
         kind: cell.kind || "passive", when: cell.when || null,
         max: cell.ranks.length, ranks: cell.ranks, levels: cell.levels || [],
-        req: cell.req || [], pos: [t, s],
+        req: cell.req || [], reqAny: cell.reqAny || [], pos: [t, s],
       };
       byPos[t + "," + s] = key;
     }));
@@ -3902,12 +3929,26 @@
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
   function skillAtPos(t, s) { return treeSkills(player.cls).byPos[t + "," + s]; }
+  // req: every listed [tier,slot] must be learned (rank >= 1) — an AND of positions.
+  // reqAny: at least ONE listed [tier,slot,minRank] must reach minRank (default 1) —
+  // an OR, used for things like "4 points in any one of the first-tier skills."
   function prereqsMet(d) {
-    if (!d.req || !d.req.length) return true;
-    return d.req.every(([t, s]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= 1); });
+    const req = d.req || [];
+    if (req.length && !req.every(([t, s]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= 1); })) return false;
+    const reqAny = d.reqAny || [];
+    if (reqAny.length) {
+      return reqAny.some(([t, s, minRank]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= (minRank || 1)); });
+    }
+    return true;
   }
   function prereqNames(d) {
-    return (d.req || []).map(([t, s]) => { const k = skillAtPos(t, s); return (k && classSkills()[k]) ? classSkills()[k].name : null; }).filter(Boolean);
+    const names = (d.req || []).map(([t, s]) => { const k = skillAtPos(t, s); return (k && classSkills()[k]) ? classSkills()[k].name : null; }).filter(Boolean);
+    const reqAny = d.reqAny || [];
+    if (reqAny.length) {
+      const parts = reqAny.map(([t, s, minRank]) => { const k = skillAtPos(t, s); const nm = (k && classSkills()[k]) ? classSkills()[k].name : null; return nm ? (nm + " (rank " + (minRank || 1) + ")") : null; }).filter(Boolean);
+      if (parts.length) names.push(parts.join(" or "));
+    }
+    return names;
   }
   // Sum a passive-skill modifier (dmg/acc/eva/…) across learned passives whose
   // condition (`when` = required weapon subtype) currently holds.
@@ -3939,7 +3980,7 @@
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
     else if (d.kind === "sol") executeSpeedOfLight(key);
-    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast") beginTargetedSkill(key);
+    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" || d.kind === "smite") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -4084,6 +4125,31 @@
     if (cur.freeAction) { updateHotbar(); updateHUD(); }   // free action: the turn clock doesn't advance
     else worldTurn();
   }
+  // Smite: a single devastating blow scaling with STR (weapon damage is rolled
+  // and dealt normally via attack(); the STR-scaled amount rides along as its
+  // bonus, same convention as Rush/Spin). Base range 1 (melee); rank 4 grants
+  // range 2, with a projectile flourish when the target isn't adjacent.
+  function executeSmite(key, tx, ty) {
+    pendingSkill = null;
+    const cur = skillCur(key);
+    if (!cur) return;
+    const range = cur.range || 1;
+    const target = monsterAt(tx, ty);
+    if (!target || cheb(player.x, player.y, tx, ty) > range || !lineOfSight(player.x, player.y, tx, ty)) {
+      log("Smite needs a clear target within range."); updateHotbar(); return;
+    }
+    const cost = 5;
+    if (player.mp < cost) { log("Not enough MP for Smite (need " + cost + ")."); updateHotbar(); return; }
+    player.mp -= cost;
+    const bonus = Math.round(eff("STR") * (cur.strMult || 1));
+    if (cheb(player.x, player.y, tx, ty) > 1) spawnProjectile(player.x, player.y, tx, ty, "#f0a838");
+    log("You call down a Smite!", "hit");
+    attack(player, target, bonus);
+    player.skills[key].cd = 100;
+    updateHotbar(); updateHUD();
+    if (dead) return;
+    worldTurn();
+  }
 
   // ---- Examine -------------------------------------------------------------
   function toggleExamine(force) {
@@ -4152,8 +4218,8 @@
   }
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
-    const df = defRange(armorDefMin() + vitResist(), armorDefMax() + vitResist());
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: "—", RES: "—", LCK: Math.round(critChance() * 100) + "% crit" };
+    const df = defRange(armorDefMin(), armorDefMax());
+    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(eff("RES")) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
       const g = equipStat(k);
       const val = player.stats[k] + (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
@@ -4167,8 +4233,10 @@
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
+      `<div class="cline cformula">crit% = 5 + DEX + LCK + skills · crit dmg% = 200 + LCK×2 + skills</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
       `<div class="cline cformula">hit% = 50% + (attacker acc − defender eva) × 3%, clamped 10–95%</div>` +
+      `<div class="cline cformula">incoming dmg ×(1 − RES%), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
