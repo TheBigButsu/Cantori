@@ -138,6 +138,7 @@
   let activeWalls = [];   // Kethara's Wall of Faith: temporary wall tiles awaiting reversion
   let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
   let biomeScrollFloors = null;   // Set of 2 floor-in-biome numbers (1-5) that guarantee a Scroll of Upgrade this biome
+  let bossRoom = null;            // the room the current floor's boss occupies (its exit opens on the nearest wall, not the death tile)
   const trapAt = (x, y) => traps.find((t) => t.x === x && t.y === y) || null;
 
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
@@ -1050,9 +1051,11 @@
     if (isBossDepth(depth)) {
       // The 5th floor: a boss guards the last room; the exit opens on its defeat.
       bossActive = true;
+      bossRoom = last;
       spawnBoss(last);
     } else {
       bossActive = false;
+      bossRoom = null;
       placeExit(last);
       spawnMonsters(rooms);
     }
@@ -1506,11 +1509,28 @@
     }
   }
 
+  // The nearest wall tile on the boss room's boundary to (dx, dy) — every side of
+  // a room here is at least 4 tiles long, so this is always a real straight wall,
+  // not a single corner nub.
+  function nearestRoomWallSpot(room, dx, dy) {
+    if (!room) return null;
+    let best = null, bestD = Infinity;
+    for (const [x, y] of roomRing(room)) {
+      if (!inBounds(x, y) || map[y][x] !== WALL) continue;
+      const d = cheb(x, y, dx, dy);
+      if (d < bestD) { bestD = d; best = { x, y }; }
+    }
+    return best;
+  }
   function onBossDefeated(x, y) {
     bossActive = false;
     if (biome.final) { win(); return; }
-    map[y][x] = STAIRS;             // the way down opens where the boss fell
-    explored[y][x] = true;
+    // The exit opens on the wall of the boss room nearest to where it fell —
+    // not on the death tile itself, which could be anywhere in the room.
+    const doorSpot = nearestRoomWallSpot(bossRoom, x, y) || { x, y };
+    map[doorSpot.y][doorSpot.x] = STAIRS;
+    explored[doorSpot.y][doorSpot.x] = true;
+    computeFOV();
     // Boss reward: 3 Potions of Insight (not raw points — you still have to drink
     // them), a guaranteed-blue+ trinket, and a boon choice.
     const granted = grantInsightPotions(3);
@@ -4467,6 +4487,10 @@
     forceSlam: (i) => { const m = monsters[i]; if (m) { m.slamCd = 0; m.aware = true; } },
     nodeBlasts: () => pendingNodeBlasts.map((b) => Object.assign({}, b)),
     setMonsterHp: (i, hp) => { const m = monsters[i]; if (m) m.hp = Math.min(hp, m.maxHp); },
+    placeMonster: (i, x, y) => { const m = monsters[i]; if (m) { m.x = x; m.y = y; } },
+    bossRoomRect: () => (bossRoom ? { x: bossRoom.x, y: bossRoom.y, w: bossRoom.w, h: bossRoom.h } : null),
+    nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
+    stairsAt: () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; },
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),
