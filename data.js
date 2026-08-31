@@ -361,9 +361,9 @@ window.CANTORI_DATA = {
       "accuracy": -10,
       "rarity": 15
     },
-    "Shitty_dagger": {
+    "Shitty_sword": {
       "cat": "weapon",
-      "name": "Shitty Dagger",
+      "name": "Shitty sword",
       "dmgMin": 1,
       "dmgMax": 2,
       "accuracy": 5,
@@ -373,7 +373,7 @@ window.CANTORI_DATA = {
       },
       "glyph": "/",
       "color": "#cccccc",
-      "sub": "dagger",
+      "sub": "sword",
       "speed": 1.2,
       "rarity": 0
     },
@@ -509,7 +509,8 @@ window.CANTORI_DATA = {
           "type": "burn",
           "burstMult": 0.5,
           "dotTurns": 3
-        }
+        },
+        "tier": 2
       },
       "electric": {
         "name": "Charged",
@@ -766,13 +767,13 @@ window.CANTORI_DATA = {
     },
     "wall": {
       "name": "Wall of Faith",
-      "desc": "Active — tap a tile to raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step. Cooldown 150 turns.",
+      "desc": "Active — tap a tile to raise a 5-tile wall of stone along the nearest axis, shoving any foe caught in it back a step.",
       "icon": "🧱",
       "color": "#b491d6"
     },
     "pull": {
       "name": "Faith's Pull",
-      "desc": "Active — tap a tile to bend a wide 9×9 swath of ground to Kethara's will for 5 turns, pulling every foe within it toward the center. Cooldown 150 turns.",
+      "desc": "Active — tap a tile to bend a wide 9×9 swath of ground to Kethara's will for 5 turns, pulling every foe within it toward the center.",
       "icon": "🌀",
       "color": "#b491d6"
     },
@@ -1129,17 +1130,17 @@ window.CANTORI_DATA = {
             "req": []
           },
           {
-            "name": "Sword Master",
-            "key": "sword_master",
-            "icon": "⚔",
+            "name": "Axe Master",
+            "key": "axe_master",
+            "icon": "🪓",
             "kind": "passive",
-            "when": "sword",
-            "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
+            "when": "axe",
+            "desc": "Mastery of the axe — passive bonuses that apply while an axe is equipped.",
             "levels": [
-              "+1 damage for swords",
-              "+2 damage for swords",
-              "+4 damage for swords",
-              "+6 damage and +15 accuracy for swords"
+              "+1 damage for axes",
+              "+2 damage for axes",
+              "+4 damage for axes",
+              "+6 damage and +15 accuracy for axes"
             ],
             "ranks": [
               {
