@@ -29,6 +29,25 @@
   const STAIRS = 2;
   const DOOR = 3;              // hall entrance; passable, but a *closed* door blocks sight
   const THORN = 4;             // bramble barrier: you can push through, but it hurts
+  const WATER = 5;             // shallow water — declared for C2/C3, not placed yet
+  const CHASM = 6;             // fall-through gap — declared for C2/C3, not placed yet
+  const RUBBLE = 7;            // broken stone — declared for C2/C3, not placed yet
+  const GRASS = 8;             // tall grass — declared for C2/C3, not placed yet
+
+  // What a tile IS, rather than which constant it equals. Every predicate below reads
+  // this table, so a new tile is a row here plus a draw case — not a hunt through the file.
+  const TILE = {
+    [WALL]:   { solid: true, opaque: true },
+    [FLOOR]:  {},
+    [STAIRS]: {},
+    [DOOR]:   {},                                    // sight handled by doorOpen()
+    [THORN]:  { hurts: [5, 10], shun: true, noTravel: true },
+    [WATER]:  { costMult: 2, blocksConnect: false },
+    [CHASM]:  { falls: true, shun: true, noTravel: true, blocksConnect: true },
+    [RUBBLE]: { costMult: 2 },
+    [GRASS]:  { conceals: true },
+  };
+  const tileProp = (x, y, k) => { const t = inBounds(x, y) && map[y][x]; const p = TILE[t]; return p ? p[k] : undefined; };
 
   let map = [];
   let visible = [];
@@ -168,7 +187,8 @@
   const isWall = (x, y) => !inBounds(x, y) || map[y][x] === WALL;
   const isDoor = (x, y) => inBounds(x, y) && map[y][x] === DOOR;
   const isThorn = (x, y) => inBounds(x, y) && map[y][x] === THORN;
-  const passable = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
+  const shuns = (x, y) => !!tileProp(x, y, "shun");     // monsters (and drops/teleports) avoid these tiles
+  const passable = (x, y) => inBounds(x, y) && !tileProp(x, y, "solid");
   // A door is open only while you stand on it, then swings/grows shut behind you —
   // an open/close mechanism (the forest bushes "come back"). EXCEPT: a door a
   // monster died on is propped open for good (you already fought there, no more
@@ -179,7 +199,7 @@
   const propDoorOpenAt = (x, y) => { if (inBounds(x, y) && map[y][x] === DOOR) propOpenDoors.add(y * MAP_W + x); };
   // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
   // room stays hidden until you reach its doorway, enabling surprise ambushes.
-  const blocksSight = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (map[y][x] === DOOR && !doorOpen(x, y));
+  const blocksSight = (x, y) => !inBounds(x, y) || tileProp(x, y, "opaque") || (map[y][x] === DOOR && !doorOpen(x, y));
 
   function blankGrid(fill) {
     const g = [];
@@ -805,7 +825,7 @@
     if (m) {
       for (let i = 0; i < 200; i++) {
         const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
-        if (passable(x, y) && map[y][x] !== THORN && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
+        if (passable(x, y) && !shuns(x, y) && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
           spawnBurst(m.x, m.y, "#c79bff"); m.x = x; m.y = y; snapEntity(m);
           spawnBurst(x, y, "#c79bff"); floatText(x, y, "✦", "#e0c6ff");
           break;
@@ -998,7 +1018,7 @@
   function floodReach(sx, sy, blockThorns) {
     const seen = new Set([sy * MAP_W + sx]);
     const q = [[sx, sy]];
-    const blocked = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (blockThorns && map[y][x] === THORN);
+    const blocked = (x, y) => !inBounds(x, y) || tileProp(x, y, "solid") || tileProp(x, y, "blocksConnect") || (blockThorns && tileProp(x, y, "hurts"));
     while (q.length) {
       const [x, y] = q.shift();
       for (const [dx, dy] of DIRS8) {
@@ -1815,7 +1835,7 @@
     const spots = []; const seen = new Set();
     for (let t = 0; t < 400 && spots.length < count; t++) {
       const x = cx + randInt(-radius, radius), y = cy + randInt(-radius, radius);
-      if (!inBounds(x, y) || !passable(x, y) || map[y][x] === THORN) continue;
+      if (!inBounds(x, y) || !passable(x, y) || shuns(x, y)) continue;
       const k = y * MAP_W + x;
       if (seen.has(k) || itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
       seen.add(k); spots.push({ x, y });
@@ -1834,7 +1854,7 @@
       const cand = [];
       for (let y = room.y; y < room.y + room.h; y++) {
         for (let x = room.x; x < room.x + room.w; x++) {
-          if (!passable(x, y) || map[y][x] === THORN) continue;
+          if (!passable(x, y) || shuns(x, y)) continue;
           if (itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
           cand.push([x, y]);
         }
@@ -2037,8 +2057,8 @@
     // no diagonal squeeze past a corner flanked by walls OR thorns — so a wall of
     // brambles can't be slipped around diagonally without stepping through it
     if (dx !== 0 && dy !== 0) {
-      const blockA = isWall(x + dx, y) || isThorn(x + dx, y);
-      const blockB = isWall(x, y + dy) || isThorn(x, y + dy);
+      const blockA = tileProp(x + dx, y, "solid") || shuns(x + dx, y);
+      const blockB = tileProp(x, y + dy, "solid") || shuns(x, y + dy);
       if (blockA && blockB) return false;
     }
     return true;
@@ -2301,7 +2321,7 @@
       if (cx === tx && cy === ty) break;
       for (const [dx, dy] of DIRS8) {
         const nx = cx + dx, ny = cy + dy;
-        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy) || isThorn(nx, ny)) continue;
+        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy) || shuns(nx, ny)) continue;
         // occupied tiles block passage, unless a tile IS the goal (so the search
         // can still route a monster up next to the player or another monster)
         if ((nx !== tx || ny !== ty) && (monsterAt(nx, ny) || (nx === player.x && ny === player.y))) continue;
@@ -2331,7 +2351,7 @@
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;   // monsters won't brave brambles
+      if (!canStep(m.x, m.y, dx, dy) || shuns(nx, ny)) continue;   // monsters won't brave hazards they shun
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       const d = cheb(nx, ny, tx, ty);
@@ -2345,7 +2365,7 @@
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;
+      if (!canStep(m.x, m.y, dx, dy) || shuns(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       const d = cheb(nx, ny, m.patrol.x, m.patrol.y);
@@ -2389,7 +2409,7 @@
     while (cheb(m.x, m.y, player.x, player.y) > 1) {
       const nx = m.x + dir[0], ny = m.y + dir[1];
       if (nx === player.x && ny === player.y) break;
-      if (!canStep(m.x, m.y, dir[0], dir[1]) || isThorn(nx, ny) || monsterAt(nx, ny)) break;
+      if (!canStep(m.x, m.y, dir[0], dir[1]) || shuns(nx, ny) || monsterAt(nx, ny)) break;
       m.x = nx; m.y = ny; moved++;
     }
     if (moved > 0) {                                         // make the dash READ: streak + a slower slide + a roar
@@ -2410,7 +2430,7 @@
     let best = null, bestScore = -Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny) || monsterAt(nx, ny)) continue;
+      if (!canStep(m.x, m.y, dx, dy) || shuns(nx, ny) || monsterAt(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       const ddx = player.x - nx, ddy = player.y - ny;
       const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
@@ -2475,7 +2495,7 @@
     let placed = 0;
     for (let t = 0; t < 240 && placed < count; t++) {
       const gx = cx + randInt(-radius, radius), gy = cy + randInt(-radius, radius);
-      if (!inBounds(gx, gy) || map[gy][gx] === WALL || map[gy][gx] === THORN) continue;
+      if (!inBounds(gx, gy) || tileProp(gx, gy, "solid") || shuns(gx, gy)) continue;
       if (cheb(gx, gy, cx, cy) > radius) continue;
       if (monsterAt(gx, gy) || (gx === player.x && gy === player.y)) continue;
       const mm = makeMonster(type, gx, gy); mm.aware = true;
@@ -2518,7 +2538,7 @@
     let best = null, bestScore = -1;
     for (let t = 0; t < 300; t++) {
       const x = m.x + randInt(-10, 10), y = m.y + randInt(-10, 10);
-      if (!inBounds(x, y) || map[y][x] === WALL || map[y][x] === THORN) continue;
+      if (!inBounds(x, y) || tileProp(x, y, "solid") || shuns(x, y)) continue;
       const dd = cheb(x, y, m.x, m.y);
       if (dd < 3 || dd > 10) continue;
       if (monsterAt(x, y) || (x === player.x && y === player.y)) continue;
@@ -2773,7 +2793,7 @@
       const dx = Math.sign(m.x - player.x) || (Math.random() < 0.5 ? 1 : -1);
       const dy = Math.sign(m.y - player.y) || (Math.random() < 0.5 ? 1 : -1);
       const nx = m.x + dx, ny = m.y + dy;
-      if (inBounds(nx, ny) && passable(nx, ny) && !isThorn(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
+      if (inBounds(nx, ny) && passable(nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
       return;
     }
     // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just the player.
@@ -2909,7 +2929,7 @@
       for (const [dx, dy] of DIRS8) {
         const nx = cx + dx, ny = cy + dy;
         if (!explored[ny] || !explored[ny][nx]) continue;
-        if (!canStep(cx, cy, dx, dy) || isThorn(nx, ny)) continue;  // never auto-walk through thorns
+        if (!canStep(cx, cy, dx, dy) || tileProp(nx, ny, "noTravel")) continue;  // never auto-walk through no-travel hazards
         const k = key(nx, ny);
         if (prev.has(k)) continue;
         prev.set(k, [cx, cy]);
@@ -3276,6 +3296,12 @@
     ctx.fillStyle = shade("#c53a4a", b);
     ctx.beginPath(); ctx.arc(cx - tile * 0.12, cy + tile * 0.08, Math.max(1.2, tile * 0.05), 0, Math.PI * 2); ctx.fill();
   }
+  // Placeholder draws for the C1 hazard tiles — nothing places them yet (that's
+  // C2/C3), but a tile with no draw case would render as an invisible hole.
+  function drawWater(px, py, b) { ctx.fillStyle = shade("#2f6a9e", b); ctx.fillRect(px, py, tile, tile); }
+  function drawChasm(px, py, b) { ctx.fillStyle = shade("#0c0c10", b); ctx.fillRect(px, py, tile, tile); }
+  function drawRubble(px, py, b) { ctx.fillStyle = shade("#6f6a5e", b); ctx.fillRect(px, py, tile, tile); }
+  function drawGrass(px, py, b) { ctx.fillStyle = shade("#3a6b2e", b); ctx.fillRect(px, py, tile, tile); }
   // Wall-mounted torch: a bracket and a flickering flame, with a soft glow pool.
   function drawTorch(px, py, b, now) {
     const cx = px + tile / 2;
@@ -3615,6 +3641,10 @@
           if (t === STAIRS) drawImg(SPRITES[biome.exitSprite || "stairs"], px, py);
           else if (t === DOOR) drawDoor(px, py, !doorOpen(mx, my), b);
           else if (t === THORN) drawThorn(px, py, b);
+          else if (t === WATER) drawWater(px, py, b);
+          else if (t === CHASM) drawChasm(px, py, b);
+          else if (t === RUBBLE) drawRubble(px, py, b);
+          else if (t === GRASS) drawGrass(px, py, b);
         }
         dim(px, py, 1 - b);                                   // torch falloff / memory
         if (!vis) { ctx.fillStyle = "rgba(70,90,130,0.10)"; ctx.fillRect(px, py, tile, tile); }
@@ -3902,6 +3932,10 @@
         if (t === STAIRS) { mctx.fillStyle = been ? "#f6b845" : "#7c6231"; mctx.fillRect(px, py, sz, sz); }
         else if (t === DOOR) { mctx.fillStyle = been ? "#8a6a3a" : "#4e3e24"; mctx.fillRect(px, py, sz, sz); }
         else if (t === THORN) { mctx.fillStyle = been ? "#4a6a34" : "#2c3d20"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === WATER) { mctx.fillStyle = been ? "#3a6a9a" : "#1e3a52"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === CHASM) { mctx.fillStyle = been ? "#1a1a1e" : "#0c0c0e"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === RUBBLE) { mctx.fillStyle = been ? "#8a8578" : "#4e4a40"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === GRASS) { mctx.fillStyle = been ? "#4a7a3a" : "#2a4520"; mctx.fillRect(px, py, sz, sz); }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -4272,7 +4306,7 @@
     if (passable(player.x, player.y) && !itemAt(player.x, player.y)) return { x: player.x, y: player.y };
     for (const [dx, dy] of DIRS8) {
       const x = player.x + dx, y = player.y + dy;
-      if (passable(x, y) && map[y][x] !== THORN && !itemAt(x, y)) return { x, y };
+      if (passable(x, y) && !shuns(x, y) && !itemAt(x, y)) return { x, y };
     }
     return null;
   }
@@ -4663,7 +4697,7 @@
       if (m) {
         const pdx = Math.sign(x - player.x) || (horiz ? 0 : 1), pdy = Math.sign(y - player.y) || (horiz ? 1 : 0);
         const nx = x + pdx, ny = y + pdy;
-        if (inBounds(nx, ny) && passable(nx, ny) && !isThorn(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
+        if (inBounds(nx, ny) && passable(nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
         else continue;
       }
       activeWalls.push({ x, y, turns: 21 });   // +1: this cast's own worldTurn() below ticks it once already
@@ -4884,6 +4918,10 @@
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
         t === THORN ? "A wall of thorns — you can force through, but it'll draw blood. Something waits beyond." :
+        t === WATER ? "Shallow water — slow going, but wadeable." :
+        t === CHASM ? "A chasm — step in and you'll fall straight through to the floor below." :
+        t === RUBBLE ? "Loose rubble — treacherous underfoot, slow going." :
+        t === GRASS ? "Tall grass — thick enough to hide in." :
         "Open ground.");
   }
 
@@ -5256,6 +5294,8 @@
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),
+    tileDeclared: (t) => Object.prototype.hasOwnProperty.call(TILE, t),
     pan: (dxPx, dyPx) => panBy(dxPx, dyPx),
     addXp: (n) => gainXP(n || 0),
     doorOpenAt: (x, y) => doorOpen(x, y),
