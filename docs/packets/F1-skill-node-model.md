@@ -2,8 +2,8 @@
 
 **Depends on:** nothing.
 **Touch only:** `game.js` (Skills section), `data.js`, `editor.js`, `index.html`.
-**Read:** `Read(game.js, offset=4383, limit=140)` (`treeSkills`, `skillAtPos`, `prereqsMet`,
-`learnSkill`), and grep `skillTree` in `editor.js` for the 5×5 form.
+**Read:** the "Skills" section (line range in `docs/MAP.md`) — `treeSkills`,
+`prereqsMet`, `learnSkill`, and grep `skillTree` in `editor.js` for the 5×5 form.
 **Do NOT read `game.js` in full.**
 
 ## Goal

@@ -2,8 +2,8 @@
 
 **Depends on:** F1 (nodes must have `id`, `x`, `y`, and id-based `req`).
 **Touch only:** `game.js` (Character screen section), `styles.css`, `index.html`.
-**Read:** `Read(game.js, offset=4790, limit=100)` (`renderChar`, `charSkillsHTML` — what you are
-replacing), `styles.css` lines ~369–420 (`#char`, `.char-card`, `.skillrow`), and grep
+**Read:** the "Character screen" section (line range in `docs/MAP.md`) —
+`renderChar` and `charSkillsHTML`, which you are replacing, the `#char` / `.char-card` / `.skillrow` rules in `styles.css` (grep them), and grep
 `touchstart` in the Touch section for the existing pinch/drag handling.
 **Do NOT read `game.js` in full.**
 

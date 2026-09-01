@@ -2,7 +2,7 @@
 
 **Depends on:** nothing (A-track independent).
 **Touch only:** `game.js` (Skills section), `data.js`, `index.html` (cache-buster).
-**Read:** `Read(game.js, offset=4383, limit=200)` then grep `beginTargetedSkill` and
+**Read:** the "Skills" section (line range in `docs/MAP.md`), then grep `beginTargetedSkill` and
 `executeThrowSkill` — copy how an existing tap-a-target skill resolves.
 **Do NOT read `game.js` in full.**
 
@@ -17,8 +17,8 @@ shown in the vitals bar) and currently has nothing to spend it on. `bolt` is the
 
 ## Where it goes
 
-`useSkill` (~4519) dispatches on `d.kind`. Targeted skills all route through
-`beginTargetedSkill(key)` (~4528) — add `"bolt"` to that list, then handle it in the executor
+`useSkill` dispatches on `d.kind` (grep `d.kind === "rush"`). Targeted skills all route through
+`beginTargetedSkill(key)` — add `"bolt"` to that list, then handle it in the executor
 that `beginTargetedSkill` eventually calls (grep for where `wallcast`/`eyecast` resolve).
 
 ## Behaviour

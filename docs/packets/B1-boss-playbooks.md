@@ -2,8 +2,8 @@
 
 **Depends on:** A1 (`bosses.js` must exist).
 **Touch only:** `bosses.js`, `game.js`, `data.js`, `docs/BOSSES.md` (new).
-**Read:** `bosses.js` (whole — it's small after A1), `Read(game.js, offset=1303, limit=40)`
-(the boss factory), and grep `monsterAct` for the dispatch lines.
+**Read:** `bosses.js` (whole — it's small after A1), the "Monster & boss factories" section
+(line range in `docs/MAP.md`), and grep `monsterAct` for the dispatch lines.
 **Do NOT read `game.js` in full.**
 
 ## Goal
@@ -18,7 +18,7 @@ content rather than surgery.
 
 ## Two problems to fix
 
-**1. `makeBoss` drops the data row.** Compare (`game.js` ~1304):
+**1. `makeBoss` drops the data row.** Compare (grep `function makeBoss`):
 
 ```js
 function makeMonster(type, x, y) {
@@ -63,10 +63,10 @@ Export `playbookFor(type)` returning the entry or `null`. Then in `game.js`:
 
 - `monsterAct` — one lookup: `const pb = _boss.playbookFor(m.type); if (pb && pb.act) { pb.act(m); return; }`,
   replacing both hardcoded branches. Keep the `healing_node` passive check as it is.
-- `attack` (~1699) — `dmg = _boss.damageIn(target, dmg)`, which returns `dmg` unchanged when no
+- `attack` (grep `golemShield(target)`) — `dmg = _boss.damageIn(target, dmg)`, which returns `dmg` unchanged when no
   playbook applies. Delete the `if (target.type === "golem")` special case.
-- `killMonster` (~1572) — `_boss.onKill(target)` replacing the `healing_node` special case.
-- `worldTurn` (~2868) — `_boss.tick()` replacing `tickNodeBlasts()`.
+- `killMonster` (grep `golemNodeDeath(target)`) — `_boss.onKill(target)` replacing the `healing_node` special case.
+- `worldTurn` (grep `tickNodeBlasts()`) — `_boss.tick()` replacing `tickNodeBlasts()`.
 
 `golemShield` keeps its current signature for the dev hook; `damageIn` wraps it.
 

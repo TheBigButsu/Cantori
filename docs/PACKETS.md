@@ -12,9 +12,9 @@ terrain, save, dread, sprites, menus.
 
 ## The cost rules
 
-`game.js` is ~76k tokens. Reading it whole, on a 15-turn agent session, is roughly
+`game.js` is ~78k tokens. Reading it whole, on a 15-turn agent session, is roughly
 **$0.40 of input on Sonnet 5 with caching — $2.30 without**. Reading one 4k section is
-about **$0.04**. That ~10× matters, but the real cost is elsewhere: a model buried in 76k
+about **$0.04**. That ~10× matters, but the real cost is elsewhere: a model buried in 78k
 tokens of unrelated code makes more mistakes, and **retries are what actually blow the
 budget**. Every rule below exists to keep the model's working set small.
 
@@ -26,7 +26,10 @@ budget**. Every rule below exists to keep the model's working set small.
    re-reading code to convince yourself it works. Run it; read the failure; fix that.
 4. **One packet, one commit.** If you find a second problem, note it in the commit
    message — don't fix it.
-5. **Rerun `python3 tools/make_map.py`** if you moved code between sections.
+5. **Rerun `python3 tools/make_map.py`** — before you start, so the map matches today's
+   `game.js`, and again at the end if you moved code between sections. Line numbers drift with
+   every merge; `docs/MAP.md` is the only file allowed to contain them, which is why briefs
+   name sections and symbols instead.
 
 Model guidance: **Haiku 4.5** ($1/$5 per Mtok) is enough for the `data.js` and asset
 packets marked *content*. **Sonnet 5** ($2/$10) for everything marked *code*. The
@@ -42,15 +45,17 @@ matters**. (An earlier roadmap numbered things P0–P9; that was milestones, not
 P1 became track A, P2→D1–D2, P3→D3–D5, P4→C, P5→B2–B4, P6→B5–B6, P7→B1, P8→E1–E2, P9→E3–E4.
 Ignore the P numbers.)
 
-**Do not paste the brief's contents.** Paste the four lines below, with the packet's filename
+**Do not paste the brief's contents.** Paste the block below, with the packet's filename
 in it — the model reads the brief out of the repo itself, which is cheaper and keeps one copy
 of the truth.
 
 ```
-Read CLAUDE.md and docs/packets/<id>.md. Do exactly what that brief says.
+First run `python3 tools/make_map.py` to refresh docs/MAP.md, then read CLAUDE.md
+and docs/packets/<id>.md. Do exactly what that brief says.
 
 Do NOT read game.js in full — use docs/MAP.md to find the sections you need
-and read only those ranges.
+and read only those ranges. Briefs name sections and symbols, never line
+numbers; if you need a line number, get it from MAP.md or grep for the symbol.
 
 Touch only the files the brief lists. `node tests/smoke.js` must pass before
 you commit. One commit, message explaining why, not what.

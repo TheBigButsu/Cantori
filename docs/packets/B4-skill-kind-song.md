@@ -2,7 +2,7 @@
 
 **Depends on:** nothing.
 **Touch only:** `game.js` (Skills + Monster turns + HUD), `data.js`, `index.html`.
-**Read:** `Read(game.js, offset=4383, limit=200)`, then grep `fleeing`, `berserk`, `pullZone`,
+**Read:** the "Skills" section (line range in `docs/MAP.md`), then grep `fleeing`, `berserk`, `pullZone`,
 `hasteBuff`.
 **Do NOT read `game.js` in full.**
 

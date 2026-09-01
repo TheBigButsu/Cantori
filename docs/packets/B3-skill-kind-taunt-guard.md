@@ -2,7 +2,7 @@
 
 **Depends on:** nothing.
 **Touch only:** `game.js` (Skills + Monster turns sections), `data.js`, `index.html`.
-**Read:** `Read(game.js, offset=4383, limit=200)`, then grep `stoneSkin` (the timed-buff
+**Read:** the "Skills" section (line range in `docs/MAP.md`), then grep `stoneSkin` (the timed-buff
 pattern you are copying) and `pullZone` (the "override monster targeting" pattern).
 **Do NOT read `game.js` in full.**
 
@@ -17,7 +17,7 @@ machinery**: `stoneSkin` is an existing timed self-buff with a turn counter tick
 
 ## `guard` — timed damage reduction
 
-Self-cast, no target. Follow `stoneSkin` exactly (`game.js` ~335 for the accessors, and the
+Self-cast, no target. Follow `stoneSkin` exactly (grep `stoneSkinActive` for the accessors, and the
 tick in `worldTurn`):
 
 - `player.guard = { turns: rank.turns, mit: rank.mit }` on cast.

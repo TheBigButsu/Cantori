@@ -2,8 +2,8 @@
 
 **Depends on:** nothing.
 **Touch only:** `game.js` (Monster turns section), `data.js`, `index.html`.
-**Read:** `Read(game.js, offset=2753, limit=140)` — that's `monsterAct`, the whole surface you
-are extending. Grep `spawnNear`, `spawnBurst`, `flashScreen`.
+**Read:** the "Monster turns" section (line range in `docs/MAP.md`);
+`monsterAct` lives inside it and is the whole surface you are extending. Grep `spawnNear`, `spawnBurst`, `flashScreen`.
 **Do NOT read `game.js` in full.**
 
 ## Goal

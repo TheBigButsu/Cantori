@@ -3,7 +3,8 @@
 **Depends on:** nothing. Do this first.
 **Touch only:** `bosses.js` (new), `game.js`, `index.html`.
 **Read:** `loot.js` (whole, ~2.4k — it is the pattern you are copying), then
-`Read(game.js, offset=2576, limit=180)`.
+the two boss sections — "The Pied Piper" and "The Stone Golem". Look their current
+line ranges up in `docs/MAP.md`; do not trust any number written in this brief.
 **Do NOT read `game.js` in full.** Grep for a call site if you need one.
 
 ## Goal
@@ -29,21 +30,26 @@ window.CantoriLoot = function (deps) {
 };
 ```
 
-and `game.js` wires it at line ~247 with `const _loot = window.CantoriLoot({ … })`. Copy that
+and `game.js` wires it up with `const _loot = window.CantoriLoot({ … })` (grep `CantoriLoot`). Copy that
 shape exactly: `window.CantoriBosses = function (deps) { … }`.
 
 ## What moves
 
-Lines **2576–2752**, which is contiguous and contains nothing else. `monsterAct` begins after
-2752 and **stays in `game.js`**.
+The block runs from the `// ---- The Pied Piper ----` banner to the end of
+`tickNodeBlasts`. It is contiguous and contains nothing else — `monsterAct` begins
+immediately after it and **stays in `game.js`**. Get the current range from `docs/MAP.md`
+(the two boss sections) and confirm the end by grepping `function monsterAct`.
+
+Fourteen functions plus two declarations move, in this order:
 
 | | |
 |---|---|
-| `const golemShield` | 2580 |
-| `let pendingNodeBlasts` | 2581 |
-| `piperAct` `piperPhaseShift` `piperCastBeam` `piperFireBeam` | 2489–2581 |
-| `golemAct` `golemResolveWindup` `golemBeginBoulder` `golemFireBoulder` `golemConeTiles` `golemBeginSlam` `golemFireSlam` `golemPhaseShift` `golemNodeDeath` | 2582–2726 |
-| `tickNodeBlasts` | 2727–2752 |
+| `const golemShield`, `let pendingNodeBlasts` | the two declarations above `golemAct` |
+| Piper | `piperAct` `piperPhaseShift` `piperCastBeam` `piperFireBeam` |
+| Golem | `golemAct` `golemResolveWindup` `golemBeginBoulder` `golemFireBoulder` `golemConeTiles` `golemBeginSlam` `golemFireSlam` `golemPhaseShift` `golemNodeDeath` |
+| Delayed blast | `tickNodeBlasts` |
+
+Nothing else in that span moves. If a grep turns up a boss function outside it, stop and say so.
 
 Also move the `// ---- The Pied Piper ----` and `// ---- The Stone Golem ----` banners and
 their comments. Those comments are good — keep them intact.
@@ -82,10 +88,10 @@ Return `{ piperAct, golemAct, golemShield, golemNodeDeath, tickNodeBlasts, reset
 | 1297 | `pendingNodeBlasts = [];` | `_boss.reset();` |
 | 1572 | `golemNodeDeath(target)` | `_boss.golemNodeDeath(target)` |
 | 1699 | `golemShield(target)` | `_boss.golemShield(target)` |
-| ~2768 | the `piperAct` / `golemAct` dispatch in `monsterAct` | `_boss.piperAct(m)` / `_boss.golemAct(m)` |
-| ~2868 | `tickNodeBlasts()` in `worldTurn` | `_boss.tickNodeBlasts()` |
+| grep `m.type === "piper"` | the dispatch in `monsterAct` | `_boss.piperAct(m)` / `_boss.golemAct(m)` |
+| grep `tickNodeBlasts()` | the call in `worldTurn` | `_boss.tickNodeBlasts()` |
 
-Two dev hooks also reference the internals — `golemShield` (~5172) and `nodeBlasts` (~5174).
+Two dev hooks also reference the internals — grep `golemShield:` and `nodeBlasts:`.
 Keep both working; add a `nodeBlasts()` export for the latter. The smoke test does not cover
 the dev hooks, so check them by grep, not by hope.
 

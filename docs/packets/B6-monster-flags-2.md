@@ -2,7 +2,7 @@
 
 **Depends on:** B5 (same section; do them in order to avoid conflicting edits).
 **Touch only:** `game.js` (Monster turns section), `data.js`, `index.html`.
-**Read:** `Read(game.js, offset=2753, limit=140)`. Grep `m.stun`, `dots.push`, `aware`,
+**Read:** the "Monster turns" section (line range in `docs/MAP.md`). Grep `m.stun`, `dots.push`, `aware`,
 `makeMonster`.
 **Do NOT read `game.js` in full.**
 

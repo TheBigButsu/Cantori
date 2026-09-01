@@ -22,10 +22,13 @@ rather than by line number — line numbers move.
 
 ## Before you start
 
-**Never read `game.js` whole.** It is ~76k tokens; reading it costs real money on every task and
+**Never read `game.js` whole.** It is ~78k tokens and growing; reading it costs real money on every task and
 buries the code you need in code you don't. `docs/MAP.md` lists every section with its line range
 and token cost — read your section with `Read(game.js, offset=…, limit=…)`, or Grep for a symbol.
 Regenerate the map with `python3 tools/make_map.py` after moving code between sections.
+
+Line numbers drift with every merge, so **`docs/MAP.md` is the only file that should carry
+them** — briefs name sections and symbols instead. Regenerate the map before you start reading.
 
 `docs/PACKETS.md` is the work queue: numbered, self-contained briefs in `docs/packets/`, each
 naming the files it may touch and how to verify it. If you were pointed at a packet, that brief
