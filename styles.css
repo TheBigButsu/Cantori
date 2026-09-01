@@ -414,6 +414,38 @@ body{
   letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
 }
 .skillrow .upg[disabled]{background:rgba(240,168,56,.12);color:var(--ink-dim);cursor:default}
+
+/* Skill tree (Skills tab) — nodes + SVG connector layer, detail card below
+   reuses .skillrow as-is. #charBody already scrolls vertically; this adds
+   horizontal scroll for trees wider than the card, in place of the
+   dungeon-camera's pinch/drag (that's wired to the canvas, not a fit here). */
+.skilltree-wrap{overflow-x:auto;margin-bottom:14px;-webkit-overflow-scrolling:touch}
+.skilltree{position:relative;margin:0 auto}
+.skilltree-svg{position:absolute;left:0;top:0;pointer-events:none}
+.skarrow.amber{stroke:var(--amber);stroke-width:3}
+.skarrow.grey{stroke:var(--ink-dim);stroke-width:2.5}
+.skarrowhead.amber{fill:var(--amber)}
+.skarrowhead.grey{fill:var(--ink-dim)}
+.sknode-wrap{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.sksel{position:absolute;border:2px solid var(--amber);border-radius:6px;pointer-events:none}
+.sknode{
+  width:100%;aspect-ratio:1;border-radius:50%;box-sizing:border-box;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(240,168,56,.05);border:3px solid var(--line);
+}
+.sknode .skicon{font-size:34px;line-height:1;color:var(--amber)}
+.sknode .skicon-img{width:60%;height:60%;object-fit:contain}
+.sknode.st-locked{border-color:var(--line)}
+.sknode.st-locked .skicon,.sknode.st-locked .skicon-img{opacity:.35;filter:grayscale(1)}
+.sknode.st-available{border-color:rgba(240,168,56,.5)}
+.sknode.st-available .skicon,.sknode.st-available .skicon-img{opacity:.7}
+.sknode.st-invested{border-width:5px;border-color:var(--amber);box-shadow:0 0 14px rgba(240,168,56,.55)}
+.sknode.st-invested .skicon,.sknode.st-invested .skicon-img{opacity:1}
+.skbadge{
+  position:relative;z-index:1;margin-top:-10px;padding:2px 9px;border-radius:20px;
+  background:#14100a;border:1px solid var(--line);color:var(--ink);
+  font-family:var(--mono);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
 .cboon{color:var(--ink-dim);font-size:13px;line-height:1.5}
 .cboon .god{color:var(--ink);display:block;margin-top:8px}
 .cboon .god b{color:var(--amber)}
