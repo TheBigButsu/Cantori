@@ -114,6 +114,23 @@ predicate makes rare seeds unwinnable. Do it alone, and extend the smoke test wi
 | E3 | Title screen + settings (motion, haptics, sound, text size) | 5k | todo |
 | E4 | Run summary on death + a bestiary that fills in as you meet things | 5k | todo |
 
+## Track F — skill trees as real trees *(code)*
+
+The mechanics are further along than the screen suggests: ranks, level gates, point spending and
+**enforced prerequisites** all already work. The tree is just *drawn* as a flat list of cards, and
+the rigid 5×5 grid is the only thing preventing real branching.
+
+| Packet | Does | ~size | Status |
+|---|---|---|---|
+| [F1](packets/F1-skill-node-model.md) | Nodes with ids and `x`/`y`; prerequisites by id instead of grid coordinate; migration both ways | 6k | **brief ready** |
+| [F2](packets/F2-skill-tree-render.md) | Draw it: circular nodes, state rings, rank badges, prerequisite arrows, pan/zoom | 7k | **brief ready** |
+| F3 | Drag-and-drop tree builder in `editor.html`, replacing the 5×5 form | 8k | brief after F1 |
+| F4 | Named branch paths per class (Tank → Bulwark / Vanguard), tinted per path | 4k | brief after F2 |
+
+F1 is the risky one — `editor.html` rewrites `data.js` wholesale, so a shape mismatch between the
+game and the editor silently destroys authored trees. Its brief covers the migration both ways;
+do not skip the editor round-trip check.
+
 ---
 
 ## Order
@@ -123,8 +140,13 @@ A1 → A2 → A3 → A4        the split; unlocks everything else running in par
    ├── B1 … B7           frameworks for your content work   ← start here after A1
    ├── C1 → C2/C3/C4 → C5
    ├── D1 → D2, D3 → D4 → D5
-   └── E1 → E2, E3 → E4
+   ├── E1 → E2, E3 → E4
+   └── F1 → F2 → F3/F4      skill trees
 ```
 
 B1 only needs A1 (it lands in the same file A1 creates), so the boss registry is available
-almost immediately. Everything in B, C, D and E is independent once A is done.
+almost immediately. Everything in B, C, D, E and F is independent once A is done.
+
+**One collision to avoid:** A4 extracts `game.js` lines ~3899–4906 into `ui.js`, which contains
+the Skills and Character-screen code that F1/F2 rewrite. Do **F1 and F2 before A4**, or A4's
+brief has to be written against the new tree renderer. Running them in parallel will conflict.
