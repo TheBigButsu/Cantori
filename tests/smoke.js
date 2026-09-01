@@ -124,6 +124,14 @@ async function main() {
 
   const bossKeys = await page.evaluate(() => Object.keys(window.CANTORI_DATA.bosses));
 
+  // C1: every tile constant must have a row in the TILE property table, so a
+  // future tile can't be added without declaring what it is (CLAUDE.md rule 5).
+  const undeclared = await page.evaluate(() => {
+    const consts = window.cantori.tileConstants();
+    return Object.entries(consts).filter(([, v]) => !window.cantori.tileDeclared(v)).map(([k]) => k);
+  });
+  check(undeclared.length === 0, `tile constant(s) with no TILE row: ${undeclared.join(", ")}`);
+
   for (let d = 1; d <= DEPTHS; d++) {
     const state = await page.evaluate(() => window.cantori.peek());
 
