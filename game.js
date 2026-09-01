@@ -2483,7 +2483,7 @@
     }
     return placed;
   }
-  function snapEntity(m) { m.rx = m.x; m.ry = m.y; m.lx = m.x; m.ly = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; }
+  function snapEntity(m) { m.rx = m.x; m.ry = m.y; m.tx = m.x; m.ty = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; m.wp = null; }
 
   // ---- The Pied Piper (forest boss) ---------------------------------------
   function piperAct(m) {
@@ -2870,10 +2870,17 @@
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
+      // Record each tile a multi-action turn actually steps onto, so the renderer
+      // can walk the real path instead of interpolating straight through whatever
+      // the monster stepped around (see animEntity).
+      const legs = [];
       while (m.energy >= 1 && m.hp > 0 && !dead) {
         m.energy -= 1;
+        const bx = m.x, by = m.y;
         monsterAct(m);
+        if (m.x !== bx || m.y !== by) legs.push([m.x, m.y]);
       }
+      if (legs.length > 1) m.wp = legs;   // one move animates as before; two or more get legs
       if (dead) return;
     }
     regenTick();
@@ -3472,14 +3479,39 @@
   const MOVE_MS = 120, BUMP_MS = 130, HIT_MS = 170, FLOAT_MS = 850;
   const easeOut = (p) => 1 - (1 - p) * (1 - p);
   let floaters = [];
+  // Anything faster than speed 1 banks enough energy to act twice in a single
+  // worldTurn — a bat (speed 1.1) does it about every tenth turn — and both acts
+  // resolve before a frame is ever drawn. Tweening straight from where it started
+  // to where it finished cuts the corner: two legal steps around a tree render as
+  // one diagonal glide straight through it, which reads as a monster teleporting
+  // through walls. So a turn that moves an entity more than once records the tiles
+  // it actually visited (`e.wp`), and the tween walks them a leg at a time.
+  // A charge is untouched: it covers several tiles in ONE act, really does travel
+  // in a straight line, and sets its own `moveMs` for the longer slide.
   function animEntity(e, now) {
-    if (e.rx === undefined) { e.rx = e.x; e.ry = e.y; e.lx = e.x; e.ly = e.y; e.ax = e.x; e.ay = e.y; e.at = 0; }
-    if (e.x !== e.lx || e.y !== e.ly) { e.ax = e.rx; e.ay = e.ry; e.at = now; e.lx = e.x; e.ly = e.y; }
-    if (reduceMotion) { e.rx = e.x; e.ry = e.y; return; }
-    const k = easeOut(Math.min(1, (now - e.at) / (e.moveMs || MOVE_MS)));
-    e.rx = e.ax + (e.x - e.ax) * k;
-    e.ry = e.ay + (e.y - e.ay) * k;
-    if (k >= 1 && e.moveMs) e.moveMs = 0;    // one-off slow slide (e.g. a charge) done → back to normal
+    if (e.rx === undefined) {
+      e.rx = e.x; e.ry = e.y; e.ax = e.x; e.ay = e.y; e.tx = e.x; e.ty = e.y; e.at = 0;
+    }
+    if (reduceMotion) { e.rx = e.x; e.ry = e.y; e.tx = e.x; e.ty = e.y; e.wp = null; return; }
+    const dur = e.moveMs || MOVE_MS;
+    if (e.wp && e.wp.length) {
+      // Mid multi-step turn: only start the next leg once this one has played out,
+      // so the path is drawn tile by tile instead of as one straight line.
+      if (now - e.at >= dur) {
+        e.ax = e.tx; e.ay = e.ty;
+        const next = e.wp.shift();
+        e.tx = next[0]; e.ty = next[1];
+        e.at = now;
+      }
+    } else if (e.tx !== e.x || e.ty !== e.y) {
+      // Ordinary single move — retarget immediately from wherever we're drawn, so
+      // fast play stays responsive rather than queueing up lag.
+      e.ax = e.rx; e.ay = e.ry; e.tx = e.x; e.ty = e.y; e.at = now;
+    }
+    const k = easeOut(Math.min(1, (now - e.at) / dur));
+    e.rx = e.ax + (e.tx - e.ax) * k;
+    e.ry = e.ay + (e.ty - e.ay) * k;
+    if (k >= 1 && e.moveMs && !(e.wp && e.wp.length)) e.moveMs = 0;   // one-off slow slide done
   }
   function bumpOffset(e, now) {
     if (reduceMotion || !e.bumpAt) return [0, 0];
@@ -3532,7 +3564,7 @@
   function flashScreen(color, dur) { if (!reduceMotion) screenFlash = { color: color || "#b491d6", at: performance.now(), dur: dur || 420 }; }
   function snapPlayer() {
     player.rx = player.x; player.ry = player.y;
-    player.lx = player.x; player.ly = player.y;
+    player.tx = player.x; player.ty = player.y; player.wp = null;
     player.ax = player.x; player.ay = player.y; player.at = 0;
   }
   function updateAnims(now) {
@@ -5108,6 +5140,12 @@
     throwSkillAt: (key, x, y) => executeThrowSkill(key, x, y),
     setClass: (key) => { applyClass(key); renderChar(); updateHotbar(); updateHUD(); },
     anims: () => ({ projectiles: projectiles.length, streaks: streaks.length, spirals: spirals.length, bursts: bursts.length }),
+    // Where each monster is actually being DRAWN (rx/ry) versus where it logically
+    // is (x/y), plus any queued movement legs — so animation can be tested, not
+    // just eyeballed.
+    renderPos: () => monsters.filter((m) => m.hp > 0).map((m) => ({
+      type: m.type, x: m.x, y: m.y, rx: m.rx, ry: m.ry, wp: (m.wp || []).slice(),
+    })),
     rooms: () => lastRooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
     attachInfo: () => ({ attached: lastAttach, total: lastRooms.length }),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
