@@ -4411,6 +4411,7 @@
   let pendingSkill = null;
   let charOpen = false;
   let charTab = "stats";
+  let charSelSkill = null;   // id of the node selected in the Skills tree, or null
 
   // ---- Skills --------------------------------------------------------------
   // Usable skills are built from the class's skill tree: a flat list of nodes,
@@ -4899,6 +4900,9 @@
     if (!body) return;
     body.innerHTML = charTab === "stats" ? charStatsHTML() : charTab === "skills" ? charSkillsHTML() : charBoonsHTML();
     if (charTab === "skills") {
+      for (const el of body.querySelectorAll(".sknode-wrap")) {
+        el.addEventListener("click", () => { charSelSkill = el.getAttribute("data-key"); renderChar(); });
+      }
       for (const key of Object.keys(classSkills())) {
         const btn = document.getElementById("upg-" + key);
         if (btn) btn.addEventListener("click", () => learnSkill(key));
@@ -4929,44 +4933,113 @@
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
+  // Grid layout for the skill tree: nodes at their authored x/y (see
+  // normalizeTree), one column per branch, spaced a node-diameter apart so
+  // there's room for an arrow between rows. A skill with no x/y (a boon
+  // active, granted outside the tree) gets stacked in reading order on a
+  // row of its own below the real tree rather than overlapping node 0,0.
+  function skillTreeLayout(sk) {
+    const NODE = 88, COL = 176, ROW = 176;
+    const keys = Object.keys(sk);
+    const wired = [], loose = [];
+    let maxTreeY = -1;
+    for (const key of keys) {
+      const d = sk[key];
+      if (d.pos && typeof d.pos.x === "number" && typeof d.pos.y === "number") { wired.push(key); maxTreeY = Math.max(maxTreeY, d.pos.y); }
+      else loose.push(key);
+    }
+    const looseRow = maxTreeY + 1;
+    const pos = {};
+    let maxX = 0, maxY = maxTreeY;
+    for (const key of wired) { const d = sk[key]; pos[key] = { x: d.pos.x, y: d.pos.y }; maxX = Math.max(maxX, d.pos.x); }
+    loose.forEach((key, i) => { pos[key] = { x: i, y: looseRow }; maxX = Math.max(maxX, i); maxY = Math.max(maxY, looseRow); });
+    return {
+      pos, NODE,
+      cx: (key) => pos[key].x * COL + COL / 2,
+      cy: (key) => pos[key].y * ROW + ROW / 2,
+      width: (maxX + 1) * COL, height: (maxY + 1) * ROW + 30,
+    };
+  }
+  function skillFmt(r) {
+    const p = [];
+    if (r.dmg != null) p.push((r.dmg >= 0 ? "+" : "") + r.dmg + " dmg");
+    if (r.acc != null) p.push("+" + r.acc + " acc");
+    if (r.eva != null) p.push("+" + r.eva + " eva");
+    if (r.range) p.push("range " + r.range);
+    if (r.stun) p.push(Math.round(r.stun * 100) + "% stun");
+    if (r.freeAction) p.push("free action");
+    if (r.cd != null) p.push(r.cd + "t cd");
+    return p.join(", ") || "—";
+  }
+  // The lower detail card for whichever node is selected — same markup/CSS
+  // (`.skillrow`) the old flat list used, just for one skill at a time.
+  function charSkillDetailHTML(sk, key) {
+    if (!key || !sk[key]) return `<div class="cline">Tap a node above to see what it does.</div>`;
+    const d = sk[key], st = player.skills[key];
+    const nextDef = st.rank < d.max ? d.ranks[st.rank] : null;
+    const levelGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
+    const prereqLocked = st.rank === 0 && !prereqsMet(d);
+    const locked = prereqLocked || !!levelGate;
+    const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || skillFmt(d.ranks[st.rank - 1])) : null;
+    const nextTxt = st.rank < d.max ? (d.levels[st.rank] || skillFmt(d.ranks[st.rank])) : "Maxed.";
+    const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
+    const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
+    const kindTag = d.kind === "passive" ? " · passive" : "";
+    const reqParts = [];
+    if (prereqLocked) reqParts.push(prereqNames(d).join(", ") || "a prerequisite");
+    if (levelGate) reqParts.push("character level " + levelGate);
+    const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${reqParts.join(", ")}</div>` : "";
+    return `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
+      `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
+      `<div class="sdesc">${d.desc}</div>` + reqTxt +
+      `<div class="snext">${curTxt ? "Now: " + curTxt + "<br>" : ""}${st.rank < d.max ? "Next: " + nextTxt : nextTxt}</div>` +
+      `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
+  }
   function charSkillsHTML() {
     const sk = classSkills();
     const keys = Object.keys(sk);
     if (!keys.length) return `<div class="cline">This class has no skills yet.</div>`;
-    const fmt = (r) => {
-      const p = [];
-      if (r.dmg != null) p.push((r.dmg >= 0 ? "+" : "") + r.dmg + " dmg");
-      if (r.acc != null) p.push("+" + r.acc + " acc");
-      if (r.eva != null) p.push("+" + r.eva + " eva");
-      if (r.range) p.push("range " + r.range);
-      if (r.stun) p.push(Math.round(r.stun * 100) + "% stun");
-      if (r.freeAction) p.push("free action");
-      if (r.cd != null) p.push(r.cd + "t cd");
-      return p.join(", ") || "—";
+    if (charSelSkill && !sk[charSelSkill]) charSelSkill = null;
+    const layout = skillTreeLayout(sk);
+    const stateOf = (key) => {
+      const d = sk[key], st = player.skills[key];
+      if (st.rank >= 1) return "invested";
+      return prereqsMet(d) ? "available" : "locked";
     };
-    let html = `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>`;
+    let nodesHtml = "";
     for (const key of keys) {
       const d = sk[key], st = player.skills[key];
-      const nextDef = st.rank < d.max ? d.ranks[st.rank] : null;
-      const levelGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
-      const prereqLocked = st.rank === 0 && !prereqsMet(d);
-      const locked = prereqLocked || !!levelGate;
-      const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || fmt(d.ranks[st.rank - 1])) : null;
-      const nextTxt = st.rank < d.max ? (d.levels[st.rank] || fmt(d.ranks[st.rank])) : "Maxed.";
-      const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
-      const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
-      const kindTag = d.kind === "passive" ? " · passive" : "";
-      const reqParts = [];
-      if (prereqLocked) reqParts.push(prereqNames(d).join(", ") || "a prerequisite");
-      if (levelGate) reqParts.push("character level " + levelGate);
-      const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${reqParts.join(", ")}</div>` : "";
-      html += `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
-        `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
-        `<div class="sdesc">${d.desc}</div>` + reqTxt +
-        `<div class="snext">${curTxt ? "Now: " + curTxt + "<br>" : ""}${st.rank < d.max ? "Next: " + nextTxt : nextTxt}</div>` +
-        `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
+      const x = layout.cx(key) - layout.NODE / 2, y = layout.cy(key) - layout.NODE / 2;
+      const sel = key === charSelSkill;
+      const icon = d.iconSprite ? `<img class="skicon-img" src="${d.iconSprite}" alt="">` : `<span class="skicon">${d.icon}</span>`;
+      nodesHtml += `<div class="sknode-wrap" data-key="${key}" style="left:${x}px;top:${y}px;width:${layout.NODE}px">` +
+        (sel ? `<div class="sksel" style="width:${layout.NODE + 16}px;height:${layout.NODE + 16}px;left:-8px;top:-8px"></div>` : "") +
+        `<div class="sknode st-${stateOf(key)}">${icon}</div>` +
+        `<div class="skbadge">${st.rank}/${d.max}</div></div>`;
     }
-    return html;
+    // One arrow per prerequisite reference (req = AND, reqAny = OR — both
+    // drawn the same way; the arrow itself only tells you whether *that*
+    // source is invested, not whether it's enough to unlock the target).
+    let arrowsHtml = "";
+    for (const key of keys) {
+      const d = sk[key];
+      const refs = (d.req || []).concat((d.reqAny || []).map((r) => r[0]));
+      for (const srcKey of refs) {
+        if (!sk[srcKey] || !layout.pos[srcKey]) continue;
+        const invested = player.skills[srcKey] && player.skills[srcKey].rank >= 1;
+        const cls = invested ? "amber" : "grey";
+        const x1 = layout.cx(srcKey), y1 = layout.cy(srcKey) + layout.NODE / 2;
+        const x2 = layout.cx(key), y2 = layout.cy(key) - layout.NODE / 2;
+        arrowsHtml += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="skarrow ${cls}" marker-end="url(#skarrow-${cls})"/>`;
+      }
+    }
+    return `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>` +
+      `<div class="skilltree-wrap"><div class="skilltree" style="width:${layout.width}px;height:${layout.height}px">` +
+      `<svg class="skilltree-svg" width="${layout.width}" height="${layout.height}"><defs>` +
+      `<marker id="skarrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead amber"/></marker>` +
+      `<marker id="skarrow-grey" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead grey"/></marker>` +
+      `</defs>${arrowsHtml}</svg>${nodesHtml}</div></div>` +
+      charSkillDetailHTML(sk, charSelSkill);
   }
   function charBoonsHTML() {
     const boons = DATA.boons || {};
