@@ -158,8 +158,8 @@ window.CANTORI_DATA = {
       "color": "#c0c0e0",
       "minFloor": 1
     },
-    "ufetubus": {
-      "name": "Ufetubus",
+    "keener": {
+      "name": "Keener",
       "hp": 4,
       "atkMin": 2,
       "atkMax": 4,
@@ -167,8 +167,8 @@ window.CANTORI_DATA = {
       "glyph": "u",
       "color": "#6fb0d0"
     },
-    "orange_demon": {
-      "name": "Orange Demon",
+    "emberfiend": {
+      "name": "Ember Fiend",
       "hp": 10,
       "atkMin": 4,
       "atkMax": 7,
@@ -1040,9 +1040,9 @@ window.CANTORI_DATA = {
       "floor": "space_floor",
       "wall": "space_wall",
       "monsters": [
-        "ufetubus",
+        "keener",
         "imp",
-        "orange_demon"
+        "emberfiend"
       ],
       "boss": "demigod",
       "final": true,
