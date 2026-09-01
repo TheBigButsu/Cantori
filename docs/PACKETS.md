@@ -37,6 +37,15 @@ them carefully, because a broken extraction breaks everything downstream.
 
 ## Running a packet
 
+Packets are named by track — `A1`, `B1`, `F1` — and **this file is the only list that
+matters**. (An earlier roadmap numbered things P0–P9; that was milestones, not work orders.
+P1 became track A, P2→D1–D2, P3→D3–D5, P4→C, P5→B2–B4, P6→B5–B6, P7→B1, P8→E1–E2, P9→E3–E4.
+Ignore the P numbers.)
+
+**Do not paste the brief's contents.** Paste the four lines below, with the packet's filename
+in it — the model reads the brief out of the repo itself, which is cheaper and keeps one copy
+of the truth.
+
 ```
 Read CLAUDE.md and docs/packets/<id>.md. Do exactly what that brief says.
 
