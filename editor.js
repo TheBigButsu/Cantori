@@ -1185,7 +1185,7 @@
 
   // ---- Save straight to GitHub (commits data.js via the API) -----------------
   const GH_CFG = "cantori_gh_cfg", GH_TOK = "cantori_gh_token";
-  const GH_DEFAULTS = { owner: "thebigbutsu", repo: "Cantori", branch: "claude/mobile-iphone-support-plan-kp1qqh", path: "data.js" };
+  const GH_DEFAULTS = { owner: "thebigbutsu", repo: "Cantori", branch: "main", path: "data.js" };
   function ghCfg() { try { return Object.assign({}, GH_DEFAULTS, JSON.parse(localStorage.getItem(GH_CFG) || "{}")); } catch (e) { return Object.assign({}, GH_DEFAULTS); } }
   function ghToken() { try { return localStorage.getItem(GH_TOK) || ""; } catch (e) { return ""; } }
   function utf8ToBase64(str) {

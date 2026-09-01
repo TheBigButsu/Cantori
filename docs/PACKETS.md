@@ -131,7 +131,7 @@ the rigid 5×5 grid is the only thing preventing real branching.
 
 | Packet | Does | ~size | Status |
 |---|---|---|---|
-| [F1](packets/F1-skill-node-model.md) | Nodes with ids and `x`/`y`; prerequisites by id instead of grid coordinate; migration both ways | 6k | **brief ready** |
+| [F1](packets/F1-skill-node-model.md) | Nodes with ids and `x`/`y`; prerequisites by id instead of grid coordinate; migration both ways | 6k | **DONE** (PR #2) |
 | [F2](packets/F2-skill-tree-render.md) | Draw it: circular nodes, state rings, rank badges, prerequisite arrows, pan/zoom | 7k | **brief ready** |
 | F3 | Drag-and-drop tree builder in `editor.html`, replacing the 5×5 form | 8k | brief after F1 |
 | F4 | Named branch paths per class (Tank → Bulwark / Vanguard), tinted per path | 4k | brief after F2 |
