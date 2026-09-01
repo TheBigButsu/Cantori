@@ -1370,7 +1370,7 @@ window.CANTORI_DATA = {
             "when": "unarmed",
             "desc": "Mastery of empty-handed combat — bonuses apply only while no weapon is equipped.",
             "levels": [
-              "+1 min / +2 max unarmed damage. Unarmed attack speed 2.",
+              "+1 min / +2 max unarmed damage. Unarmed attack speed 1.5.",
               "+2 min / +4 max unarmed damage. (requires character level 3)",
               "+4 min / +12 max unarmed damage. (requires character level 6)",
               "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
@@ -1379,24 +1379,24 @@ window.CANTORI_DATA = {
               {
                 "dmgMin": 1,
                 "dmgMax": 2,
-                "speed": 2
+                "speed": 1.5
               },
               {
                 "dmgMin": 2,
                 "dmgMax": 4,
-                "speed": 2,
+                "speed": 1.5,
                 "minLevel": 3
               },
               {
                 "dmgMin": 4,
                 "dmgMax": 12,
-                "speed": 2,
+                "speed": 1.5,
                 "minLevel": 6
               },
               {
                 "dmgMin": 4,
                 "dmgMax": 12,
-                "speed": 2,
+                "speed": 1.5,
                 "minLevel": 9,
                 "statScale": true
               }

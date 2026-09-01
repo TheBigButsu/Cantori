@@ -170,8 +170,13 @@
   const isThorn = (x, y) => inBounds(x, y) && map[y][x] === THORN;
   const passable = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
   // A door is open only while you stand on it, then swings/grows shut behind you —
-  // an open/close mechanism (the forest bushes "come back").
-  const doorOpen = (x, y) => player.x === x && player.y === y;
+  // an open/close mechanism (the forest bushes "come back"). EXCEPT: a door a
+  // monster died on is propped open for good (you already fought there, no more
+  // ambush to spring) — until you walk back over that exact tile, which resets
+  // it to the normal close-behind-you cycle.
+  let propOpenDoors = new Set();   // "y*MAP_W+x" keys, reset every new level
+  const doorOpen = (x, y) => (player.x === x && player.y === y) || propOpenDoors.has(y * MAP_W + x);
+  const propDoorOpenAt = (x, y) => { if (inBounds(x, y) && map[y][x] === DOOR) propOpenDoors.add(y * MAP_W + x); };
   // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
   // room stays hidden until you reach its doorway, enabling surprise ambushes.
   const blocksSight = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (map[y][x] === DOOR && !doorOpen(x, y));
@@ -1146,6 +1151,7 @@
     beenSeen = blankGrid(false);
     visible = blankGrid(false);
     torches = [];
+    propOpenDoors = new Set();
     walkPath = [];
     monsters = [];
     items = [];
@@ -1256,6 +1262,7 @@
     beenSeen = blankGrid(false);
     visible = blankGrid(false);
     torches = [];
+    propOpenDoors = new Set();
     walkPath = [];
     monsters = [];
     items = [];
@@ -1471,6 +1478,11 @@
     visible[player.y][player.x] = true;
     explored[player.y][player.x] = true;
     beenSeen[player.y][player.x] = true;
+    // Stepping onto a door/bush resets any "propped open" state from a kill —
+    // this runs on every FOV recompute, i.e. every time the player's position
+    // actually changes, so the reset can't be missed by relying on some other
+    // incidental doorOpen() query landing on this exact tile.
+    if (map[player.y][player.x] === DOOR) propOpenDoors.delete(player.y * MAP_W + player.x);
     for (const o of OCT) castLight(player.x, player.y, 1, 1.0, 0.0, o[0], o[1], o[2], o[3]);
   }
 
@@ -1548,6 +1560,7 @@
   function killMonster(target, verb) {
     if (target.hp > 0 || !monsters.includes(target)) return;
     monsters = monsters.filter((m) => m !== target);
+    propDoorOpenAt(target.x, target.y);   // died on a door/bush? it's propped open now
     log("The " + monName(target) + " " + (verb || "dies") + ".", "hit");
     // Regular monsters award XP by their tier: ceil(minFloor / 2) — floor 1–2 = 1,
     // floor 3–4 = 2, floor 5 = 3. Bosses give a larger scaled reward.
@@ -1681,7 +1694,6 @@
         return;
       }
       let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
-      if (surprise) dmg = Math.round(dmg * 1.5);       // surprise strikes hit harder
       const crit = Math.random() < critChance();       // 5%+ chance for 200%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       if (target.type === "golem") dmg = Math.max(1, dmg - golemShield(target));  // healing nodes shield the golem
@@ -2342,6 +2354,34 @@
     if (best && bestD < cheb(m.x, m.y, m.patrol.x, m.patrol.y)) { m.x = best[0]; m.y = best[1]; }
     else m.patrol = randomFloor();       // stuck — pick a new destination
   }
+  // Shattered Pixel Dungeon-style hunt: losing sight doesn't mean forgetting —
+  // a monster with a lastSeen trail heads straight there. Arriving to an empty
+  // tile isn't proof you vanished into thin air (through a bush, round a
+  // corner), so it spends a few turns poking around nearby before finally
+  // giving up and going back to idle patrol (Hunting → searching Wandering →
+  // idle Wandering, the same chain SPD's mobs use).
+  const SEARCH_TURNS = 4;
+  function nearbySearchSpot(cx, cy) {
+    for (let t = 0; t < 10; t++) {
+      const nx = cx + randInt(-2, 2), ny = cy + randInt(-2, 2);
+      if (inBounds(nx, ny) && map[ny][nx] === FLOOR) return { x: nx, y: ny };
+    }
+    return null;
+  }
+  function chaseLastSeen(m) {
+    stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
+    if (m.x !== m.lastSeen.x || m.y !== m.lastSeen.y) return;   // still travelling there
+    if (m.searchTurns == null) m.searchTurns = SEARCH_TURNS;
+    if (m.searchTurns > 0) {
+      m.searchTurns--;
+      if (!m.searchSpot || (m.x === m.searchSpot.x && m.y === m.searchSpot.y)) {
+        m.searchSpot = nearbySearchSpot(m.lastSeen.x, m.lastSeen.y);
+      }
+      if (m.searchSpot) stepMonsterTo(m, m.searchSpot.x, m.searchSpot.y);
+    } else {
+      m.lastSeen = null; m.aware = false; m.searchTurns = null; m.searchSpot = null;
+    }
+  }
   function doCharge(m) {
     const dir = straightDir(m);
     const sx = m.x, sy = m.y;
@@ -2449,7 +2489,7 @@
   function piperAct(m) {
     if (m.beam) { piperFireBeam(m); return; }        // fire the line telegraphed last turn
     const see = canSee(m);
-    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }
+    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }
     // Entrance: the first time it sees you, it calls vermin to your side.
     if (see && !m.summoned) {
       m.summoned = true;
@@ -2470,7 +2510,7 @@
     if (m.beamCd > 0) m.beamCd--;
     if (d === 1) { attack(m, player); return; }
     if (see) { stepMonsterTo(m, player.x, player.y); return; }
-    if (m.lastSeen) { stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y); if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null; return; }
+    if (m.lastSeen) { chaseLastSeen(m); return; }
     patrolStep(m);
   }
   function piperPhaseShift(m) {
@@ -2542,7 +2582,7 @@
   function golemAct(m) {
     if (m.windup) { golemResolveWindup(m); return; }
     const see = canSee(m);
-    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }
+    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }
     if (m.slamCd > 0) m.slamCd--;
     // Healing-node respawn timer — only once the golem has phased below 50%.
     if (m.phased) {
@@ -2562,7 +2602,7 @@
     if (see && d >= 3 && lineOfSight(m.x, m.y, player.x, player.y) && Math.random() < 0.5) { golemBeginBoulder(m); return; }
     if (d === 1) { attack(m, player); return; }
     if (see) { stepMonsterTo(m, player.x, player.y); return; }
-    if (m.lastSeen) { stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y); if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null; return; }
+    if (m.lastSeen) { chaseLastSeen(m); return; }
     patrolStep(m);
   }
   function golemResolveWindup(m) {
@@ -2753,8 +2793,7 @@
       }
       // no other target closer than the player → fall through to normal player-seeking behavior
     }
-    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; }  // spotted: remember where
-    else m.aware = false;                        // lost sight → it forgets you; re-emerging lets you strike first (dance around a tree/bush)
+    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -2766,11 +2805,7 @@
       return;
     }
     if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in (chargers line up)
-    if (m.lastSeen) {                            // lost sight → head to where you were last seen
-      stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
-      if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) m.lastSeen = null;   // reached it, trail goes cold
-      return;
-    }
+    if (m.lastSeen) { chaseLastSeen(m); return; }   // lost sight → head to where you were last seen, then search nearby
     patrolStep(m);                               // no lead → wander
   }
   // A lightweight monster-vs-monster strike (Anger of Kethara only) — no crits,
@@ -5107,7 +5142,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0 })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, lastSeen: m.lastSeen ? { x: m.lastSeen.x, y: m.lastSeen.y } : null, searchTurns: m.searchTurns == null ? null : m.searchTurns })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault, boonKey: it.boonKey || null, boonGroup: it.boonGroup || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),

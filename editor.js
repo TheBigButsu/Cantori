@@ -895,8 +895,8 @@
       rows: [
         { name: "Weapon roll", formula: "random(weapon's dmg min, weapon's dmg max)", note: "Unarmed: 2–3, boosted by Brynn's Unarmed Master while no weapon is equipped." },
         { name: "Total damage", formula: "total = weapon roll + strBonus + skill bonus (Smite/Rush/etc.) + flat passive bonus (Sword Master, etc.)", note: "" },
-        { name: "Surprise attack", formula: "total × 1.5", note: "Applies when the target hasn't noticed you yet." },
-        { name: "Critical hit", formula: "total × critMult", note: "Rolled independently of the surprise multiplier — both can apply to the same hit." },
+        { name: "Surprise attack", formula: "no damage bonus — guaranteed hit (no accuracy/evasion roll) against a target that hasn't noticed you", note: "Purely a free hit, not extra damage — flags 'aware' true on the target either way." },
+        { name: "Critical hit", formula: "total × critMult", note: "" },
       ],
     },
     {
@@ -932,6 +932,17 @@
       rows: [
         { name: "Attack cost", formula: "1 / (weapon speed × (1 + total haste) [+1 if a Metrognome is tuned to attack speed])", note: "Lower cost = more actions per monster turn." },
         { name: "Walk cost", formula: "1 normally, 0.5 with a Metrognome tuned to walk speed", note: "" },
+      ],
+    },
+    {
+      title: "Monster AI & doors",
+      rows: [
+        { name: "Sight", formula: "sees you within 8 tiles AND has line of sight", note: "A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
+        { name: "Hunting", formula: "in sight → moves straight toward you, refreshing its last-known-position trail every turn", note: "" },
+        { name: "Tracking", formula: "out of sight but has a trail → walks to your last known position", note: "It doesn't forget the instant it loses sight — it commits to the spot it saw you last, right through a door or bush along the way." },
+        { name: "Searching", formula: "reaches the last known spot, you're not there → 4 turns poking around a random nearby tile before giving up", note: "Mirrors Shattered Pixel Dungeon's Hunting → searching Wandering → idle Wandering chain." },
+        { name: "Surprise window", formula: "only while fully idle (never hunting, tracking, or searching)", note: "'aware' stays true through the whole hunt/track/search chain — only a monster that's genuinely never noticed you grants a surprise hit." },
+        { name: "Door reset", formula: "a door/bush a monster died on is propped open until you step on that tile again", note: "Stepping on it resets it to the normal close-behind-you cycle." },
       ],
     },
     {
