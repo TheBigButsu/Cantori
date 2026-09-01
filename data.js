@@ -1116,184 +1116,158 @@ window.CANTORI_DATA = {
       },
       "blurb": "Front-line brawler. All around weapons master.",
       "skillTree": [
-        [
-          {
-            "name": "Rush",
-            "key": "rush",
-            "icon": "➤",
-            "kind": "rush",
-            "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
-            "levels": [
-              "+0 damage, 100 turn cooldown",
-              "+3 damage",
-              "+5 damage, 50 turn cooldown",
-              "can stun enemies 50% of the time"
+        {
+          "id": "rush",
+          "x": 0,
+          "y": 0,
+          "name": "Rush",
+          "icon": "➤",
+          "kind": "rush",
+          "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
+          "levels": [
+            "+0 damage, 100 turn cooldown",
+            "+3 damage",
+            "+5 damage, 50 turn cooldown",
+            "can stun enemies 50% of the time"
+          ],
+          "ranks": [
+            {
+              "dmg": 0,
+              "cd": 100
+            },
+            {
+              "dmg": 3,
+              "cd": 100
+            },
+            {
+              "dmg": 5,
+              "cd": 50
+            },
+            {
+              "dmg": 5,
+              "cd": 50,
+              "stun": 0.5
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "spin",
+          "x": 1,
+          "y": 0,
+          "name": "Spin",
+          "icon": "↻",
+          "kind": "spin",
+          "desc": "Become a blender — strike every monster around you.",
+          "levels": [
+            "hit all adjacent foes, 80 turn cooldown",
+            "+1 damage",
+            "+1 damage, range 2 (hits within 2 tiles)",
+            "free action — doesn't advance the turn clock"
+          ],
+          "ranks": [
+            {
+              "dmg": 0,
+              "cd": 80,
+              "range": 1
+            },
+            {
+              "dmg": 1,
+              "cd": 80,
+              "range": 1
+            },
+            {
+              "dmg": 1,
+              "cd": 80,
+              "range": 2
+            },
+            {
+              "dmg": 1,
+              "cd": 80,
+              "range": 2,
+              "freeAction": true
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "sword_master",
+          "x": 2,
+          "y": 0,
+          "name": "Sword Master",
+          "icon": "⚔",
+          "kind": "passive",
+          "when": "sword",
+          "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
+          "levels": [
+            "+1 damage for swords",
+            "+2 damage for swords",
+            "+4 damage for swords",
+            "+6 damage and +15 accuracy for swords"
+          ],
+          "ranks": [
+            {
+              "dmg": 1
+            },
+            {
+              "dmg": 2
+            },
+            {
+              "dmg": 4
+            },
+            {
+              "dmg": 6,
+              "acc": 15
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "smite",
+          "x": 0,
+          "y": 1,
+          "name": "Smite",
+          "icon": "💥",
+          "kind": "smite",
+          "when": null,
+          "desc": "A single devastating blow, empowered by your Strength. Tap a foe within range. Cooldown 100 turns, 5 MP.",
+          "levels": [
+            "Weapon damage + STR damage.",
+            "Weapon damage + STR×1.5 damage.",
+            "Weapon damage + STR×2 damage.",
+            "Weapon damage + STR×2 damage, +1 range."
+          ],
+          "ranks": [
+            {
+              "strMult": 1
+            },
+            {
+              "strMult": 1.5
+            },
+            {
+              "strMult": 2
+            },
+            {
+              "strMult": 2,
+              "range": 2
+            }
+          ],
+          "req": [],
+          "reqAny": [
+            [
+              "rush",
+              4
             ],
-            "ranks": [
-              {
-                "dmg": 0,
-                "cd": 100
-              },
-              {
-                "dmg": 3,
-                "cd": 100
-              },
-              {
-                "dmg": 5,
-                "cd": 50
-              },
-              {
-                "dmg": 5,
-                "cd": 50,
-                "stun": 0.5
-              }
+            [
+              "spin",
+              4
             ],
-            "req": []
-          },
-          {
-            "name": "Spin",
-            "key": "spin",
-            "icon": "↻",
-            "kind": "spin",
-            "desc": "Become a blender — strike every monster around you.",
-            "levels": [
-              "hit all adjacent foes, 80 turn cooldown",
-              "+1 damage",
-              "+1 damage, range 2 (hits within 2 tiles)",
-              "free action — doesn't advance the turn clock"
-            ],
-            "ranks": [
-              {
-                "dmg": 0,
-                "cd": 80,
-                "range": 1
-              },
-              {
-                "dmg": 1,
-                "cd": 80,
-                "range": 1
-              },
-              {
-                "dmg": 1,
-                "cd": 80,
-                "range": 2
-              },
-              {
-                "dmg": 1,
-                "cd": 80,
-                "range": 2,
-                "freeAction": true
-              }
-            ],
-            "req": []
-          },
-          {
-            "name": "Sword Master",
-            "key": "sword_master",
-            "icon": "⚔",
-            "kind": "passive",
-            "when": "sword",
-            "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
-            "levels": [
-              "+1 damage for swords",
-              "+2 damage for swords",
-              "+4 damage for swords",
-              "+6 damage and +15 accuracy for swords"
-            ],
-            "ranks": [
-              {
-                "dmg": 1
-              },
-              {
-                "dmg": 2
-              },
-              {
-                "dmg": 4
-              },
-              {
-                "dmg": 6,
-                "acc": 15
-              }
-            ],
-            "req": []
-          },
-          null,
-          null
-        ],
-        [
-          {
-            "name": "Smite",
-            "key": "smite",
-            "icon": "💥",
-            "kind": "smite",
-            "when": null,
-            "desc": "A single devastating blow, empowered by your Strength. Tap a foe within range. Cooldown 100 turns, 5 MP.",
-            "levels": [
-              "Weapon damage + STR damage.",
-              "Weapon damage + STR×1.5 damage.",
-              "Weapon damage + STR×2 damage.",
-              "Weapon damage + STR×2 damage, +1 range."
-            ],
-            "ranks": [
-              {
-                "strMult": 1
-              },
-              {
-                "strMult": 1.5
-              },
-              {
-                "strMult": 2
-              },
-              {
-                "strMult": 2,
-                "range": 2
-              }
-            ],
-            "req": [],
-            "reqAny": [
-              [
-                0,
-                0,
-                4
-              ],
-              [
-                0,
-                1,
-                4
-              ],
-              [
-                0,
-                2,
-                4
-              ]
+            [
+              "sword_master",
+              4
             ]
-          },
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
+          ]
+        }
       ]
     },
     "monk": {
@@ -1329,112 +1303,83 @@ window.CANTORI_DATA = {
       },
       "blurb": "Fights best barehanded — hurls foes aside and lands harder the longer she goes unarmed.",
       "skillTree": [
-        [
-          {
-            "name": "Throw",
-            "key": "throw",
-            "icon": "↩",
-            "kind": "throwmon",
-            "when": null,
-            "desc": "Grab an adjacent foe and hurl it away from you in a straight line until it collides with something. Cooldown 100 turns.",
-            "levels": [
-              "Throws the target backward until it collides with a wall or another monster. No damage.",
-              "Same, and the thrown target takes weapon + DEX damage.",
-              "Same, and also damages whatever else it collides with.",
-              "Same, and reduces this skill's cooldown by however much total damage it dealt."
-            ],
-            "ranks": [
-              {
-                "dealDmg": false
-              },
-              {
-                "dealDmg": true
-              },
-              {
-                "dealDmg": true,
-                "chain": true
-              },
-              {
-                "dealDmg": true,
-                "chain": true,
-                "cdRefund": true
-              }
-            ],
-            "req": []
-          },
-          {
-            "name": "Unarmed Master",
-            "key": "unarmed_master",
-            "icon": "👊",
-            "kind": "passive",
-            "when": "unarmed",
-            "desc": "Mastery of empty-handed combat — bonuses apply only while no weapon is equipped.",
-            "levels": [
-              "+1 min / +2 max unarmed damage. Unarmed attack speed 1.5.",
-              "+2 min / +4 max unarmed damage. (requires character level 3)",
-              "+4 min / +12 max unarmed damage. (requires character level 6)",
-              "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
-            ],
-            "ranks": [
-              {
-                "dmgMin": 1,
-                "dmgMax": 2,
-                "speed": 1.5
-              },
-              {
-                "dmgMin": 2,
-                "dmgMax": 4,
-                "speed": 1.5,
-                "minLevel": 3
-              },
-              {
-                "dmgMin": 4,
-                "dmgMax": 12,
-                "speed": 1.5,
-                "minLevel": 6
-              },
-              {
-                "dmgMin": 4,
-                "dmgMax": 12,
-                "speed": 1.5,
-                "minLevel": 9,
-                "statScale": true
-              }
-            ],
-            "req": []
-          },
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
+        {
+          "id": "throw",
+          "x": 0,
+          "y": 0,
+          "name": "Throw",
+          "icon": "↩",
+          "kind": "throwmon",
+          "when": null,
+          "desc": "Grab an adjacent foe and hurl it away from you in a straight line until it collides with something. Cooldown 100 turns.",
+          "levels": [
+            "Throws the target backward until it collides with a wall or another monster. No damage.",
+            "Same, and the thrown target takes weapon + DEX damage.",
+            "Same, and also damages whatever else it collides with.",
+            "Same, and reduces this skill's cooldown by however much total damage it dealt."
+          ],
+          "ranks": [
+            {
+              "dealDmg": false
+            },
+            {
+              "dealDmg": true
+            },
+            {
+              "dealDmg": true,
+              "chain": true
+            },
+            {
+              "dealDmg": true,
+              "chain": true,
+              "cdRefund": true
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "unarmed_master",
+          "x": 1,
+          "y": 0,
+          "name": "Unarmed Master",
+          "icon": "👊",
+          "kind": "passive",
+          "when": "unarmed",
+          "desc": "Mastery of empty-handed combat — bonuses apply only while no weapon is equipped.",
+          "levels": [
+            "+1 min / +2 max unarmed damage. Unarmed attack speed 1.5.",
+            "+2 min / +4 max unarmed damage. (requires character level 3)",
+            "+4 min / +12 max unarmed damage. (requires character level 6)",
+            "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
+          ],
+          "ranks": [
+            {
+              "dmgMin": 1,
+              "dmgMax": 2,
+              "speed": 1.5
+            },
+            {
+              "dmgMin": 2,
+              "dmgMax": 4,
+              "speed": 1.5,
+              "minLevel": 3
+            },
+            {
+              "dmgMin": 4,
+              "dmgMax": 12,
+              "speed": 1.5,
+              "minLevel": 6
+            },
+            {
+              "dmgMin": 4,
+              "dmgMax": 12,
+              "speed": 1.5,
+              "minLevel": 9,
+              "statScale": true
+            }
+          ],
+          "req": []
+        }
       ]
     },
     "adept": {
@@ -1456,43 +1401,7 @@ window.CANTORI_DATA = {
         "LCK": 5
       },
       "levelUp": {},
-      "skillTree": [
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
-      ]
+      "skillTree": []
     },
   },
   "gods": {

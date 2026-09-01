@@ -25,7 +25,7 @@
   const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS).concat(["reference"]);
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   const GEAR_CATS = ["weapon", "armor", "ring", "trinket", "necklace"];
-  const TIERS = 5, SLOTS = 5;   // skill tree: 5 tiers × 5 options
+  const TIERS = 5, SLOTS = 5;   // skill tree: the grid the layout editor shows by default
 
   // Column specs for the table editors. type: key|text|num|bool|color|select.
   const SPECS = {
@@ -111,7 +111,7 @@
   let classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
   let activeClass = 0;
   const flippedEnch = new Set();    // enchant rows currently showing raw code
-  const flippedSkill = new Set();   // skill cells currently showing raw code, keyed "cls:t,s"
+  const flippedSkill = new Set();   // skill nodes currently showing raw code, keyed "cls:id"
   // The effect kinds the engine understands, and the numbers each one reads.
   // Leaving a param blank makes the engine fall back to its built-in default.
   const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste", "defense"];
@@ -158,28 +158,65 @@
     }
     box.appendChild(row); return box;
   }
-  // Normalize a class: stats/start/levelUp exist, and the skill tree is a 5×5 grid
-  // whose cells are either a skill object or null (a Diablo-style blank space).
-  //   skill = { name, desc, levels: [up to 4 per-level notes], req: [[tier,slot], …] }
+  // A skill tree is a flat list of nodes, each with a stable `id` and grid-ish
+  // `x`/`y` layout coordinates; prerequisites name ids, so a node can require
+  // parents from anywhere in the tree.
+  //   node = { id, x, y, name, icon, kind, when, desc, levels, ranks,
+  //            req: ["id", …], reqAny: [["id", minRank], …] }
+  // This mirrors normalizeTree() in game.js on purpose. The editor rewrites
+  // data.js wholesale, so it has to understand exactly what the engine reads —
+  // and it has to accept the old 5×5 grid (cells addressed by [tier, slot]) too,
+  // or opening a stale localStorage draft would quietly drop every authored tree.
+  function skillSlug(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""); }
+  function normalizeSkillTree(raw) {
+    if (!Array.isArray(raw)) return [];
+    const nodes = [], byPos = {};
+    if (raw.some((row) => Array.isArray(row))) {   // old shape: rows of cells, blanks are null
+      raw.forEach((tier, y) => (Array.isArray(tier) ? tier : []).forEach((cell, x) => {
+        if (!cell || !cell.name) return;
+        const n = Object.assign({}, cell);
+        n.id = cell.id || cell.key || skillSlug(cell.name);
+        n.x = x; n.y = y;                          // the grid WAS the layout — keep it as-is
+        byPos[y + "," + x] = n.id;
+        nodes.push(n);
+      }));
+    } else {
+      raw.forEach((cell, i) => {
+        if (!cell || !(cell.id || cell.key || cell.name)) return;
+        const n = Object.assign({}, cell);
+        n.id = cell.id || cell.key || skillSlug(cell.name);
+        n.x = typeof n.x === "number" ? n.x : i % SLOTS;
+        n.y = typeof n.y === "number" ? n.y : (i / SLOTS) | 0;
+        nodes.push(n);
+      });
+    }
+    // Canonicalize prerequisites to req = ["id", …] and reqAny = [["id", minRank], …].
+    // An entry may arrive as an old [tier, slot(, minRank)] coordinate (numbers),
+    // a bare "id", or ["id"] with the rank left implicit.
+    const toRef = (r) => {
+      if (typeof r === "string") return [r, 1];
+      if (!Array.isArray(r) || !r.length) return null;
+      if (typeof r[0] === "number") return [byPos[r[0] + "," + r[1]] || "", r[2] || 1];
+      return [String(r[0] || ""), r[1] || 1];
+    };
+    for (const n of nodes) {
+      if (n.key === n.id) delete n.key;            // `key` is only an alias for `id`
+      n.desc = n.desc || "";
+      n.levels = Array.isArray(n.levels) ? n.levels.slice(0, 4) : [];
+      n.req = (n.req || []).map(toRef).filter(Boolean).map((r) => r[0]);
+      n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
+      if (!n.reqAny.length) delete n.reqAny;
+    }
+    return nodes;
+  }
+  function skillNodeAt(o, x, y) { return o.skillTree.find((n) => n.x === x && n.y === y) || null; }
+  // Normalize a class: stats/start/levelUp exist, and the skill tree is a flat
+  // node list whatever shape it arrived in.
   function ensureClass(obj) {
     obj.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, obj.stats || {});
     obj.start = obj.start || {};
     obj.levelUp = obj.levelUp || {};
-    if (!Array.isArray(obj.skillTree)) obj.skillTree = [];
-    for (let t = 0; t < TIERS; t++) {
-      if (!Array.isArray(obj.skillTree[t])) obj.skillTree[t] = [];
-      for (let s = 0; s < SLOTS; s++) {
-        const c = obj.skillTree[t][s];
-        if (c && c.name) {
-          c.desc = c.desc || "";
-          c.levels = Array.isArray(c.levels) ? c.levels.slice(0, 4) : [];
-          c.req = Array.isArray(c.req) ? c.req : [];
-          obj.skillTree[t][s] = c;
-        } else obj.skillTree[t][s] = null;   // blank space
-      }
-      obj.skillTree[t].length = SLOTS;
-    }
-    obj.skillTree.length = TIERS;
+    obj.skillTree = normalizeSkillTree(obj.skillTree);
   }
   classRows.forEach((r) => ensureClass(r.obj));
   function getPath(o, path) { return path.split(".").reduce((x, k) => (x == null ? undefined : x[k]), o); }
@@ -668,44 +705,60 @@
     const bh = document.createElement("h3"); bh.className = "csec"; bh.textContent = "Blurb"; wrap.appendChild(bh);
     const bg = document.createElement("div"); bg.className = "cform"; const bf = classField(o, "shown in class select", "blurb", "textarea"); bf.style.gridColumn = "1 / -1"; bg.appendChild(bf); wrap.appendChild(bg);
 
-    // 5×5 skill tree (Diablo-style: cells are a skill or a blank space)
-    const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 slots"; wrap.appendChild(th);
+    // The skill tree, laid out on a grid by each node's x/y. Prerequisites point
+    // at ids, not at grid positions, so the grid is only where nodes sit — the
+    // graph itself can branch and rejoin however it likes.
+    const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree"; wrap.appendChild(th);
     const tnote = document.createElement("p"); tnote.className = "hint";
-    tnote.textContent = "Leave slots blank to shape the tree. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first), and a wiring row: key (engine id), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Sword Master are fully wired examples.";
+    tnote.textContent = "Leave squares blank to shape the tree — they are just layout. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first, referred to by id), and a wiring row: id (what prerequisites point at, and what the engine keys the skill by), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Sword Master are fully wired examples.";
     wrap.appendChild(tnote);
     const allSkills = [];   // gather named skills for the prereq picker
-    for (let t = 0; t < TIERS; t++) for (let s = 0; s < SLOTS; s++) { const c = o.skillTree[t][s]; if (c && c.name) allSkills.push({ t, s, name: c.name }); }
+    for (const n of o.skillTree) if (n.name) allSkills.push({ id: n.id, name: n.name });
+    // Show at least the usual 5×5, and grow if a node was placed beyond it — an
+    // off-grid node must stay visible, or it would be invisibly uneditable.
+    const rowsN = Math.max(TIERS, ...o.skillTree.map((n) => n.y + 1));
+    const colsN = Math.max(SLOTS, ...o.skillTree.map((n) => n.x + 1));
     const tree = document.createElement("div"); tree.className = "stree";
-    for (let t = 0; t < TIERS; t++) {
+    for (let y = 0; y < rowsN; y++) {
       const rowEl = document.createElement("div"); rowEl.className = "strow";
-      const tl = document.createElement("div"); tl.className = "stier"; tl.textContent = "Tier " + (t + 1); rowEl.appendChild(tl);
-      for (let s = 0; s < SLOTS; s++) rowEl.appendChild(renderSkillCell(o, t, s, allSkills));
+      const tl = document.createElement("div"); tl.className = "stier"; tl.textContent = "Row " + (y + 1); rowEl.appendChild(tl);
+      for (let x = 0; x < colsN; x++) rowEl.appendChild(renderSkillCell(o, x, y, allSkills));
       tree.appendChild(rowEl);
     }
     wrap.appendChild(tree);
     return wrap;
   }
-  function renderSkillCell(o, t, s, allSkills) {
-    const cell = o.skillTree[t][s];
+  function renderSkillCell(o, x, y, allSkills) {
+    const cell = skillNodeAt(o, x, y);
     const box = document.createElement("div"); box.className = "scell" + (cell ? " filled" : " blank");
     if (!cell) {
       const add = document.createElement("button"); add.className = "sadd"; add.textContent = "+";
       add.title = "add a skill here";
-      add.onclick = () => { o.skillTree[t][s] = { name: "New Skill", desc: "", levels: ["", ""], req: [] }; render(); };
+      add.onclick = () => {
+        o.skillTree.push({ id: uniqueKeyArr(o.skillTree.map((n) => n.id), "new_skill"), x, y, name: "New Skill", desc: "", levels: ["", ""], req: [] });
+        render();
+      };
       box.appendChild(add);
       return box;
     }
+    const at = o.skillTree.indexOf(cell);
     // header: name + flip-to-code + remove
-    const fkey = activeClass + ":" + t + "," + s;
+    const fkey = activeClass + ":" + cell.id;
     const head = document.createElement("div"); head.className = "shead";
     const nm = document.createElement("input"); nm.className = "sname"; nm.type = "text"; nm.value = cell.name || ""; nm.placeholder = "name";
     nm.oninput = () => { cell.name = nm.value; };
     const flip = document.createElement("button"); flip.className = "bbtn flip"; flip.textContent = flippedSkill.has(fkey) ? "▦" : "</>"; flip.title = "flip between the form and raw JSON";
     flip.onclick = () => { if (flippedSkill.has(fkey)) flippedSkill.delete(fkey); else flippedSkill.add(fkey); render(); };
     const rm = document.createElement("button"); rm.className = "bbtn"; rm.textContent = "✕"; rm.title = "clear slot";
-    rm.onclick = () => { flippedSkill.delete(fkey); o.skillTree[t][s] = null; render(); };
+    rm.onclick = () => { flippedSkill.delete(fkey); o.skillTree.splice(at, 1); render(); };
     head.appendChild(nm); head.appendChild(flip); head.appendChild(rm); box.appendChild(head);
-    if (flippedSkill.has(fkey)) { box.appendChild(codeEditor(cell, (parsed) => { o.skillTree[t][s] = parsed; })); return box; }
+    if (flippedSkill.has(fkey)) {
+      box.appendChild(codeEditor(cell, (parsed) => {
+        if (parsed && typeof parsed === "object") { if (parsed.x == null) parsed.x = x; if (parsed.y == null) parsed.y = y; }
+        o.skillTree[at] = parsed;   // by index: `cell` is replaced on the first keystroke
+      }));
+      return box;
+    }
     // description
     const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "in-game description"; dsc.value = cell.desc || "";
     dsc.oninput = () => { cell.desc = dsc.value; };
@@ -714,7 +767,21 @@
     // (the `ranks` array) live in the </> code view — this row makes the skill real.
     const wire = document.createElement("div"); wire.className = "swire";
     const mkIn = (ph, f) => { const i = document.createElement("input"); i.type = "text"; i.placeholder = ph; i.value = cell[f] || ""; i.oninput = () => { if (!i.value) delete cell[f]; else cell[f] = i.value.trim(); }; return i; };
-    wire.appendChild(mkIn("key", "key"));
+    const idIn = document.createElement("input"); idIn.type = "text"; idIn.placeholder = "id"; idIn.value = cell.id || "";
+    idIn.title = "stable id — what other skills' prerequisites point at, and what the engine keys the skill by";
+    idIn.oninput = () => {
+      const from = cell.id, to = idIn.value.trim() || skillSlug(cell.name);   // never blank: an empty id orphans every prerequisite
+      if (to === from) return;
+      cell.id = to;
+      // Prerequisites name ids, so renaming one would silently unhook every node
+      // that requires this skill — carry the references along with the rename.
+      for (const n of o.skillTree) {
+        if (n === cell) continue;
+        n.req = (n.req || []).map((id) => (id === from ? to : id));
+        if (n.reqAny) n.reqAny = n.reqAny.map((r) => (Array.isArray(r) && r[0] === from ? [to, r[1]] : r));
+      }
+    };
+    wire.appendChild(idIn);
     wire.appendChild(mkIn("icon", "icon"));
     const kind = document.createElement("select");
     for (const k of ["passive", "rush", "spin"]) { const op = document.createElement("option"); op.value = k; op.textContent = k; kind.appendChild(op); }
@@ -741,18 +808,17 @@
     box.appendChild(lvWrap);
     box.appendChild(dots); refreshDots();
     // prerequisites: chips of every OTHER named skill
-    const others = allSkills.filter((k) => !(k.t === t && k.s === s));
+    const others = allSkills.filter((k) => k.id !== cell.id);
     if (others.length) {
       const pr = document.createElement("div"); pr.className = "sprereq";
       const l = document.createElement("div"); l.className = "bmons-l"; l.textContent = "Requires:"; pr.appendChild(l);
       const chips = document.createElement("div"); chips.className = "chips";
       cell.req = cell.req || [];
-      const has = (k) => cell.req.some((r) => r[0] === k.t && r[1] === k.s);
       for (const k of others) {
-        const chip = document.createElement("button"); chip.className = "chip" + (has(k) ? " on" : ""); chip.textContent = k.name;
+        const chip = document.createElement("button"); chip.className = "chip" + (cell.req.indexOf(k.id) >= 0 ? " on" : ""); chip.textContent = k.name;
         chip.onclick = () => {
-          const idx = cell.req.findIndex((r) => r[0] === k.t && r[1] === k.s);
-          if (idx >= 0) cell.req.splice(idx, 1); else cell.req.push([k.t, k.s]);
+          const idx = cell.req.indexOf(k.id);
+          if (idx >= 0) cell.req.splice(idx, 1); else cell.req.push(k.id);
           chip.classList.toggle("on");
         };
         chips.appendChild(chip);
@@ -1096,16 +1162,16 @@
       if (seenC[key]) problems.push("classes: duplicate key “" + key + "”");
       seenC[key] = 1;
       const c = clone(obj);
-      // compress the skill grid: fully-blank cells → null (kept as scaffold, small on
-      // disk). A filled cell keeps ALL its fields — so any governing code written via
-      // the flip-to-JSON view survives — with the known ones normalized.
-      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => {
-        if (!cell || !cell.name) return null;
-        cell.desc = cell.desc || "";
-        cell.levels = (cell.levels || []).slice(0, 4);
-        cell.req = cell.req || [];
-        return cell;
-      }));
+      // Run the tree through the same normalizer the engine uses, so what lands in
+      // data.js is always the shape game.js reads: ids and coordinates filled in,
+      // prerequisites canonical. A node keeps ALL its other fields — so any
+      // governing code written via the flip-to-JSON view survives untouched.
+      c.skillTree = normalizeSkillTree(c.skillTree);
+      const seenS = {};   // two nodes sharing an id would silently merge in-game
+      for (const n of c.skillTree) {
+        if (seenS[n.id]) problems.push("class “" + key + "”: duplicate skill id “" + n.id + "”");
+        seenS[n.id] = 1;
+      }
       out.classes[key] = c;
     }
     return { data: out, problems };

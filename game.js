@@ -140,7 +140,7 @@
     player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
-    _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
+    _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
     player.skills = {};
     const sk = treeSkills(key).skills;
     for (const k of Object.keys(sk)) player.skills[k] = { rank: 0, cd: 0 };
@@ -4413,34 +4413,94 @@
   let charTab = "stats";
 
   // ---- Skills --------------------------------------------------------------
-  // Usable skills are built from the class's skill tree. A tree cell becomes a
-  // real skill once it carries a `ranks` array (per-level mechanics); cells with
-  // only description text are authoring scaffold and are skipped. `kind` picks the
-  // behavior: "rush" (directional dash), "spin" (area strike), or "passive" (a
-  // continuous modifier). Passives may set `when` = a weapon subtype they require.
+  // Usable skills are built from the class's skill tree: a flat list of nodes,
+  // each with a stable `id` and grid-ish `x`/`y` layout coordinates. A node
+  // becomes a real skill once it carries a `ranks` array (per-level mechanics);
+  // nodes with only description text are authoring scaffold and are skipped.
+  // `kind` picks the behavior: "rush" (directional dash), "spin" (area strike),
+  // or "passive" (a continuous modifier). Passives may set `when` = a weapon
+  // subtype they require.
   // Falls back to a class's legacy `skills` map if the tree wires nothing yet.
-  let _skillCache = { cls: null, skills: {}, byPos: {} };
+
+  // Trees were once a fixed 5×5 grid, and a prerequisite named a cell by its
+  // [tier, slot] coordinate. The grid was the only thing stopping trees from
+  // being real trees: a coordinate can only point at a cell that exists in the
+  // row above, so a node with two parents from different rows, a diamond, or two
+  // branches of unequal depth were all inexpressible. Nodes carry ids instead,
+  // and prerequisites name ids.
+  //   node = { id, x, y, name, icon, kind, when, desc, levels, ranks,
+  //            req: ["id", …], reqAny: [["id", minRank], …] }
+  // `key` is accepted as an alias for `id` — the runtime skill keys that
+  // player.skills, the hotbar and the dev hooks are keyed by never changed; only
+  // the way prerequisites address each other did.
+  //
+  // normalizeTree accepts EITHER shape and always hands back the flat one. It is
+  // cheap and it stays forever: editor.html rewrites data.js wholesale, so a
+  // stale draft in localStorage — or an old data.js out of git history — must
+  // still open rather than brick the Skills tab.
+  const TREE_COLS = 5;   // only a fallback layout width, for nodes authored without x/y
+  const skillSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  function normalizeTree(raw) {
+    if (!Array.isArray(raw)) return [];
+    const nodes = [], byPos = {};
+    if (raw.some((row) => Array.isArray(row))) {   // old shape: rows of cells, blanks are null
+      raw.forEach((tier, y) => (Array.isArray(tier) ? tier : []).forEach((cell, x) => {
+        if (!cell || !cell.name) return;
+        const n = Object.assign({}, cell);
+        n.id = n.id || n.key || skillSlug(n.name);
+        n.x = x; n.y = y;                          // the grid WAS the layout — keep it as-is
+        byPos[y + "," + x] = n.id;
+        nodes.push(n);
+      }));
+    } else {
+      // A node written by hand may omit its coordinates; lay those out in reading
+      // order so the tree still draws as something rather than stacking at 0,0.
+      raw.forEach((cell, i) => {
+        if (!cell || !(cell.id || cell.key || cell.name)) return;
+        const n = Object.assign({}, cell);
+        n.id = n.id || n.key || skillSlug(n.name);
+        n.x = typeof n.x === "number" ? n.x : i % TREE_COLS;
+        n.y = typeof n.y === "number" ? n.y : (i / TREE_COLS) | 0;
+        nodes.push(n);
+      });
+    }
+    // Canonicalize prerequisites so everything downstream sees exactly one shape:
+    // req = ["id", …], reqAny = [["id", minRank], …]. An entry may arrive as an
+    // old [tier, slot(, minRank)] coordinate (numbers), a bare "id", or ["id"]
+    // with the rank left implicit — all three mean the same thing. A reference
+    // that resolves to nothing keeps an empty id, so the node stays locked
+    // exactly as it did when a coordinate pointed at a blank cell.
+    const toRef = (r) => {
+      if (typeof r === "string") return [r, 1];
+      if (!Array.isArray(r) || !r.length) return null;
+      if (typeof r[0] === "number") return [byPos[r[0] + "," + r[1]] || "", r[2] || 1];
+      return [String(r[0] || ""), r[1] || 1];
+    };
+    for (const n of nodes) {
+      n.req = (n.req || []).map(toRef).filter(Boolean).map((r) => r[0]);
+      n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
+    }
+    return nodes;
+  }
+  let _skillCache = { cls: null, skills: {}, byId: {} };
   function treeSkills(cls) {
     if (_skillCache.cls === cls) return _skillCache;
     const c = DATA.classes[cls] || {};
-    const tree = Array.isArray(c.skillTree) ? c.skillTree : [];
-    const skills = {}, byPos = {};
-    const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-    tree.forEach((tier, t) => (tier || []).forEach((cell, s) => {
-      if (!cell || !cell.name || !Array.isArray(cell.ranks) || !cell.ranks.length) return;
-      const key = cell.key || slug(cell.name);
-      skills[key] = {
-        name: cell.name, icon: cell.icon || "✦", desc: cell.desc || "",
-        kind: cell.kind || "passive", when: cell.when || null,
-        max: cell.ranks.length, ranks: cell.ranks, levels: cell.levels || [],
-        req: cell.req || [], reqAny: cell.reqAny || [], pos: [t, s],
+    const skills = {}, byId = {};
+    for (const n of normalizeTree(c.skillTree)) {
+      byId[n.id] = n;                              // every node, wired or scaffold — the graph index
+      if (!n.name || !Array.isArray(n.ranks) || !n.ranks.length) continue;
+      skills[n.id] = {
+        name: n.name, icon: n.icon || "✦", desc: n.desc || "",
+        kind: n.kind || "passive", when: n.when || null,
+        max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
+        req: n.req || [], reqAny: n.reqAny || [], pos: { x: n.x, y: n.y },
       };
-      byPos[t + "," + s] = key;
-    }));
+    }
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
       for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], pos: null }, c.skills[k]);
     }
-    _skillCache = { cls, skills, byPos };
+    _skillCache = { cls, skills, byId };
     return _skillCache;
   }
   // Active abilities unlocked by a boon (not part of the class skill tree). Each
@@ -4492,24 +4552,27 @@
   }
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
-  function skillAtPos(t, s) { return treeSkills(player.cls).byPos[t + "," + s]; }
-  // req: every listed [tier,slot] must be learned (rank >= 1) — an AND of positions.
-  // reqAny: at least ONE listed [tier,slot,minRank] must reach minRank (default 1) —
+  // req: every listed id must be learned (rank >= 1) — an AND.
+  // reqAny: at least ONE listed [id, minRank] must reach minRank (default 1) —
   // an OR, used for things like "4 points in any one of the first-tier skills."
+  // normalizeTree() has already rewritten both into these canonical id forms, so
+  // there is one lookup here whichever shape the tree was authored in, and a
+  // prerequisite can name any node in the tree rather than only a grid neighbour.
   function prereqsMet(d) {
     const req = d.req || [];
-    if (req.length && !req.every(([t, s]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= 1); })) return false;
+    if (req.length && !req.every((id) => { const st = player.skills[id]; return !!(st && st.rank >= 1); })) return false;
     const reqAny = d.reqAny || [];
     if (reqAny.length) {
-      return reqAny.some(([t, s, minRank]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= (minRank || 1)); });
+      return reqAny.some(([id, minRank]) => { const st = player.skills[id]; return !!(st && st.rank >= (minRank || 1)); });
     }
     return true;
   }
   function prereqNames(d) {
-    const names = (d.req || []).map(([t, s]) => { const k = skillAtPos(t, s); return (k && classSkills()[k]) ? classSkills()[k].name : null; }).filter(Boolean);
+    const sk = classSkills();
+    const names = (d.req || []).map((id) => (sk[id] ? sk[id].name : null)).filter(Boolean);
     const reqAny = d.reqAny || [];
     if (reqAny.length) {
-      const parts = reqAny.map(([t, s, minRank]) => { const k = skillAtPos(t, s); const nm = (k && classSkills()[k]) ? classSkills()[k].name : null; return nm ? (nm + " (rank " + (minRank || 1) + ")") : null; }).filter(Boolean);
+      const parts = reqAny.map(([id, minRank]) => { const nm = sk[id] ? sk[id].name : null; return nm ? (nm + " (rank " + (minRank || 1) + ")") : null; }).filter(Boolean);
       if (parts.length) names.push(parts.join(" or "));
     }
     return names;
