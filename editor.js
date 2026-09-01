@@ -481,6 +481,30 @@
     wrap.appendChild(inp);
     return wrap;
   }
+  // Terrain painters (C2): b.terrain[kind] = { [countKey]: [min,max], size: [min,max] }.
+  // Packed into one text field as "countMin,countMax,sizeMin,sizeMax" — blank disables
+  // that terrain kind for this biome (deletes the key, so it round-trips clean).
+  function terrainField(b, kind, countKey) {
+    const wrap = document.createElement("label"); wrap.className = "bfield";
+    const span = document.createElement("span"); span.textContent = "terrain: " + kind + " (" + countKey + " min,max, size min,max)"; wrap.appendChild(span);
+    const inp = document.createElement("input"); inp.type = "text";
+    const t = b.terrain && b.terrain[kind];
+    const cnt = t && t[countKey], size = t && t.size;
+    inp.value = t ? [cnt ? cnt[0] : "", cnt ? cnt[1] : "", size ? size[0] : "", size ? size[1] : ""].join(",") : "";
+    inp.placeholder = "1,3,4,12";
+    inp.oninput = () => {
+      const v = inp.value.trim();
+      if (v === "") { if (b.terrain) delete b.terrain[kind]; return; }
+      const parts = v.split(",").map((s) => Number(s.trim()) || 0);
+      b.terrain = b.terrain || {};
+      const row = {};
+      row[countKey] = [parts[0] || 1, parts[1] || parts[0] || 1];
+      if (parts.length > 2) row.size = [parts[2] || 3, parts[3] || parts[2] || 3];
+      b.terrain[kind] = row;
+    };
+    wrap.appendChild(inp);
+    return wrap;
+  }
   function renderBiomes() {
     const wrap = document.createElement("div");
     const bar = document.createElement("div"); bar.className = "collbar";
@@ -517,6 +541,9 @@
       grid.appendChild(biomeField(b, "spawnCap", "spawnCap", "num"));
       grid.appendChild(biomeField(b, "spawnInitial", "spawnInitial", "spawn"));
       grid.appendChild(biomeField(b, "final biome?", "final", "bool"));
+      grid.appendChild(terrainField(b, "water", "pools"));
+      grid.appendChild(terrainField(b, "grass", "patches"));
+      grid.appendChild(terrainField(b, "rubble", "patches"));
       card.appendChild(grid);
 
       const ml = document.createElement("div"); ml.className = "bmons";
@@ -1163,6 +1190,10 @@
       }
       if (!Object.keys(b.spawnMix).length) delete b.spawnMix;
     }
+    // drop a terrain block left empty (every kind cleared back to blank)
+    for (const b of out.biomes) {
+      if (b.terrain && !Object.keys(b.terrain).length) delete b.terrain;
+    }
 
     out.classes = {};                                 // classes come from the form + skill grid
     const seenC = {};
@@ -1339,7 +1370,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), final. The exit always sits embedded in a wall, on every biome — that's not configurable here.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",

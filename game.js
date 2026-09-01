@@ -1165,6 +1165,62 @@
   let lastRooms = [];   // the current floor's room rects (dev/inspection)
   let lastAttach = 0;   // how many of them are attached (doorway, no hallway)
 
+  // Biome-specific terrain (C2): grows an organic blob of `tile`, up to `size` tiles,
+  // outward from a seed floor tile — a randomized flood fill so the shape reads as
+  // natural rather than a rectangle. Never touches a cell `skip` rejects or anything
+  // that isn't plain FLOOR (so it can't overwrite another painter's work, and — since
+  // this runs before doors/stairs/thorns/trees exist — there's nothing else on the map
+  // to protect yet).
+  function paintTerrainBlob(tile, x0, y0, size, skip) {
+    const seen = new Set([y0 * MAP_W + x0]);
+    const frontier = [[x0, y0]];
+    let painted = 0;
+    while (painted < size && frontier.length) {
+      const [x, y] = frontier.splice(randInt(0, frontier.length - 1), 1)[0];
+      if (map[y][x] !== FLOOR || skip(x, y)) continue;
+      map[y][x] = tile; painted++;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, k = ny * MAP_W + nx;
+        if (!inBounds(nx, ny) || seen.has(k)) continue;
+        seen.add(k);
+        if (map[ny][nx] === FLOOR && !skip(nx, ny)) frontier.push([nx, ny]);
+      }
+    }
+  }
+  // Scatter `cfg[countKey]` blobs of `tile` (a [min,max] roll each), each sized from
+  // `cfg.size` (default a small patch), seeded on random floor tiles across the level.
+  function paintTerrainFeature(tile, cfg, countKey, skip) {
+    if (!cfg || !cfg[countKey]) return;
+    const n = randInt(cfg[countKey][0], cfg[countKey][1]);
+    const size = cfg.size || [3, 6];
+    const seeds = [];
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) if (map[y][x] === FLOOR && !skip(x, y)) seeds.push([x, y]);
+    for (let i = 0; i < n && seeds.length; i++) {
+      const [x, y] = seeds[randInt(0, seeds.length - 1)];
+      paintTerrainBlob(tile, x, y, randInt(size[0], size[1]), skip);
+    }
+  }
+  // Paint the current biome's water/grass/rubble onto the room+corridor graph,
+  // driven from data.js → biomes[].terrain. A biome with no `terrain` block is a
+  // no-op, so it generates exactly as it did before this painter existed. Runs after
+  // thinCorridors/sealDeadEndStubs (the graph is settled) and before placeDoors (so
+  // there's nothing walkable placed yet to dodge). fixOpenCorners never touches a
+  // painted cell (its solid/floor checks only ever wall over plain FLOOR), so it's
+  // safe to re-sweep here; if painting somehow left a room unreachable, revert the
+  // whole map and ship the floor unpainted rather than an unwinnable one.
+  function paintTerrain(rooms) {
+    const terrain = biome && biome.terrain;
+    if (!terrain || !rooms.length) return;
+    const anchor = roomCenter(rooms[0]);          // becomes the player's start tile right after this runs
+    const skip = (x, y) => x === anchor.x && y === anchor.y;
+    const saved = map.map((row) => row.slice());
+    if (terrain.water) paintTerrainFeature(WATER, terrain.water, "pools", skip);
+    if (terrain.grass) paintTerrainFeature(GRASS, terrain.grass, "patches", skip);
+    if (terrain.rubble) paintTerrainFeature(RUBBLE, terrain.rubble, "patches", skip);
+    fixOpenCorners(rooms);
+    if (!allRoomsReachable(rooms, anchor.x, anchor.y)) map = saved;   // never ship a severed floor
+  }
+
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
@@ -1226,6 +1282,8 @@
       for (let i = floors.length - 1; i > 0; i--) { const j = randInt(0, i); const t = floors[i]; floors[i] = floors[j]; floors[j] = t; }
       biomeScrollFloors = new Set(floors.slice(0, 2));
     }
+
+    paintTerrain(rooms);   // biome-specific water/grass/rubble (C2) — no-op without a terrain block
 
     placeDoors(rooms);
     narrowRoomBreaches(rooms);   // one door per breach — close any extra undoored floor beside it
@@ -2114,7 +2172,7 @@
       const tr = trapAt(player.x, player.y);
       if (tr && !tr.sprung) { triggerTrap(tr); if (dead) return true; }
       if (map[player.y][player.x] === STAIRS) { descend(); return true; }  // fresh level, no world turn
-      worldTurn(walkCost());     // Metrognome (walk) → you cover ground faster than your foes
+      worldTurn(walkCost() * (tileProp(nx, ny, "costMult") || 1));     // Metrognome (walk) → you cover ground faster than your foes; water/rubble cost double
       return true;
     }
     return false;
@@ -3746,6 +3804,7 @@
     // monsters (glide + lunge + flash; bosses render larger)
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
+      if (tileProp(m.x, m.y, "conceals") && cheb(m.x, m.y, player.x, player.y) > 1) continue;   // tall grass hides it until you're beside it
       const [bx, by] = bumpOffset(m, now);
       const px = SX(m.rx + bx), py = SY(m.ry + by);
       if (!drawSpriteFit(SPRITES[m.type], px, py, m.boss ? 1.5 : 1)) {

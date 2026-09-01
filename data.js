@@ -989,7 +989,11 @@ window.CANTORI_DATA = {
       "exitSprite": "exit_forest",
       "door": "bush",
       "spawnEvery": 25,
-      "spawnCap": 100
+      "spawnCap": 100,
+      "terrain": {
+        "water": { "pools": [1, 2], "size": [4, 10] },
+        "grass": { "patches": [2, 4], "size": [3, 6] }
+      }
     },
     {
       "key": "cave",
@@ -1004,7 +1008,10 @@ window.CANTORI_DATA = {
         "harpy"
       ],
       "boss": "golem",
-      "door": "door"
+      "door": "door",
+      "terrain": {
+        "rubble": { "patches": [2, 4], "size": [3, 7] }
+      }
     },
     {
       "key": "crypt",
@@ -1046,7 +1053,10 @@ window.CANTORI_DATA = {
       ],
       "boss": "demigod",
       "final": true,
-      "door": "door"
+      "door": "door",
+      "terrain": {
+        "water": { "pools": [1, 3], "size": [5, 14] }
+      }
     }
   ],
   "stats": {
