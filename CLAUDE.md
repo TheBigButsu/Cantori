@@ -20,6 +20,17 @@ tests/              headless smoke test (see below)
 `game.js` is large and organised by `// ---- Section ----` banners. Find your way around with those
 rather than by line number — line numbers move.
 
+## Before you start
+
+**Never read `game.js` whole.** It is ~76k tokens; reading it costs real money on every task and
+buries the code you need in code you don't. `docs/MAP.md` lists every section with its line range
+and token cost — read your section with `Read(game.js, offset=…, limit=…)`, or Grep for a symbol.
+Regenerate the map with `python3 tools/make_map.py` after moving code between sections.
+
+`docs/PACKETS.md` is the work queue: numbered, self-contained briefs in `docs/packets/`, each
+naming the files it may touch and how to verify it. If you were pointed at a packet, that brief
+overrides your instincts about scope.
+
 ## Rules
 
 **1. Content is data; behaviour is code.**
