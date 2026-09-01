@@ -1267,6 +1267,92 @@ window.CANTORI_DATA = {
               4
             ]
           ]
+        },
+        {
+          "id": "raging_smite",
+          "x": 0,
+          "y": 2,
+          "name": "Raging Smite",
+          "icon": "🔥",
+          "desc": "A Smite that drives the target into a berserk rage. 100 turn cooldown, 5 MP.",
+          "levels": [
+            "Deals Smite damage plus half your character level, and sends the target berserk.",
+            "Cooldown 90.",
+            "Also grants temporary STR and VIT equal to your character level, decaying by 1 every (character level) turns until the bonus is spent.",
+            "A kill during the rage delays that decay by (character level) turns."
+          ],
+          "req": [
+            "smite"
+          ]
+        },
+        {
+          "id": "healing_smite",
+          "x": 1,
+          "y": 2,
+          "name": "Healing Smite",
+          "icon": "✚",
+          "desc": "A Smite that returns what it deals. 100 turn cooldown, 5 MP.",
+          "levels": [
+            "Deals Smite damage and heals you for the same amount.",
+            "Cooldown 90.",
+            "Cooldown 80.",
+            "Cooldown 70, and healing beyond your maximum becomes a shield."
+          ],
+          "req": [
+            "smite"
+          ]
+        },
+        {
+          "id": "spinning_smite",
+          "x": 2,
+          "y": 2,
+          "name": "Spinning Smite",
+          "icon": "🌀",
+          "desc": "Spin and Smite as one blow. 100 turn cooldown, 5 MP.",
+          "levels": [
+            "Strikes everything within 2 tiles for Smite damage.",
+            "Reaches 3 tiles.",
+            "Reaches 3 tiles, cooldown 90.",
+            "Reaches 4 tiles, cooldown 90, and every kill takes a further 10 turns off the cooldown."
+          ],
+          "req": [
+            "smite",
+            "spin"
+          ]
+        },
+        {
+          "id": "ketharas_will",
+          "x": 0,
+          "y": 3,
+          "name": "Kethara's Will",
+          "icon": "🛡",
+          "kind": "passive",
+          "desc": "An aura of Kethara's protection, covering you and anything fighting alongside you.",
+          "levels": [
+            "Allies and summons within 1 tile take 5% less damage.",
+            "Within 2 tiles, 10% less.",
+            "Within 3 tiles, 15% less.",
+            "Within 4 tiles, 20% less."
+          ],
+          "req": [],
+          "reqPoints": 12
+        },
+        {
+          "id": "lay_on_hands",
+          "x": 1,
+          "y": 3,
+          "name": "Lay on Hands",
+          "icon": "🙌",
+          "desc": "Mend yourself. Overhealing is not wasted — it shortens the wait. 200 turn cooldown, 15 MP.",
+          "levels": [
+            "Heals you for your VIT. Every point of healing beyond your maximum cuts 1 turn off the cooldown.",
+            "Heals for VIT + STR.",
+            "Heals for VIT + STR + your character level.",
+            "Heals for (VIT + STR) + twice your character level."
+          ],
+          "req": [
+            "healing_smite"
+          ]
         }
       ]
     },
@@ -1402,7 +1488,7 @@ window.CANTORI_DATA = {
       },
       "levelUp": {},
       "skillTree": []
-    },
+    }
   },
   "gods": {
     "kethara": {

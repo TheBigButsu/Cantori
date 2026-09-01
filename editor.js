@@ -784,11 +784,20 @@
     wire.appendChild(idIn);
     wire.appendChild(mkIn("icon", "icon"));
     const kind = document.createElement("select");
-    for (const k of ["passive", "rush", "spin"]) { const op = document.createElement("option"); op.value = k; op.textContent = k; kind.appendChild(op); }
+    // Must list every kind game.js dispatches for a TREE skill; a kind missing here
+    // gets silently rewritten to "passive" the moment anyone touches the control.
+    const KINDS = ["passive", "rush", "spin", "smite", "throwmon"];
+    if (cell.kind && KINDS.indexOf(cell.kind) < 0) KINDS.push(cell.kind);   // never lose a hand-authored one
+    for (const k of KINDS) { const op = document.createElement("option"); op.value = k; op.textContent = k; kind.appendChild(op); }
     kind.value = cell.kind || "passive";
     kind.onchange = () => { cell.kind = kind.value; };
     wire.appendChild(kind);
     wire.appendChild(mkIn("when (e.g. axe)", "when"));
+    const rp = document.createElement("input"); rp.type = "number"; rp.min = "0"; rp.placeholder = "req pts";
+    rp.title = "gate on TOTAL points spent in this tree — for deep nodes that shouldn't depend on one particular branch";
+    rp.value = cell.reqPoints || "";
+    rp.oninput = () => { const v = parseInt(rp.value, 10); if (v > 0) cell.reqPoints = v; else delete cell.reqPoints; };
+    wire.appendChild(rp);
     box.appendChild(wire);
     // 4 level rows + dots
     const dots = document.createElement("div"); dots.className = "sdots";

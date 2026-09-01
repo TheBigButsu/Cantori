@@ -4494,7 +4494,7 @@
         name: n.name, icon: n.icon || "✦", desc: n.desc || "",
         kind: n.kind || "passive", when: n.when || null,
         max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
-        req: n.req || [], reqAny: n.reqAny || [], pos: { x: n.x, y: n.y },
+        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0, pos: { x: n.x, y: n.y },
       };
     }
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
@@ -4558,7 +4558,11 @@
   // normalizeTree() has already rewritten both into these canonical id forms, so
   // there is one lookup here whichever shape the tree was authored in, and a
   // prerequisite can name any node in the tree rather than only a grid neighbour.
+  // Total points sunk into this class's tree. player.statPoints is what's UNSPENT,
+  // which is the opposite of what a "12 points in the tree" gate wants.
+  const skillPointsSpent = () => Object.keys(player.skills || {}).reduce((n, k) => n + (player.skills[k].rank || 0), 0);
   function prereqsMet(d) {
+    if (d.reqPoints && skillPointsSpent() < d.reqPoints) return false;   // a deep-tree gate, not a named prerequisite
     const req = d.req || [];
     if (req.length && !req.every((id) => { const st = player.skills[id]; return !!(st && st.rank >= 1); })) return false;
     const reqAny = d.reqAny || [];
@@ -4570,6 +4574,7 @@
   function prereqNames(d) {
     const sk = classSkills();
     const names = (d.req || []).map((id) => (sk[id] ? sk[id].name : null)).filter(Boolean);
+    if (d.reqPoints) names.unshift(d.reqPoints + " points spent in the tree (you have " + skillPointsSpent() + ")");
     const reqAny = d.reqAny || [];
     if (reqAny.length) {
       const parts = reqAny.map(([id, minRank]) => { const nm = sk[id] ? sk[id].name : null; return nm ? (nm + " (rank " + (minRank || 1) + ")") : null; }).filter(Boolean);
