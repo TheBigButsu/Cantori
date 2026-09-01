@@ -100,7 +100,7 @@ window.CANTORI_DATA = {
       "range": 4,
       "glyph": "H",
       "color": "#6b6f7a",
-      "minFloor": 6,
+      "minFloor": 1,
       "hp": 35,
       "speed": 1,
       "atkMin": 2
@@ -128,7 +128,7 @@ window.CANTORI_DATA = {
       "atkMax": 9,
       "glyph": "G",
       "color": "#9fb07a",
-      "minFloor": 6,
+      "minFloor": 1,
       "charge": true
     },
     "wraith": {
@@ -138,7 +138,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "W",
       "color": "#8fa0c0",
-      "minFloor": 6
+      "minFloor": 1
     },
     "phantom": {
       "name": "Phantom",
@@ -147,7 +147,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "P",
       "color": "#7ee0d0",
-      "minFloor": 6
+      "minFloor": 1
     },
     "imp": {
       "name": "Imp",
@@ -156,14 +156,14 @@ window.CANTORI_DATA = {
       "atkMax": 5,
       "glyph": "i",
       "color": "#c0c0e0",
-      "minFloor": 6
+      "minFloor": 1
     },
     "ufetubus": {
       "name": "Ufetubus",
       "hp": 4,
       "atkMin": 2,
       "atkMax": 4,
-      "minFloor": 6,
+      "minFloor": 1,
       "glyph": "u",
       "color": "#6fb0d0"
     },
@@ -174,7 +174,7 @@ window.CANTORI_DATA = {
       "atkMax": 7,
       "glyph": "d",
       "color": "#e07030",
-      "minFloor": 6
+      "minFloor": 1
     },
     "healing_node": {
       "name": "Healing Node",

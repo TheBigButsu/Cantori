@@ -5177,6 +5177,10 @@
     bossRoomRect: () => (bossRoom ? { x: bossRoom.x, y: bossRoom.y, w: bossRoom.w, h: bossRoom.h } : null),
     nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
     stairsAt: () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; },
+    // Can the player physically walk to (tx, ty)? Terrain-only flood fill, the same
+    // one the generator uses to guarantee connectivity — so tests/smoke.js can prove
+    // a floor is completable without depending on monster positions or explored state.
+    reach: (tx, ty, blockThorns) => inBounds(tx, ty) && floodReach(player.x, player.y, !!blockThorns).has(ty * MAP_W + tx),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),
