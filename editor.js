@@ -1,0 +1,1298 @@
+/* ============================================================================
+   Cantori — Content Editor (admin)
+   A no-backend editor for the game's content. It reads the same data.js the game
+   uses, lets you add/edit/remove entries in tables (or raw JSON for the complex
+   bits), then:
+     • Playtest  — stashes the draft in localStorage; the game reads it on load.
+     • Copy for Claude / Download — hands you the finished data.js to commit.
+   Nothing here talks to a server; your draft lives in this browser until you
+   export it.
+   ========================================================================== */
+(function () {
+  "use strict";
+  const SHIPPED = window.CANTORI_DATA;
+  const LSKEY = "cantori_data_override";
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const $ = (id) => document.getElementById(id);
+
+  // Load working source: an in-progress draft if one exists, else the shipped data.
+  let source;
+  try { const d = localStorage.getItem(LSKEY); source = d ? JSON.parse(d) : clone(SHIPPED); }
+  catch (e) { source = clone(SHIPPED); }
+
+  const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses", "boons"];
+  const JSON_COLLS = ["loot", "stats", "gods"];
+  const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS).concat(["reference"]);
+  const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
+  const GEAR_CATS = ["weapon", "armor", "ring", "trinket", "necklace"];
+  const TIERS = 5, SLOTS = 5;   // skill tree: 5 tiers × 5 options
+
+  // Column specs for the table editors. type: key|text|num|bool|color|select.
+  const SPECS = {
+    monsters: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "name", type: "text", cls: "name" },
+      { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
+      { f: "speed", type: "num", step: "0.1" },
+      { f: "acc", type: "num" }, { f: "eva", type: "num" },
+      { f: "range", type: "num" }, { f: "minFloor", type: "num" },
+      { f: "charge", type: "bool" }, { f: "ranged", type: "bool" },
+      { f: "glyph", type: "text" }, { f: "color", type: "color" },
+    ],
+    gear: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
+      { f: "sub", label: "subtype", type: "select", opts: ["", "dagger", "sword", "axe", "spear", "bow", "light", "medium", "heavy"] },
+      { f: "name", type: "text", cls: "name" },
+      { f: "dmgMin", label: "dmg min", type: "num" }, { f: "dmgMax", label: "dmg max", type: "num" },
+      { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "range", type: "num" },
+      { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
+      { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
+      { f: "reqSTR", label: "req STR", type: "num" },
+      { f: "glyph", type: "text" }, { f: "color", type: "color" },
+    ],
+    // Armor's own column set: no weapon-only damage columns, plus an evasion stat
+    // (on top of the flat light/medium/heavy subtype bonus the engine already applies).
+    armor: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
+      { f: "sub", label: "subtype", type: "select", opts: ["", "dagger", "sword", "axe", "spear", "bow", "light", "medium", "heavy"] },
+      { f: "name", type: "text", cls: "name" },
+      { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "range", type: "num" },
+      { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
+      { f: "evasion", type: "num" },
+      { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
+      { f: "reqSTR", label: "req STR", type: "num" },
+      { f: "glyph", type: "text" }, { f: "color", type: "color" },
+    ],
+    consumables: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "cat", type: "select", opts: ["potion", "scroll", "tool"] },
+      { f: "name", type: "text", cls: "name" },
+      { f: "effect", type: "text" }, { f: "noDrop", label: "no drop", type: "bool" },
+      { f: "glyph", type: "text" }, { f: "color", type: "color" },
+    ],
+    bosses: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "name", type: "text", cls: "name" },
+      { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
+    ],
+    boons: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "name", type: "text", cls: "name" },
+      { f: "icon", type: "text" }, { f: "color", type: "color" },
+      { f: "desc", label: "description", type: "text", cls: "name" },
+    ],
+  };
+  // Blank templates when adding a row.
+  const TEMPLATES = {
+    monsters: { name: "New Monster", hp: 5, atkMin: 1, atkMax: 2, glyph: "?", color: "#c0c0c0" },
+    gear: { cat: "weapon", name: "New Gear", dmgMin: 1, dmgMax: 3, speed: 1, accuracy: 0, tier: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
+    consumables: { cat: "potion", name: "New Item", effect: "heal", glyph: "!", color: "#cccccc" },
+    bosses: { name: "New Boss", hp: 40, atkMin: 4, atkMax: 6 },
+    boons: { name: "New Boon", desc: "", icon: "✦", color: "#f0c14b" },
+  };
+
+  // Editing state: table rows as [{key,obj}], json collections as text + parsed cache.
+  const rows = {};
+  for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+  const sortState = {};   // per-table { f, dir } — click a header to sort by that column
+  const filterText = {};  // per-table search string — type to filter rows
+  const jsonText = {}, jsonOk = {};
+  for (const c of JSON_COLLS) {
+    let src = source[c] != null ? source[c] : {};
+    if (c === "loot") { src = Object.assign({}, src); delete src.enchants; }   // enchants get their own tab
+    jsonText[c] = JSON.stringify(src, null, 2); jsonOk[c] = true;
+  }
+  let biomeRows = clone(source.biomes || []);   // biomes are an ordered array of cards
+  let enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+  let classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+  let activeClass = 0;
+  const flippedEnch = new Set();    // enchant rows currently showing raw code
+  const flippedSkill = new Set();   // skill cells currently showing raw code, keyed "cls:t,s"
+  // The effect kinds the engine understands, and the numbers each one reads.
+  // Leaving a param blank makes the engine fall back to its built-in default.
+  const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste", "defense"];
+  const EFFECT_PARAMS = {
+    burn:    [["burstMult", "burst × power", "0.05"], ["dotTurns", "burn turns", "1"]],
+    poison:  [["initial", "initial hit", "1"], ["perTurn", "dmg / turn", "1"], ["turns", "turns per dose", "1"]],
+    shock:   [["burstMult", "burst × power", "0.05"], ["stunPer", "stun / power", "0.01"]],
+    thorns:  [["mult", "reflect × power", "0.05"]],
+    haste:   [["mult", "haste (0–1)", "0.05"]],
+    defense: [["amount", "+block / hit", "1"]],
+  };
+  // A reusable "flip to raw JSON" editor: shows the object as text, parses live,
+  // and hands the parsed value back so the user can write the governing code directly.
+  function codeEditor(obj, onParse) {
+    const box = document.createElement("div"); box.className = "codewrap";
+    const ta = document.createElement("textarea"); ta.className = "codebox"; ta.rows = 14; ta.spellcheck = false;
+    ta.value = JSON.stringify(obj, null, 2);
+    const msg = document.createElement("div"); msg.className = "codemsg ok"; msg.textContent = "✓ valid JSON";
+    ta.oninput = () => {
+      try { const parsed = JSON.parse(ta.value); onParse(parsed); msg.textContent = "✓ valid JSON — saved"; msg.className = "codemsg ok"; }
+      catch (e) { msg.textContent = "✕ " + e.message; msg.className = "codemsg err"; }
+    };
+    box.appendChild(ta); box.appendChild(msg); return box;
+  }
+  // The Effect block of an enchant: a type dropdown plus the numbers that type reads.
+  function renderEffect(o) {
+    const box = document.createElement("div"); box.className = "bmons";
+    const l = document.createElement("div"); l.className = "bmons-l"; l.textContent = "Effect (what it does):"; box.appendChild(l);
+    const row = document.createElement("div"); row.className = "bgrid";
+    const tw = document.createElement("label"); tw.className = "bfield";
+    const tl = document.createElement("span"); tl.textContent = "type"; tw.appendChild(tl);
+    const sel = document.createElement("select");
+    for (const t of EFFECT_TYPES) { const op = document.createElement("option"); op.value = t; op.textContent = t || "(none)"; sel.appendChild(op); }
+    sel.value = (o.effect && o.effect.type) || "";
+    sel.onchange = () => { if (!sel.value) delete o.effect; else o.effect = { type: sel.value }; render(); };
+    tw.appendChild(sel); row.appendChild(tw);
+    for (const [pf, plabel, pstep] of (EFFECT_PARAMS[o.effect && o.effect.type] || [])) {
+      const w = document.createElement("label"); w.className = "bfield";
+      const s = document.createElement("span"); s.textContent = plabel; w.appendChild(s);
+      const inp = document.createElement("input"); inp.type = "number"; inp.step = pstep;
+      inp.value = (o.effect && o.effect[pf] != null) ? o.effect[pf] : "";
+      inp.oninput = () => { o.effect = o.effect || { type: sel.value }; if (inp.value === "") delete o.effect[pf]; else o.effect[pf] = Number(inp.value); };
+      w.appendChild(inp); row.appendChild(w);
+    }
+    box.appendChild(row); return box;
+  }
+  // Normalize a class: stats/start/levelUp exist, and the skill tree is a 5×5 grid
+  // whose cells are either a skill object or null (a Diablo-style blank space).
+  //   skill = { name, desc, levels: [up to 4 per-level notes], req: [[tier,slot], …] }
+  function ensureClass(obj) {
+    obj.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, obj.stats || {});
+    obj.start = obj.start || {};
+    obj.levelUp = obj.levelUp || {};
+    if (!Array.isArray(obj.skillTree)) obj.skillTree = [];
+    for (let t = 0; t < TIERS; t++) {
+      if (!Array.isArray(obj.skillTree[t])) obj.skillTree[t] = [];
+      for (let s = 0; s < SLOTS; s++) {
+        const c = obj.skillTree[t][s];
+        if (c && c.name) {
+          c.desc = c.desc || "";
+          c.levels = Array.isArray(c.levels) ? c.levels.slice(0, 4) : [];
+          c.req = Array.isArray(c.req) ? c.req : [];
+          obj.skillTree[t][s] = c;
+        } else obj.skillTree[t][s] = null;   // blank space
+      }
+      obj.skillTree[t].length = SLOTS;
+    }
+    obj.skillTree.length = TIERS;
+  }
+  classRows.forEach((r) => ensureClass(r.obj));
+  function getPath(o, path) { return path.split(".").reduce((x, k) => (x == null ? undefined : x[k]), o); }
+  function setPath(o, path, val) {
+    const ks = path.split("."); let x = o;
+    for (let i = 0; i < ks.length - 1; i++) { if (x[ks[i]] == null) x[ks[i]] = {}; x = x[ks[i]]; }
+    const last = ks[ks.length - 1];
+    if (val === undefined) delete x[last]; else x[last] = val;
+  }
+
+  let activeTab = "monsters";
+
+  // ---- Field get/set (maps reqSTR <-> req.STR, drops empty optionals) --------
+  function getField(obj, f) {
+    if (f === "reqSTR") return obj.req && obj.req.STR != null ? obj.req.STR : "";
+    const v = obj[f];
+    return v == null ? "" : v;
+  }
+  function setField(obj, f, type, raw, checked) {
+    if (f === "reqSTR") {
+      if (raw === "" ) delete obj.req; else obj.req = { STR: Number(raw) };
+      return;
+    }
+    if (type === "bool") { if (checked) obj[f] = true; else delete obj[f]; return; }
+    if (type === "num") { if (raw === "") delete obj[f]; else obj[f] = Number(raw); return; }
+    if (type === "select") { if (raw === "") delete obj[f]; else obj[f] = raw; return; }
+    obj[f] = raw;   // text / color
+  }
+
+  // ---- Rendering -------------------------------------------------------------
+  function renderTabs() {
+    const nav = $("tabs"); nav.innerHTML = "";
+    for (const t of TABS) {
+      const b = document.createElement("button");
+      b.className = "tab" + (t === activeTab ? " on" : "");
+      b.textContent = t;
+      b.onclick = () => { syncJsonFromDom(); activeTab = t; render(); };
+      nav.appendChild(b);
+    }
+  }
+
+  function render() {
+    renderTabs();
+    const main = $("main");
+    main.innerHTML = "";
+    if (activeTab === "gear") main.appendChild(renderGearTables());
+    else if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
+    else if (activeTab === "biomes") main.appendChild(renderBiomes());
+    else if (activeTab === "classes") main.appendChild(renderClasses());
+    else if (activeTab === "enchants") main.appendChild(renderEnchants());
+    else if (activeTab === "reference") main.appendChild(renderReference());
+    else main.appendChild(renderJson(activeTab));
+    setStatus("");
+  }
+
+  // Value shown in a column for a row (handles the key column + reqSTR mapping).
+  function cellValue(row, col) {
+    if (col.f === "__key") return row.key || "";
+    return getField(row.obj, col.f);   // "" when missing
+  }
+  // Does a row match the filter text? (any column contains the string)
+  function rowMatches(coll, row, q, spec) {
+    for (const col of (spec || SPECS[coll])) {
+      const v = cellValue(row, col);
+      if (v != null && String(v).toLowerCase().indexOf(q) >= 0) return true;
+    }
+    return false;
+  }
+  // Compare two rows on a column; blanks always sink to the bottom.
+  function cmpRows(a, b, col, dir) {
+    const av = cellValue(a, col), bv = cellValue(b, col);
+    const aE = (av === "" || av == null), bE = (bv === "" || bv == null);
+    if (aE && bE) return 0;
+    if (aE) return 1;
+    if (bE) return -1;
+    let r;
+    if (col.type === "num") r = Number(av) - Number(bv);
+    else r = String(av).localeCompare(String(bv), undefined, { numeric: true });
+    return dir === "desc" ? -r : r;
+  }
+
+  // opts (all optional): stateKey (separate sort/filter state, for split tables
+  // that share one coll), filterFn (row => bool, narrows which rows this table
+  // shows/counts), heading (label shown instead of coll), addBase/addLabel
+  // (key prefix + button text for "+ Add"), template (row seed), hint (false to
+  // suppress the tip paragraph, for split tables that share one hint above them).
+  function renderTable(coll, opts) {
+    opts = opts || {};
+    const stateKey = opts.stateKey || coll;
+    const wrap = document.createElement("div");
+    const spec = opts.spec || SPECS[coll];
+
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); bar.appendChild(h);
+    const filt = document.createElement("input");
+    filt.type = "text"; filt.className = "filter"; filt.placeholder = "filter…"; filt.value = filterText[stateKey] || "";
+    bar.appendChild(filt);
+    wrap.appendChild(bar);
+
+    if (opts.hint !== false) {
+      const note = document.createElement("p"); note.className = "hint";
+      note.textContent = "Click a column header to sort by it (again to reverse); type in the filter box to narrow the list. " + tableHint(coll);
+      wrap.appendChild(note);
+    }
+
+    const tw = document.createElement("div"); tw.className = "tablewrap";
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const htr = document.createElement("tr");
+    for (const col of spec) {
+      const th = document.createElement("th"); th.className = "sortable"; th.dataset.f = col.f;
+      th.onclick = () => {
+        const s = sortState[stateKey];
+        if (s && s.f === col.f) s.dir = (s.dir === "asc" ? "desc" : "asc");
+        else sortState[stateKey] = { f: col.f, dir: "asc" };
+        rebuild();
+      };
+      htr.appendChild(th);
+    }
+    htr.appendChild(document.createElement("th"));   // delete column (not sortable)
+    thead.appendChild(htr); table.appendChild(thead);
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+    tw.appendChild(table); wrap.appendChild(tw);
+
+    const add = document.createElement("div"); add.className = "addrow";
+    const addBase = opts.addBase || coll.replace(/s$/, "");
+    const btn = document.createElement("button"); btn.textContent = "+ Add " + (opts.addLabel || addBase);
+    btn.onclick = () => {
+      filterText[stateKey] = "";   // clear the filter so the new row is visible
+      rows[coll].push({ key: uniqueKey(coll, "new_" + addBase.replace(/[^a-z0-9]+/gi, "_")), obj: clone(opts.template || TEMPLATES[coll]) });
+      render();
+    };
+    add.appendChild(btn); wrap.appendChild(add);
+
+    // Recompute the filtered/sorted view and repaint just the header labels +
+    // body (so typing in the filter box keeps focus).
+    function rebuild() {
+      const base = opts.filterFn ? rows[coll].filter(opts.filterFn) : rows[coll];
+      const q = (filterText[stateKey] || "").trim().toLowerCase();
+      let view = q ? base.filter((row) => rowMatches(coll, row, q, spec)) : base.slice();
+      const st = sortState[stateKey];
+      if (st) { const col = spec.find((c) => c.f === st.f); if (col) view.sort((a, b) => cmpRows(a, b, col, st.dir)); }
+      h.textContent = (opts.heading || coll) + " — " + (q ? view.length + " of " + base.length : base.length + " entries");
+      const ths = thead.querySelectorAll("th");
+      spec.forEach((col, idx) => {
+        const on = st && st.f === col.f;
+        ths[idx].textContent = (col.label || col.f) + (on ? (st.dir === "asc" ? " ▲" : " ▼") : "");
+        ths[idx].classList.toggle("on", !!on);
+      });
+      tbody.innerHTML = "";
+      view.forEach((row) => tbody.appendChild(renderRow(coll, row, spec)));
+    }
+    filt.oninput = () => { filterText[stateKey] = filt.value; rebuild(); };
+    rebuild();
+    return wrap;
+  }
+
+  // Gear gets its own tab layout: one table per equip category instead of one
+  // giant mixed table, so weapons/armor/jewelry each get their relevant columns
+  // to scan without wading through the rest.
+  const GEAR_GROUPS = [
+    { stateKey: "gear_weapon", heading: "weapons", addBase: "weapon", match: (cat) => cat === "weapon", template: Object.assign({}, TEMPLATES.gear, { cat: "weapon" }) },
+    { stateKey: "gear_armor", heading: "armor", addBase: "armor", match: (cat) => cat === "armor", spec: SPECS.armor, template: Object.assign({}, TEMPLATES.gear, { cat: "armor", dmgMin: undefined, dmgMax: undefined, defMin: 1, defMax: 3, evasion: 0 }) },
+    { stateKey: "gear_jewelry", heading: "rings & necklaces", addBase: "ring", addLabel: "ring/necklace", match: (cat) => cat === "ring" || cat === "necklace", template: Object.assign({}, TEMPLATES.gear, { cat: "ring", dmgMin: undefined, dmgMax: undefined }) },
+    { stateKey: "gear_trinket", heading: "trinkets", addBase: "trinket", match: (cat) => cat === "trinket", template: Object.assign({}, TEMPLATES.gear, { cat: "trinket", dmgMin: undefined, dmgMax: undefined }) },
+  ];
+  function renderGearTables() {
+    const wrap = document.createElement("div");
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = tableHint("gear");
+    wrap.appendChild(note);
+    for (const g of GEAR_GROUPS) {
+      wrap.appendChild(renderTable("gear", {
+        stateKey: g.stateKey, heading: g.heading, addBase: g.addBase, addLabel: g.addLabel,
+        template: g.template, spec: g.spec, hint: false,
+        filterFn: (row) => g.match(getField(row.obj, "cat")),
+      }));
+    }
+    return wrap;
+  }
+
+  function renderRow(coll, row, spec) {
+    spec = spec || SPECS[coll];
+    const tr = document.createElement("tr");
+    for (const col of spec) {
+      const td = document.createElement("td");
+      td.appendChild(makeInput(coll, row, col));
+      tr.appendChild(td);
+    }
+    const td = document.createElement("td");
+    const del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+    del.title = "delete";
+    del.onclick = () => { const idx = rows[coll].indexOf(row); if (idx >= 0) rows[coll].splice(idx, 1); render(); };
+    td.appendChild(del); tr.appendChild(td);
+    return tr;
+  }
+
+  function makeInput(coll, row, col) {
+    if (col.type === "key") {
+      const inp = document.createElement("input"); inp.type = "text"; inp.className = "key"; inp.value = row.key;
+      inp.oninput = () => { row.key = inp.value.trim(); };
+      return inp;
+    }
+    if (col.type === "bool") {
+      const inp = document.createElement("input"); inp.type = "checkbox"; inp.checked = !!row.obj[col.f];
+      inp.onchange = () => setField(row.obj, col.f, "bool", "", inp.checked);
+      return inp;
+    }
+    if (col.type === "select") {
+      const sel = document.createElement("select");
+      for (const o of col.opts) { const op = document.createElement("option"); op.value = o; op.textContent = o; sel.appendChild(op); }
+      sel.value = getField(row.obj, col.f) || col.opts[0];
+      sel.onchange = () => setField(row.obj, col.f, "select", sel.value);
+      return sel;
+    }
+    if (col.type === "color") {
+      const inp = document.createElement("input"); inp.type = "color";
+      inp.value = normHex(getField(row.obj, col.f)) || "#cccccc";
+      inp.oninput = () => setField(row.obj, col.f, "text", inp.value);
+      return inp;
+    }
+    const inp = document.createElement("input");
+    inp.type = col.type === "num" ? "number" : "text";
+    if (col.step) inp.step = col.step;
+    if (col.cls) inp.className = col.cls;
+    inp.value = getField(row.obj, col.f);
+    inp.oninput = () => setField(row.obj, col.f, col.type, inp.value);
+    return inp;
+  }
+
+  // ---- Biomes: a card editor (ordered array with a monster-picker) -----------
+  function biomeField(b, label, f, type, opts) {
+    const wrap = document.createElement("label"); wrap.className = "bfield";
+    const span = document.createElement("span"); span.textContent = label; wrap.appendChild(span);
+    let inp;
+    if (type === "select") {
+      inp = document.createElement("select");
+      for (const o of opts) { const op = document.createElement("option"); op.value = o; op.textContent = o || "(none)"; inp.appendChild(op); }
+      inp.value = b[f] != null ? b[f] : (opts[0] || "");
+      inp.onchange = () => { if (inp.value === "") delete b[f]; else b[f] = inp.value; };
+    } else if (type === "bool") {
+      inp = document.createElement("input"); inp.type = "checkbox"; inp.checked = !!b[f];
+      inp.onchange = () => { if (inp.checked) b[f] = true; else delete b[f]; };
+    } else if (type === "num") {
+      inp = document.createElement("input"); inp.type = "number"; inp.value = b[f] != null ? b[f] : "";
+      inp.oninput = () => { if (inp.value === "") delete b[f]; else b[f] = Number(inp.value); };
+    } else if (type === "spawn") {
+      inp = document.createElement("input"); inp.type = "text";
+      inp.value = Array.isArray(b[f]) ? b[f].join(",") : (b[f] != null ? String(b[f]) : "");
+      inp.placeholder = "5  or  3,5,5,5";
+      inp.oninput = () => {
+        const v = inp.value.trim();
+        if (v === "") delete b[f];
+        else if (v.indexOf(",") >= 0) b[f] = v.split(",").map((s) => Number(s.trim()) || 0);
+        else b[f] = Number(v);
+      };
+    } else {
+      inp = document.createElement("input"); inp.type = "text"; inp.value = b[f] != null ? b[f] : "";
+      inp.oninput = () => { if (inp.value === "") delete b[f]; else b[f] = inp.value; };
+    }
+    wrap.appendChild(inp);
+    return wrap;
+  }
+  function renderBiomes() {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "biomes — " + biomeRows.length + " in depth order"; bar.appendChild(h);
+    wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors below a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
+    wrap.appendChild(note);
+    const bossKeys = rows.bosses.map((r) => r.key);
+    const monKeys = rows.monsters.map((r) => r.key);
+    const minFloorOf = {};   // a monster can only spawn on biome-floors >= its minFloor (empty = disabled)
+    for (const r of rows.monsters) { const mf = r.obj.minFloor; minFloorOf[r.key] = (mf === "" || mf == null) ? null : Number(mf); }
+    biomeRows.forEach((b, i) => {
+      const card = document.createElement("div"); card.className = "bcard";
+      const head = document.createElement("div"); head.className = "bhead";
+      const title = document.createElement("b"); title.textContent = "Biome " + (i + 1) + " · " + (b.key || "?"); head.appendChild(title);
+      const ctrls = document.createElement("span");
+      const mk = (lab, tip, fn, dis) => { const bt = document.createElement("button"); bt.className = "bbtn"; bt.textContent = lab; bt.title = tip; bt.disabled = !!dis; bt.onclick = fn; return bt; };
+      ctrls.appendChild(mk("↑", "move up", () => { const t = biomeRows[i - 1]; biomeRows[i - 1] = biomeRows[i]; biomeRows[i] = t; render(); }, i === 0));
+      ctrls.appendChild(mk("↓", "move down", () => { const t = biomeRows[i + 1]; biomeRows[i + 1] = biomeRows[i]; biomeRows[i] = t; render(); }, i === biomeRows.length - 1));
+      ctrls.appendChild(mk("✕", "remove", () => { biomeRows.splice(i, 1); render(); }));
+      head.appendChild(ctrls); card.appendChild(head);
+
+      const grid = document.createElement("div"); grid.className = "bgrid";
+      grid.appendChild(biomeField(b, "key", "key", "text"));
+      grid.appendChild(biomeField(b, "name", "name", "text"));
+      grid.appendChild(biomeField(b, "floor sprite", "floor", "text"));
+      grid.appendChild(biomeField(b, "wall sprite", "wall", "text"));
+      grid.appendChild(biomeField(b, "boss", "boss", "select", [""].concat(bossKeys)));
+      grid.appendChild(biomeField(b, "bossCount", "bossCount", "num"));
+      grid.appendChild(biomeField(b, "door style", "door", "select", ["door", "bush"]));
+      grid.appendChild(biomeField(b, "exitSprite", "exitSprite", "text"));
+      grid.appendChild(biomeField(b, "spawnEvery", "spawnEvery", "num"));
+      grid.appendChild(biomeField(b, "spawnCap", "spawnCap", "num"));
+      grid.appendChild(biomeField(b, "spawnInitial", "spawnInitial", "spawn"));
+      grid.appendChild(biomeField(b, "final biome?", "final", "bool"));
+      card.appendChild(grid);
+
+      const ml = document.createElement("div"); ml.className = "bmons";
+      const lbl = document.createElement("div"); lbl.className = "bmons-l"; lbl.textContent = "Monsters here:"; ml.appendChild(lbl);
+      const chips = document.createElement("div"); chips.className = "chips";
+      if (!Array.isArray(b.monsters)) b.monsters = [];
+      for (const k of monKeys) {
+        const on = b.monsters.indexOf(k) >= 0;
+        const chip = document.createElement("button"); chip.className = "chip" + (on ? " on" : ""); chip.textContent = k;
+        chip.onclick = () => { const idx = b.monsters.indexOf(k); if (idx >= 0) b.monsters.splice(idx, 1); else b.monsters.push(k); render(); };
+        chips.appendChild(chip);
+      }
+      ml.appendChild(chips); card.appendChild(ml);
+
+      // spawn mix: a % chance per biome-floor (1–5) for each selected monster. A
+      // floor the monster can't reach yet (below its minFloor) is locked; a floor
+      // whose column totals over 100% is flagged red until it's brought back down.
+      if (b.monsters.length) {
+        const mix = document.createElement("div"); mix.className = "bmix";
+        const ml2 = document.createElement("div"); ml2.className = "bmons-l"; ml2.textContent = "Spawn mix — % chance per floor (each floor should total ≤100%; over 100 turns red). “—” = the monster can't spawn on that floor yet (below its minFloor)."; mix.appendChild(ml2);
+        const hdr = document.createElement("div"); hdr.className = "bmixrow head";
+        const hn = document.createElement("span"); hn.className = "bmixname"; hdr.appendChild(hn);
+        // Labels show the ABSOLUTE dungeon depth for this biome's slot (biome i covers
+        // depths i*5+1 .. i*5+5) — minFloor/spawnMix values themselves stay biome-relative
+        // (1-5), exactly as the engine reads them; this is a display-only fix so "Biome 2"
+        // reads F6-F10 instead of F1-F5 like every other card.
+        const depthBase = i * 5;
+        for (let f = 1; f <= 5; f++) { const s = document.createElement("span"); s.className = "bmixw lbl"; s.textContent = "F" + (depthBase + f); hdr.appendChild(s); }
+        mix.appendChild(hdr);
+        b.spawnMix = b.spawnMix || {};
+        const colInputs = [[], [], [], [], []];
+        for (const k of b.monsters) {
+          const row = document.createElement("div"); row.className = "bmixrow";
+          const name = document.createElement("span"); name.className = "bmixname"; name.textContent = k; row.appendChild(name);
+          const mf = minFloorOf[k];
+          for (let f = 0; f < 5; f++) {
+            const eligible = (mf != null && (f + 1) >= mf);
+            if (!eligible) {                                  // locked: can't spawn on this floor
+              const sp = document.createElement("span"); sp.className = "bmixw locked"; sp.textContent = "—";
+              sp.title = mf == null ? (k + " is disabled — set a minFloor on the Monsters tab") : (k + " can't spawn before floor " + (depthBase + mf) + " (biome-floor " + mf + ")");
+              row.appendChild(sp); continue;
+            }
+            const inp = document.createElement("input"); inp.type = "number"; inp.className = "bmixw"; inp.min = "0"; inp.max = "100"; inp.placeholder = "0";
+            const arr = b.spawnMix[k];
+            inp.value = (arr && arr[f] != null) ? arr[f] : "";
+            inp.oninput = () => {
+              if (!Array.isArray(b.spawnMix[k])) b.spawnMix[k] = [];
+              b.spawnMix[k][f] = inp.value === "" ? undefined : Number(inp.value);
+              recolor();
+            };
+            colInputs[f].push(inp);
+            row.appendChild(inp);
+          }
+          mix.appendChild(row);
+        }
+        // totals row: each floor's column sum, red when it exceeds 100%.
+        const trow = document.createElement("div"); trow.className = "bmixrow total";
+        const tn = document.createElement("span"); tn.className = "bmixname"; tn.textContent = "total"; trow.appendChild(tn);
+        const totCells = [];
+        for (let f = 0; f < 5; f++) { const s = document.createElement("span"); s.className = "bmixw tot"; totCells.push(s); trow.appendChild(s); }
+        mix.appendChild(trow);
+        function recolor() {
+          for (let f = 0; f < 5; f++) {
+            let sum = 0; for (const inp of colInputs[f]) sum += Number(inp.value) || 0;
+            const over = sum > 100;
+            for (const inp of colInputs[f]) inp.classList.toggle("over", over);
+            totCells[f].textContent = colInputs[f].length ? sum + "%" : "";
+            totCells[f].classList.toggle("over", over);
+          }
+        }
+        recolor();
+        card.appendChild(mix);
+      }
+      wrap.appendChild(card);
+    });
+    const add = document.createElement("div"); add.className = "addrow";
+    const btn = document.createElement("button"); btn.textContent = "+ Add biome";
+    btn.onclick = () => { biomeRows.push({ key: "new_biome", name: "New Biome", floor: "floor", wall: "wall", monsters: [], boss: bossKeys[0] || "", door: "door" }); render(); };
+    add.appendChild(btn); wrap.appendChild(add);
+    return wrap;
+  }
+
+  // ---- Classes: a form + a 5×5 skill-tree grid with hover tooltips -----------
+  function classField(o, label, path, type, opts) {
+    const wrap = document.createElement("label"); wrap.className = "cfld";
+    const span = document.createElement("span"); span.textContent = label; wrap.appendChild(span);
+    let inp;
+    if (type === "select") {
+      inp = document.createElement("select");
+      for (const op of opts) { const e = document.createElement("option"); e.value = op; e.textContent = op || "(none)"; inp.appendChild(e); }
+      const cur = getPath(o, path); inp.value = cur != null ? cur : (opts[0] || "");
+      inp.onchange = () => setPath(o, path, inp.value === "" ? undefined : inp.value);
+    } else if (type === "num") {
+      inp = document.createElement("input"); inp.type = "number"; const cur = getPath(o, path); inp.value = cur != null ? cur : "";
+      inp.oninput = () => setPath(o, path, inp.value === "" ? undefined : Number(inp.value));
+    } else if (type === "textarea") {
+      inp = document.createElement("textarea"); inp.rows = 2; inp.value = getPath(o, path) || "";
+      inp.oninput = () => setPath(o, path, inp.value === "" ? undefined : inp.value);
+    } else {
+      inp = document.createElement("input"); inp.type = "text"; inp.value = getPath(o, path) || "";
+      inp.oninput = () => setPath(o, path, inp.value === "" ? undefined : inp.value);
+    }
+    wrap.appendChild(inp);
+    return wrap;
+  }
+  function renderClasses() {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "classes"; bar.appendChild(h); wrap.appendChild(bar);
+
+    const picker = document.createElement("div"); picker.className = "cpick";
+    classRows.forEach((r, i) => {
+      const btn = document.createElement("button"); btn.className = "ctab2" + (i === activeClass ? " on" : ""); btn.textContent = r.key || "?";
+      btn.onclick = () => { activeClass = i; render(); };
+      picker.appendChild(btn);
+    });
+    const addC = document.createElement("button"); addC.className = "ctab2 add"; addC.textContent = "+ Add class";
+    addC.onclick = () => {
+      const key = uniqueKeyArr(classRows.map((r) => r.key), "new_class");
+      const obj = { name: "New Class", main: "STR", secondary: "VIT", unlock: "town", baseMp: 0, blurb: "" };
+      ensureClass(obj); classRows.push({ key, obj }); activeClass = classRows.length - 1; render();
+    };
+    picker.appendChild(addC); wrap.appendChild(picker);
+    if (!classRows.length) return wrap;
+
+    const cr = classRows[activeClass]; const o = cr.obj;
+    const gearWeapons = rows.gear.filter((r) => r.obj.cat === "weapon").map((r) => r.key);
+    const gearArmor = rows.gear.filter((r) => r.obj.cat === "armor").map((r) => r.key);
+
+    const del = document.createElement("div"); del.style.margin = "0 0 10px";
+    const delBtn = document.createElement("button"); delBtn.className = "del"; delBtn.textContent = "✕ delete this class";
+    delBtn.onclick = () => { classRows.splice(activeClass, 1); activeClass = Math.max(0, activeClass - 1); render(); };
+    del.appendChild(delBtn); wrap.appendChild(del);
+
+    // key + core fields
+    const form = document.createElement("div"); form.className = "cform";
+    const keyWrap = document.createElement("label"); keyWrap.className = "cfld";
+    const ks = document.createElement("span"); ks.textContent = "key"; keyWrap.appendChild(ks);
+    const ki = document.createElement("input"); ki.type = "text"; ki.value = cr.key; ki.oninput = () => { cr.key = ki.value.trim(); }; keyWrap.appendChild(ki);
+    form.appendChild(keyWrap);
+    form.appendChild(classField(o, "name", "name", "text"));
+    form.appendChild(classField(o, "main stat", "main", "select", STAT_KEYS));
+    form.appendChild(classField(o, "secondary stat", "secondary", "select", STAT_KEYS));
+    form.appendChild(classField(o, "unlock", "unlock", "select", ["start", "town"]));
+    form.appendChild(classField(o, "start weapon", "start.weapon", "select", [""].concat(gearWeapons)));
+    form.appendChild(classField(o, "start armor", "start.armor", "select", [""].concat(gearArmor)));
+    wrap.appendChild(form);
+
+    // base stats — the six stats plus base HP and MP
+    const sh = document.createElement("h3"); sh.className = "csec"; sh.textContent = "Base stats"; wrap.appendChild(sh);
+    const sg = document.createElement("div"); sg.className = "cform";
+    for (const k of STAT_KEYS) sg.appendChild(classField(o, k, "stats." + k, "num"));
+    sg.appendChild(classField(o, "HP", "baseHp", "num"));
+    sg.appendChild(classField(o, "MP", "baseMp", "num"));
+    wrap.appendChild(sg);
+    const snote = document.createElement("p"); snote.className = "hint";
+    snote.textContent = "Total HP = base HP + 1 per VIT (blank HP defaults to 13). MP is the base MP pool.";
+    wrap.appendChild(snote);
+
+    // regeneration
+    const rh = document.createElement("h3"); rh.className = "csec"; rh.textContent = "Regen"; wrap.appendChild(rh);
+    const rg = document.createElement("div"); rg.className = "cform";
+    rg.appendChild(classField(o, "base turns to full HP", "regenTurns", "num"));
+    rg.appendChild(classField(o, "VIT regen factor", "vitRegen", "num"));
+    rg.appendChild(classField(o, "base turns to full MP", "mpRegenTurns", "num"));
+    rg.appendChild(classField(o, "INT regen factor", "intRegen", "num"));
+    wrap.appendChild(rg);
+    const rnote = document.createElement("p"); rnote.className = "hint";
+    rnote.textContent = "It takes “base turns to full” turns to regen from empty to full, minus (stat × factor) — VIT speeds HP, INT speeds MP. Defaults 600 turns, factor 2.";
+    wrap.appendChild(rnote);
+
+    // per-level bonuses
+    const lh = document.createElement("h3"); lh.className = "csec"; lh.textContent = "Per-level bonuses (levelUp)"; wrap.appendChild(lh);
+    const lg = document.createElement("div"); lg.className = "cform";
+    lg.appendChild(classField(o, "HP", "levelUp.hp", "num"));
+    lg.appendChild(classField(o, "MP", "levelUp.mp", "num"));
+    lg.appendChild(classField(o, "accuracy", "levelUp.accuracy", "num"));
+    lg.appendChild(classField(o, "evasion", "levelUp.evasion", "num"));
+    lg.appendChild(classField(o, "crit % (added)", "levelUp.crit", "num"));
+    lg.appendChild(classField(o, "crit dmg % (added)", "levelUp.critDmg", "num"));
+    wrap.appendChild(lg);
+    const lnote = document.createElement("p"); lnote.className = "hint";
+    lnote.textContent = "Added each level. Base crit is 5% for 200% damage; crit % and crit dmg % add to those.";
+    wrap.appendChild(lnote);
+
+    const bh = document.createElement("h3"); bh.className = "csec"; bh.textContent = "Blurb"; wrap.appendChild(bh);
+    const bg = document.createElement("div"); bg.className = "cform"; const bf = classField(o, "shown in class select", "blurb", "textarea"); bf.style.gridColumn = "1 / -1"; bg.appendChild(bf); wrap.appendChild(bg);
+
+    // 5×5 skill tree (Diablo-style: cells are a skill or a blank space)
+    const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree — 5 tiers × 5 slots"; wrap.appendChild(th);
+    const tnote = document.createElement("p"); tnote.className = "hint";
+    tnote.textContent = "Leave slots blank to shape the tree. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first), and a wiring row: key (engine id), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Sword Master are fully wired examples.";
+    wrap.appendChild(tnote);
+    const allSkills = [];   // gather named skills for the prereq picker
+    for (let t = 0; t < TIERS; t++) for (let s = 0; s < SLOTS; s++) { const c = o.skillTree[t][s]; if (c && c.name) allSkills.push({ t, s, name: c.name }); }
+    const tree = document.createElement("div"); tree.className = "stree";
+    for (let t = 0; t < TIERS; t++) {
+      const rowEl = document.createElement("div"); rowEl.className = "strow";
+      const tl = document.createElement("div"); tl.className = "stier"; tl.textContent = "Tier " + (t + 1); rowEl.appendChild(tl);
+      for (let s = 0; s < SLOTS; s++) rowEl.appendChild(renderSkillCell(o, t, s, allSkills));
+      tree.appendChild(rowEl);
+    }
+    wrap.appendChild(tree);
+    return wrap;
+  }
+  function renderSkillCell(o, t, s, allSkills) {
+    const cell = o.skillTree[t][s];
+    const box = document.createElement("div"); box.className = "scell" + (cell ? " filled" : " blank");
+    if (!cell) {
+      const add = document.createElement("button"); add.className = "sadd"; add.textContent = "+";
+      add.title = "add a skill here";
+      add.onclick = () => { o.skillTree[t][s] = { name: "New Skill", desc: "", levels: ["", ""], req: [] }; render(); };
+      box.appendChild(add);
+      return box;
+    }
+    // header: name + flip-to-code + remove
+    const fkey = activeClass + ":" + t + "," + s;
+    const head = document.createElement("div"); head.className = "shead";
+    const nm = document.createElement("input"); nm.className = "sname"; nm.type = "text"; nm.value = cell.name || ""; nm.placeholder = "name";
+    nm.oninput = () => { cell.name = nm.value; };
+    const flip = document.createElement("button"); flip.className = "bbtn flip"; flip.textContent = flippedSkill.has(fkey) ? "▦" : "</>"; flip.title = "flip between the form and raw JSON";
+    flip.onclick = () => { if (flippedSkill.has(fkey)) flippedSkill.delete(fkey); else flippedSkill.add(fkey); render(); };
+    const rm = document.createElement("button"); rm.className = "bbtn"; rm.textContent = "✕"; rm.title = "clear slot";
+    rm.onclick = () => { flippedSkill.delete(fkey); o.skillTree[t][s] = null; render(); };
+    head.appendChild(nm); head.appendChild(flip); head.appendChild(rm); box.appendChild(head);
+    if (flippedSkill.has(fkey)) { box.appendChild(codeEditor(cell, (parsed) => { o.skillTree[t][s] = parsed; })); return box; }
+    // description
+    const dsc = document.createElement("textarea"); dsc.className = "sdesc"; dsc.rows = 2; dsc.placeholder = "in-game description"; dsc.value = cell.desc || "";
+    dsc.oninput = () => { cell.desc = dsc.value; };
+    box.appendChild(dsc);
+    // engine wiring: key + icon + behavior + condition. The per-level mechanics
+    // (the `ranks` array) live in the </> code view — this row makes the skill real.
+    const wire = document.createElement("div"); wire.className = "swire";
+    const mkIn = (ph, f) => { const i = document.createElement("input"); i.type = "text"; i.placeholder = ph; i.value = cell[f] || ""; i.oninput = () => { if (!i.value) delete cell[f]; else cell[f] = i.value.trim(); }; return i; };
+    wire.appendChild(mkIn("key", "key"));
+    wire.appendChild(mkIn("icon", "icon"));
+    const kind = document.createElement("select");
+    for (const k of ["passive", "rush", "spin"]) { const op = document.createElement("option"); op.value = k; op.textContent = k; kind.appendChild(op); }
+    kind.value = cell.kind || "passive";
+    kind.onchange = () => { cell.kind = kind.value; };
+    wire.appendChild(kind);
+    wire.appendChild(mkIn("when (e.g. axe)", "when"));
+    box.appendChild(wire);
+    // 4 level rows + dots
+    const dots = document.createElement("div"); dots.className = "sdots";
+    const refreshDots = () => {
+      dots.innerHTML = "";
+      const maxLv = (cell.levels || []).filter((x) => x && x.trim()).length;
+      for (let i = 0; i < 4; i++) { const d = document.createElement("span"); d.className = "sdot" + (i < maxLv ? " on" : ""); dots.appendChild(d); }
+    };
+    const lvWrap = document.createElement("div"); lvWrap.className = "slevels";
+    for (let i = 0; i < 4; i++) {
+      const row = document.createElement("div"); row.className = "slvrow";
+      const lab = document.createElement("span"); lab.className = "slvl"; lab.textContent = "L" + (i + 1);
+      const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "what level " + (i + 1) + " does"; inp.value = (cell.levels && cell.levels[i]) || "";
+      inp.oninput = () => { cell.levels = cell.levels || []; cell.levels[i] = inp.value; while (cell.levels.length && !cell.levels[cell.levels.length - 1]) cell.levels.pop(); refreshDots(); };
+      row.appendChild(lab); row.appendChild(inp); lvWrap.appendChild(row);
+    }
+    box.appendChild(lvWrap);
+    box.appendChild(dots); refreshDots();
+    // prerequisites: chips of every OTHER named skill
+    const others = allSkills.filter((k) => !(k.t === t && k.s === s));
+    if (others.length) {
+      const pr = document.createElement("div"); pr.className = "sprereq";
+      const l = document.createElement("div"); l.className = "bmons-l"; l.textContent = "Requires:"; pr.appendChild(l);
+      const chips = document.createElement("div"); chips.className = "chips";
+      cell.req = cell.req || [];
+      const has = (k) => cell.req.some((r) => r[0] === k.t && r[1] === k.s);
+      for (const k of others) {
+        const chip = document.createElement("button"); chip.className = "chip" + (has(k) ? " on" : ""); chip.textContent = k.name;
+        chip.onclick = () => {
+          const idx = cell.req.findIndex((r) => r[0] === k.t && r[1] === k.s);
+          if (idx >= 0) cell.req.splice(idx, 1); else cell.req.push([k.t, k.s]);
+          chip.classList.toggle("on");
+        };
+        chips.appendChild(chip);
+      }
+      pr.appendChild(chips); box.appendChild(pr);
+    }
+    return box;
+  }
+
+  // ---- Enchants: table with proc rate + slot chips ---------------------------
+  function renderEnchants() {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "enchants — " + enchantRows.length; bar.appendChild(h); wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "On-hit procs rolled onto gear (blue+). proc = chance (0–1) it fires per hit. The tier scaling table is a free-form reference — the engine doesn't read it, use it however you like when picking the Effect block's numbers. Slots = which item types it can roll on. The Effect block drives what it DOES (a type + numbers the engine reads directly), and the description is shown to the player. Hit “</> code” to edit the whole enchant as raw JSON.";
+    wrap.appendChild(note);
+    enchantRows.forEach((r, i) => {
+      const o = r.obj;
+      const card = document.createElement("div"); card.className = "bcard";
+      const head = document.createElement("div"); head.className = "bhead";
+      const t = document.createElement("b"); t.textContent = (o.icon || "") + " " + (r.key || "?"); head.appendChild(t);
+      const hr = document.createElement("span"); hr.className = "bhead-r";
+      const flip = document.createElement("button"); flip.className = "bbtn flip"; flip.textContent = flippedEnch.has(r) ? "▦ form" : "</> code"; flip.title = "flip between the form and raw JSON";
+      flip.onclick = () => { if (flippedEnch.has(r)) flippedEnch.delete(r); else flippedEnch.add(r); render(); };
+      const del = document.createElement("button"); del.className = "bbtn"; del.textContent = "✕"; del.title = "remove";
+      del.onclick = () => { flippedEnch.delete(r); enchantRows.splice(i, 1); render(); };
+      hr.appendChild(flip); hr.appendChild(del); head.appendChild(hr); card.appendChild(head);
+      if (flippedEnch.has(r)) { card.appendChild(codeEditor(o, (parsed) => { r.obj = parsed; })); wrap.appendChild(card); return; }
+      const grid = document.createElement("div"); grid.className = "bgrid";
+      const fld = (label, f, type, opts) => {
+        const w = document.createElement("label"); w.className = "bfield";
+        const s = document.createElement("span"); s.textContent = label; w.appendChild(s);
+        let inp;
+        if (type === "color") { inp = document.createElement("input"); inp.type = "color"; inp.value = normHex(o[f]) || "#cccccc"; inp.oninput = () => { o[f] = inp.value; }; }
+        else if (type === "num") { inp = document.createElement("input"); inp.type = "number"; inp.step = "0.05"; inp.value = o[f] != null ? o[f] : ""; inp.oninput = () => { if (inp.value === "") delete o[f]; else o[f] = Number(inp.value); }; }
+        else if (f === "__key") { inp = document.createElement("input"); inp.type = "text"; inp.value = r.key; inp.oninput = () => { r.key = inp.value.trim(); }; }
+        else { inp = document.createElement("input"); inp.type = "text"; inp.value = o[f] != null ? o[f] : ""; inp.oninput = () => { if (inp.value === "") delete o[f]; else o[f] = inp.value; }; }
+        w.appendChild(inp); return w;
+      };
+      grid.appendChild(fld("key", "__key", "text"));
+      grid.appendChild(fld("name", "name", "text"));
+      grid.appendChild(fld("icon", "icon", "text"));
+      grid.appendChild(fld("color", "color", "color"));
+      grid.appendChild(fld("proc rate (0–1)", "proc", "num"));
+      card.appendChild(grid);
+      // Tier scaling: a 5-row table (not a single dropdown) so every level's value
+      // is visible and editable at once. Pre-filled with the "+1 base stat" curve
+      // used elsewhere in the game (the ring/necklace triangular formula: 1, 3, 6,
+      // 10, 15) as a sane starting point — the engine doesn't read this itself,
+      // it's here for you to reference while picking the Effect block's numbers.
+      if (!Array.isArray(o.tierValues) || o.tierValues.length !== 5) o.tierValues = [1, 3, 6, 10, 15];
+      const tierWrap = document.createElement("div"); tierWrap.className = "bfield wide";
+      const tierLabel = document.createElement("span"); tierLabel.textContent = "tier scaling (reference only — pick the Effect numbers to match)"; tierWrap.appendChild(tierLabel);
+      const tierTable = document.createElement("table"); tierTable.className = "tier-table";
+      const headRow = document.createElement("tr");
+      for (const h of ["Tier", "Value"]) { const th = document.createElement("th"); th.textContent = h; headRow.appendChild(th); }
+      tierTable.appendChild(headRow);
+      for (let t = 0; t < 5; t++) {
+        const row = document.createElement("tr");
+        const tdT = document.createElement("td"); tdT.textContent = "Tier " + (t + 1); row.appendChild(tdT);
+        const tdV = document.createElement("td");
+        const vinp = document.createElement("input"); vinp.type = "number"; vinp.step = "0.5"; vinp.value = o.tierValues[t];
+        vinp.oninput = () => { o.tierValues[t] = vinp.value === "" ? 0 : Number(vinp.value); };
+        tdV.appendChild(vinp); row.appendChild(tdV);
+        tierTable.appendChild(row);
+      }
+      tierWrap.appendChild(tierTable);
+      card.appendChild(tierWrap);
+      const dwrap = document.createElement("label"); dwrap.className = "bfield wide";
+      const dl = document.createElement("span"); dl.textContent = "description (shown to the player)"; dwrap.appendChild(dl);
+      const dta = document.createElement("textarea"); dta.className = "edesc"; dta.rows = 2; dta.value = o.desc || "";
+      dta.oninput = () => { if (!dta.value) delete o.desc; else o.desc = dta.value; };
+      dwrap.appendChild(dta); card.appendChild(dwrap);
+      card.appendChild(renderEffect(o));
+      const ml = document.createElement("div"); ml.className = "bmons";
+      const lbl = document.createElement("div"); lbl.className = "bmons-l"; lbl.textContent = "Can appear on:"; ml.appendChild(lbl);
+      const chips = document.createElement("div"); chips.className = "chips";
+      if (!Array.isArray(o.slots)) o.slots = GEAR_CATS.slice();
+      for (const cat of GEAR_CATS) {
+        const on = o.slots.indexOf(cat) >= 0;
+        const chip = document.createElement("button"); chip.className = "chip" + (on ? " on" : ""); chip.textContent = cat;
+        chip.onclick = () => { const idx = o.slots.indexOf(cat); if (idx >= 0) o.slots.splice(idx, 1); else o.slots.push(cat); chip.classList.toggle("on"); };
+        chips.appendChild(chip);
+      }
+      ml.appendChild(chips); card.appendChild(ml);
+      wrap.appendChild(card);
+    });
+    const add = document.createElement("div"); add.className = "addrow";
+    const btn = document.createElement("button"); btn.textContent = "+ Add enchant";
+    btn.onclick = () => { enchantRows.push({ key: uniqueKeyArr(enchantRows.map((r) => r.key), "new_enchant"), obj: { name: "New Enchant", icon: "✦", color: "#cccccc", proc: 0.3, tierValues: [1, 3, 6, 10, 15], slots: GEAR_CATS.slice(), desc: "", effect: { type: "burn", burstMult: 0.5, dotTurns: 3 } } }); render(); };
+    add.appendChild(btn); wrap.appendChild(add);
+    return wrap;
+  }
+
+  // ---- Reference: a read-only page of every formula the engine actually uses.
+  // Nothing here is editable — it explains how the numbers on the other tabs
+  // get combined into what happens in a run. Keep it in sync by hand when a
+  // formula in game.js changes; there's no live link back to the code.
+  const REFERENCE = [
+    {
+      title: "Core stats",
+      rows: [
+        { name: "Effective stat", formula: "eff(stat) = player.stats[stat] + gear affix bonus", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
+        { name: "STR → damage", formula: "strBonus = max(0, floor((eff(STR) − weapon's STR requirement) / 4))", note: "Flat bonus added to every weapon hit. A weapon with no STR requirement (or being unarmed) always grants the full bonus." },
+        { name: "Stat requirements", formula: "every stat in an item's `req` (Gear tab) must be met by eff(stat) or it can't be equipped at all", note: "A hard gate, not a soft penalty — e.g. Chain Mail's req.STR 15 blocks equipping below 15 STR outright." },
+        { name: "VIT → HP", formula: "+1 max HP per point", note: "Via computeMaxHp() below." },
+        { name: "DEX → acc/eva/crit", formula: "+1 accuracy, +1 evasion, +1% crit chance per point", note: "" },
+        { name: "INT → MP", formula: "+1 max MP per point", note: "Via computeMaxMp() below." },
+        { name: "RES → damage taken", formula: "−1% incoming damage per point", note: "Applied before armor — see Defense & Mitigation." },
+        { name: "LCK → luck", formula: "+1% enchant proc chance, +1% crit chance, +2% crit damage per point", note: "" },
+      ],
+    },
+    {
+      title: "Health & mana",
+      rows: [
+        { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + eff(VIT) + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
+        { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + eff(INT) + flat per-level MP gained", note: "" },
+        { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen); +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT." },
+        { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − eff(INT) × class.intRegen); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT." },
+      ],
+    },
+    {
+      title: "Accuracy & evasion",
+      rows: [
+        { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
+        { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
+        { name: "Hit chance", formula: "hitChance = clamp(10%, 95%, 50% + (attacker's acc − defender's eva) × 3%)", note: "Every point of acc-vs-eva edge is worth 3 percentage points of hit chance, floored at 10% and capped at 95%." },
+      ],
+    },
+    {
+      title: "Critical hits",
+      rows: [
+        { name: "Crit chance", formula: "critChance = (5% base + per-level crit + Ourn's Perfectly Timed Blow (+1%/character level) + eff(DEX) + eff(LCK)) / 100", note: "" },
+        { name: "Crit damage", formula: "critMult = (200% base + per-level crit dmg + eff(LCK) × 2) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
+      ],
+    },
+    {
+      title: "Damage — you hitting a monster",
+      rows: [
+        { name: "Weapon roll", formula: "random(weapon's dmg min, weapon's dmg max)", note: "Unarmed: 2–3, boosted by Brynn's Unarmed Master while no weapon is equipped." },
+        { name: "Total damage", formula: "total = weapon roll + strBonus + skill bonus (Smite/Rush/etc.) + flat passive bonus (Sword Master, etc.)", note: "" },
+        { name: "Surprise attack", formula: "no damage bonus — guaranteed hit (no accuracy/evasion roll) against a target that hasn't noticed you", note: "Purely a free hit, not extra damage — flags 'aware' true on the target either way." },
+        { name: "Critical hit", formula: "total × critMult", note: "" },
+      ],
+    },
+    {
+      title: "Defense & mitigation — a monster hitting you",
+      rows: [
+        { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },
+        { name: "RES reduction", formula: "raw × max(0, 1 − eff(RES) / 100)", note: "Applied FIRST, as a % of the raw hit." },
+        { name: "Armor block", formula: "− random(armor's def min, def max) − armor subtype mitigation − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Armor subtype mitigation: light +0, medium +1, heavy +3, added on top of the item's own def range. Final damage is floored at 1 no matter how much is mitigated." },
+      ],
+    },
+    {
+      title: "Weapon / armor upgrades (+X)",
+      rows: [
+        { name: "Weapon +X", formula: "dmg min += (tier − 1) × plus,  dmg max += tier × 2 × plus", note: "Higher-tier gear scales much harder per point of +X." },
+        { name: "Armor +X", formula: "def min += (tier − 1) × plus,  def max += tier × 2 × plus", note: "Same shape as the weapon formula." },
+      ],
+    },
+    {
+      title: "Enchants",
+      rows: [
+        { name: "Proc chance", formula: "proc = enchant's own % (Enchants tab) + eff(LCK) / 100", note: "Passive always-on effects (Defense, Speed) are typically authored at 100% proc." },
+        { name: "Tiered value lookup", formula: "tierValues[clamp(1, 5, item's gear tier) − 1]", note: "Any enchant with a `tierValues` array (5 numbers) on the Enchants tab reads its number from the TIER of the item carrying it — an untiered item counts as tier 1. Falls back to the effect's flat legacy field if `tierValues` is absent." },
+        { name: "Poison", formula: "dose = round(weapon power × tiered %); stack += dose; each turn: hp −= stack, then stack −= 1", note: "Doses from repeated procs pile onto ONE running stack rather than layering separate timers — a big early stack keeps hurting as it winds down." },
+        { name: "Defense (enchant)", formula: "armor def min += tiered amount,  armor def max += tiered amount", note: "" },
+        { name: "Speed / haste", formula: "your speed multiplier includes (tiered value − 1) as an additive bonus", note: "So a tiered value of 1.8 alone means your attacks cost ×1.8 as fast; multiple haste sources (other items, Ourn's boons) stack additively around that." },
+        { name: "Burn", formula: "instant burst = power × burstMult (0.5 default); DOT = ceil(burst / 2) per turn for dotTurns (3 default)", note: "Refreshes to the newest proc rather than stacking — only one burn timer at a time." },
+        { name: "Shock", formula: "instant burst = power × burstMult (1.0 default); stun chance = (burst × stunPer (0.1 default)) / monster level", note: "" },
+        { name: "Thorns", formula: "reflect = round(incoming damage × mult (0.5 default))", note: "Fires back at whatever just hit you." },
+      ],
+    },
+    {
+      title: "Action speed & turn cost",
+      rows: [
+        { name: "Attack cost", formula: "1 / (weapon speed × (1 + total haste) [+1 if a Metrognome is tuned to attack speed])", note: "Lower cost = more actions per monster turn." },
+        { name: "Walk cost", formula: "1 normally, 0.5 with a Metrognome tuned to walk speed", note: "" },
+      ],
+    },
+    {
+      title: "Monster AI & doors",
+      rows: [
+        { name: "Sight", formula: "sees you within 8 tiles AND has line of sight", note: "A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
+        { name: "Hunting", formula: "in sight → moves straight toward you, refreshing its last-known-position trail every turn", note: "" },
+        { name: "Tracking", formula: "out of sight but has a trail → walks to your last known position", note: "It doesn't forget the instant it loses sight — it commits to the spot it saw you last, right through a door or bush along the way." },
+        { name: "Searching", formula: "reaches the last known spot, you're not there → 4 turns poking around a random nearby tile before giving up", note: "Mirrors Shattered Pixel Dungeon's Hunting → searching Wandering → idle Wandering chain." },
+        { name: "Surprise window", formula: "only while fully idle (never hunting, tracking, or searching)", note: "'aware' stays true through the whole hunt/track/search chain — only a monster that's genuinely never noticed you grants a surprise hit." },
+        { name: "Door reset", formula: "a door/bush a monster died on is propped open until you step on that tile again", note: "Stepping on it resets it to the normal close-behind-you cycle." },
+      ],
+    },
+    {
+      title: "Experience & leveling",
+      rows: [
+        { name: "XP to next level", formula: "threshold = current level × 8", note: "" },
+        { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion/crit/critDmg)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
+        { name: "Monster XP", formula: "ceil(monster's minFloor / 2)", note: "1 XP for a floor 1–2 monster, 2 for floor 3–4, 3 for floor 5+." },
+        { name: "Boss XP", formula: "15 + round(boss's max HP × 0.4)", note: "" },
+      ],
+    },
+    {
+      title: "Identification",
+      rows: [
+        { name: "Uses needed", formula: "idNeed = (tier + plus) × (random 1–10 + rarity rank)", note: "Rarity rank: white 1, green 2, blue 3, purple 4, gold 5. A plain white item with no plus/stats/enchants starts already identified." },
+        { name: "Progress", formula: "gains idXp on use/hits; identified once idXp ≥ idNeed", note: "" },
+      ],
+    },
+    {
+      title: "Loot rolls",
+      rows: [
+        { name: "Rarity", formula: "rolled from the Loot tab's rarity % weights", note: "Overridable by the Guild's Blessing boon." },
+        { name: "+X on a drop", formula: "random(0, ceil(floor / 5))", note: "" },
+        { name: "Affixes by rarity", formula: "white: nothing · green: 1 stat · blue: 1 stat + 1 enchant · purple: 1 stat + 1 enchant + (50/50) another stat or enchant · gold: 2 stats + 2 enchants", note: "Jewelry (ring/trinket/necklace) always gets at least one property even at white — a bare ring is worthless." },
+        { name: "Category / tier / item", formula: "each rolled from the Loot tab's category and tier-by-floor weight tables, then an item within that (category, tier) by its own rarity % (or an even split of whatever's left)", note: "" },
+      ],
+    },
+    {
+      title: "Potions",
+      rows: [
+        { name: "Healing", formula: "total = round(maxHP × (90%–150%)); now = min(total, eff(VIT), missing HP); rest queues as heal-over-time (up to eff(VIT) more per turn)", note: "A big potion doesn't instantly top you off if it outpaces your VIT." },
+        { name: "Strength / Vitality / Intelligence", formula: "flat +1 to the stat", note: "Vitality/Intelligence potions also grant the resulting max HP/MP increase immediately." },
+        { name: "Stone Skin", formula: "40 turns of bonus block, rolled between level/2 and (level + floor + eff(VIT))/2 each hit", note: "" },
+      ],
+    },
+    {
+      title: "Gold",
+      rows: [
+        { name: "Gold pile", formula: "random(2, 12) + depth × 2", note: "" },
+      ],
+    },
+    {
+      title: "Merchant floor",
+      rows: [
+        { name: "When it appears", formula: "inserted right after every non-final boss kill, before the next biome's floor 1", note: "A peaceful, monster-free floor — doesn't consume a depth number." },
+        { name: "Sell price", formula: "gearTier(item) × 2 gold", note: "Gear only, from your pack (not equipped slots). Flat — rarity/plus/enchants don't change it." },
+        { name: "Potion price", formula: "20 gold flat", note: "3 stock slots, any potion except Insight; a slot restocks the instant it's bought." },
+        { name: "Fountain full heal", formula: "(biome index + 1) × 20 gold", note: "20g after Forest, 40g after Caves, and so on." },
+      ],
+    },
+  ];
+  function renderReference() {
+    const wrap = document.createElement("div");
+    wrap.className = "refwrap";
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = "reference";
+    bar.appendChild(h); wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "Every formula the engine uses to turn the numbers on the other tabs into what happens in a run. Read-only — this page just explains how things combine; edit the actual values on Monsters, Gear, Classes, Loot, and Enchants.";
+    wrap.appendChild(note);
+    for (const sec of REFERENCE) {
+      const secEl = document.createElement("div"); secEl.className = "csec"; secEl.textContent = sec.title;
+      wrap.appendChild(secEl);
+      const list = document.createElement("div"); list.className = "reflist";
+      for (const row of sec.rows) {
+        const r = document.createElement("div"); r.className = "refrow";
+        const name = document.createElement("div"); name.className = "refname"; name.textContent = row.name;
+        const formula = document.createElement("div"); formula.className = "refformula"; formula.textContent = row.formula;
+        r.appendChild(name); r.appendChild(formula);
+        if (row.note) { const noteEl = document.createElement("div"); noteEl.className = "refnote"; noteEl.textContent = row.note; r.appendChild(noteEl); }
+        list.appendChild(r);
+      }
+      wrap.appendChild(list);
+    }
+    return wrap;
+  }
+
+  function renderJson(coll) {
+    const wrap = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "collbar";
+    const h = document.createElement("h2"); h.textContent = coll + " (JSON)";
+    bar.appendChild(h); wrap.appendChild(bar);
+    const note = document.createElement("p"); note.className = "hint"; note.textContent = jsonHint(coll);
+    wrap.appendChild(note);
+    const ta = document.createElement("textarea"); ta.className = "json"; ta.id = "json-" + coll; ta.value = jsonText[coll];
+    ta.spellcheck = false;
+    const err = document.createElement("div"); err.className = "jsonerr"; err.id = "jsonerr-" + coll;
+    ta.oninput = () => {
+      jsonText[coll] = ta.value;
+      try { JSON.parse(ta.value); jsonOk[coll] = true; err.textContent = ""; }
+      catch (e) { jsonOk[coll] = false; err.textContent = "Invalid JSON: " + e.message; }
+    };
+    wrap.appendChild(ta); wrap.appendChild(err);
+    return wrap;
+  }
+
+  function syncJsonFromDom() {
+    if (JSON_COLLS.includes(activeTab)) {
+      const ta = $("json-" + activeTab);
+      if (ta) { jsonText[activeTab] = ta.value; try { JSON.parse(ta.value); jsonOk[activeTab] = true; } catch (e) { jsonOk[activeTab] = false; } }
+    }
+  }
+
+  // ---- Build the final data object ------------------------------------------
+  function buildData() {
+    syncJsonFromDom();
+    const out = clone(source);
+    const problems = [];
+    for (const coll of TABLE_COLLS) {
+      const o = {}; const seen = {};
+      for (const { key, obj } of rows[coll]) {
+        if (!key) { problems.push(coll + ": a row has an empty key"); continue; }
+        if (seen[key]) problems.push(coll + ": duplicate key “" + key + "”");
+        seen[key] = 1; o[key] = obj;
+      }
+      out[coll] = o;
+    }
+    for (const coll of JSON_COLLS) {
+      try { out[coll] = JSON.parse(jsonText[coll]); }
+      catch (e) { problems.push(coll + " JSON: " + e.message); }
+    }
+    // enchants come from their own tab, merged back into loot
+    out.loot = out.loot || {};
+    const eo = {}; const seenE = {};
+    for (const { key, obj } of enchantRows) {
+      if (!key) { problems.push("an enchant has an empty key"); continue; }
+      if (seenE[key]) problems.push("enchants: duplicate key “" + key + "”");
+      seenE[key] = 1; eo[key] = obj;
+    }
+    out.loot.enchants = eo;
+    out.biomes = clone(biomeRows);                    // biomes come from the card editor
+    biomeRows.forEach((b, i) => { if (!b.key) problems.push("biome " + (i + 1) + " has an empty key"); });
+    // tidy each biome's spawn mix: drop percentages for unselected monsters and any
+    // row with nothing entered (all blank), and drop an empty mix.
+    for (const b of out.biomes) {
+      if (!b.spawnMix) continue;
+      const mons = Array.isArray(b.monsters) ? b.monsters : [];
+      for (const k of Object.keys(b.spawnMix)) {
+        const a = b.spawnMix[k];
+        const meaningful = mons.indexOf(k) >= 0 && Array.isArray(a) && a.some((w) => w != null);
+        if (!meaningful) delete b.spawnMix[k];
+        else b.spawnMix[k] = a.slice(0, 5).map((w) => (w == null ? null : Number(w)));
+      }
+      if (!Object.keys(b.spawnMix).length) delete b.spawnMix;
+    }
+
+    out.classes = {};                                 // classes come from the form + skill grid
+    const seenC = {};
+    for (const { key, obj } of classRows) {
+      if (!key) { problems.push("a class has an empty key"); continue; }
+      if (seenC[key]) problems.push("classes: duplicate key “" + key + "”");
+      seenC[key] = 1;
+      const c = clone(obj);
+      // compress the skill grid: fully-blank cells → null (kept as scaffold, small on
+      // disk). A filled cell keeps ALL its fields — so any governing code written via
+      // the flip-to-JSON view survives — with the known ones normalized.
+      if (Array.isArray(c.skillTree)) c.skillTree = c.skillTree.map((tier) => tier.map((cell) => {
+        if (!cell || !cell.name) return null;
+        cell.desc = cell.desc || "";
+        cell.levels = (cell.levels || []).slice(0, 4);
+        cell.req = cell.req || [];
+        return cell;
+      }));
+      out.classes[key] = c;
+    }
+    return { data: out, problems };
+  }
+
+  function dataFileText(data) {
+    return "/* Cantori content data — generated by editor.html. Edit via the editor,\n" +
+           "   or by hand (it's plain data). The game loads window.CANTORI_DATA. */\n" +
+           "window.CANTORI_DATA = " + JSON.stringify(data, null, 2) + ";\n";
+  }
+
+  // ---- Save straight to GitHub (commits data.js via the API) -----------------
+  const GH_CFG = "cantori_gh_cfg", GH_TOK = "cantori_gh_token";
+  const GH_DEFAULTS = { owner: "thebigbutsu", repo: "Cantori", branch: "claude/mobile-iphone-support-plan-kp1qqh", path: "data.js" };
+  function ghCfg() { try { return Object.assign({}, GH_DEFAULTS, JSON.parse(localStorage.getItem(GH_CFG) || "{}")); } catch (e) { return Object.assign({}, GH_DEFAULTS); } }
+  function ghToken() { try { return localStorage.getItem(GH_TOK) || ""; } catch (e) { return ""; } }
+  function utf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = ""; const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    return btoa(bin);
+  }
+  function ghMsg(m, k) { const e = $("ghMsg"); e.textContent = m; e.className = k || ""; }
+  function reflectGhButton() { $("btnGh").classList.toggle("on", !!ghToken()); }
+  function openGh() {
+    const c = ghCfg();
+    $("ghOwner").value = c.owner; $("ghRepo").value = c.repo; $("ghBranch").value = c.branch; $("ghPath").value = c.path;
+    $("ghToken").value = ghToken();
+    $("ghState").textContent = ghToken() ? "Token saved in this browser — you're connected." : "No token yet — paste one below to connect.";
+    ghMsg("", "");
+    $("ghDlg").showModal();
+  }
+  function ghSaveCfg() {
+    const c = { owner: $("ghOwner").value.trim(), repo: $("ghRepo").value.trim(), branch: $("ghBranch").value.trim(), path: $("ghPath").value.trim() };
+    try { localStorage.setItem(GH_CFG, JSON.stringify(c)); } catch (e) {}
+    return c;
+  }
+  function ghSaveToken() {
+    const t = $("ghToken").value.trim();
+    try { if (t) localStorage.setItem(GH_TOK, t); else localStorage.removeItem(GH_TOK); } catch (e) {}
+    $("ghState").textContent = t ? "Token saved in this browser — you're connected." : "No token.";
+    reflectGhButton(); ghMsg("Saved.", "ok");
+  }
+  function ghForget() {
+    try { localStorage.removeItem(GH_TOK); } catch (e) {}
+    $("ghToken").value = ""; $("ghState").textContent = "No token."; reflectGhButton(); ghMsg("Token forgotten.", "ok");
+  }
+  async function ghCommit() {
+    const { data, problems } = buildData();
+    if (problems.length) { ghMsg("Fix: " + problems[0], "err"); return; }
+    const c = ghSaveCfg();
+    const token = $("ghToken").value.trim();
+    if (token) { try { localStorage.setItem(GH_TOK, token); } catch (e) {} reflectGhButton(); }
+    if (!token) { ghMsg("Enter a token first.", "err"); return; }
+    if (!c.owner || !c.repo || !c.branch || !c.path) { ghMsg("Fill in owner / repo / branch / path.", "err"); return; }
+    ghMsg("Committing…", "");
+    const api = "https://api.github.com/repos/" + c.owner + "/" + c.repo + "/contents/" + c.path;
+    const headers = { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    const content = utf8ToBase64(dataFileText(data));
+    // Fetch the file's current blob SHA WITHOUT the HTTP cache — a cached GET
+    // returns a stale SHA and GitHub then rejects the PUT with a 409.
+    async function currentSha() {
+      const getRes = await fetch(api + "?ref=" + encodeURIComponent(c.branch) + "&_=" + Date.now(), { headers, cache: "no-store" });
+      if (getRes.ok) return (await getRes.json()).sha;
+      if (getRes.status === 404) return null;
+      throw new Error("read " + getRes.status + " — " + (await getRes.text()).slice(0, 140));
+    }
+    async function put(sha) {
+      const body = { message: "Edit " + c.path + " via Cantori editor", content: content, branch: c.branch };
+      if (sha) body.sha = sha;
+      return fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
+    }
+    try {
+      let putRes = await put(await currentSha());
+      // 409 = the SHA moved under us (another commit, or a cached SHA). Re-read
+      // the live SHA once and retry so a stale read doesn't block the save.
+      if (putRes.status === 409) { ghMsg("Refreshing…", ""); putRes = await put(await currentSha()); }
+      if (!putRes.ok) { throw new Error("commit " + putRes.status + " — " + (await putRes.text()).slice(0, 180)); }
+      ghMsg("Committed! GitHub Pages redeploys in ~1 min.", "ok");
+      setStatus("Committed " + c.path + " to " + c.owner + "/" + c.repo + " (" + c.branch + ").", "ok");
+    } catch (e) {
+      ghMsg("Failed: " + e.message, "err");
+    }
+  }
+
+  // ---- Toolbar actions -------------------------------------------------------
+  function setStatus(msg, kind) { const s = $("status"); s.textContent = msg; s.className = kind || ""; }
+  function draftActive() { try { return !!localStorage.getItem(LSKEY); } catch (e) { return false; } }
+  function refreshDraftButtons() { $("btnStop").style.display = draftActive() ? "" : "none"; }
+
+  function doPlaytest() {
+    const { data, problems } = buildData();
+    if (problems.length) { setStatus("Fix: " + problems[0], "err"); return; }
+    try { localStorage.setItem(LSKEY, JSON.stringify(data)); }
+    catch (e) { setStatus("Could not save draft: " + e.message, "err"); return; }
+    refreshDraftButtons();
+    setStatus("Draft saved — opening game…", "ok");
+    window.open("./index.html", "_blank");
+  }
+  function doStop() {
+    try { localStorage.removeItem(LSKEY); } catch (e) {}
+    refreshDraftButtons();
+    setStatus("Playtest draft cleared — the game uses the shipped data again.", "ok");
+  }
+  function doCopy() {
+    const { data, problems } = buildData();
+    if (problems.length) { setStatus("Fix: " + problems[0], "err"); return; }
+    $("copyText").value = dataFileText(data);
+    $("copyMsg").textContent = "";
+    $("copyDlg").showModal();
+  }
+  function doDownload() {
+    const { data, problems } = buildData();
+    if (problems.length) { setStatus("Fix: " + problems[0], "err"); return; }
+    const blob = new Blob([dataFileText(data)], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "data.js";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus("Downloaded data.js", "ok");
+  }
+  function doRevert() {
+    if (!confirm("Discard all edits and reload the shipped content?")) return;
+    source = clone(SHIPPED);
+    for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+    for (const c of JSON_COLLS) { let s = source[c] != null ? source[c] : {}; if (c === "loot") { s = Object.assign({}, s); delete s.enchants; } jsonText[c] = JSON.stringify(s, null, 2); jsonOk[c] = true; }
+    enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+    biomeRows = clone(source.biomes || []);
+    classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
+    classRows.forEach((r) => ensureClass(r.obj)); activeClass = 0;
+    render();
+    setStatus("Reverted to shipped content.", "ok");
+  }
+
+  // ---- Helpers ---------------------------------------------------------------
+  function uniqueKey(coll, base) { return uniqueKeyArr(rows[coll].map((r) => r.key), base); }
+  function uniqueKeyArr(keys, base) {
+    const taken = {}; for (const k of keys) taken[k] = 1;
+    if (!taken[base]) return base;
+    let i = 2; while (taken[base + i]) i++; return base + i;
+  }
+  function normHex(v) {
+    if (typeof v !== "string") return "";
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+    if (/^#[0-9a-fA-F]{3}$/.test(v)) return "#" + v.slice(1).split("").map((c) => c + c).join("");
+    return "";
+  }
+  function tableHint(coll) {
+    return ({
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
+      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range) plus its own evasion stat; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype ALSO nudges evasion on top of the item's own value: light +3, medium 0, heavy −3. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
+      consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
+      bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
+      boons: "After each boss, the player is offered 3 of these at random and picks 1 (lasts the run). name / icon / color / description are all editable here. The EFFECT of each boon is wired in code by its key — guild (on-hit proc +level%), kethara (grant a purple armor), maelon (heal on kill), ourn (grants the Ourn's Blink freeze skill). Renaming/retuning text is safe; a brand-new key will show and be pickable but has no effect until it's coded.",
+    })[coll] || "";
+  }
+  function jsonHint(coll) {
+    return ({
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), final. The exit always sits embedded in a wall, on every biome — that's not configurable here.",
+      classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
+      loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
+      stats: "Design reference for the six stats (display only).",
+      gods: "Design reference for the boon gods (boons not yet wired in).",
+    })[coll] || "Raw JSON for this section.";
+  }
+
+  // ---- Wire up ---------------------------------------------------------------
+  $("btnPlay").onclick = doPlaytest;
+  $("btnStop").onclick = doStop;
+  $("btnCopy").onclick = doCopy;
+  $("btnDownload").onclick = doDownload;
+  $("btnRevert").onclick = doRevert;
+  $("copyClose").onclick = () => $("copyDlg").close();
+  $("copyNow").onclick = () => {
+    const ta = $("copyText"); ta.select();
+    const done = () => { $("copyMsg").textContent = "Copied!"; };
+    if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, () => { document.execCommand("copy"); done(); });
+    else { document.execCommand("copy"); done(); }
+  };
+  $("btnGh").onclick = openGh;
+  $("ghClose").onclick = () => $("ghDlg").close();
+  $("ghSave").onclick = ghCommit;
+  $("ghSaveToken").onclick = ghSaveToken;
+  $("ghForget").onclick = ghForget;
+
+  render();
+  refreshDraftButtons();
+  reflectGhButton();
+  setStatus(draftActive() ? "Editing a saved draft (Playtest active)." : "Loaded shipped content.", "ok");
+})();

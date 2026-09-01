@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cantori — Content Editor</title>
+  <style>
+    :root{
+      --bg:#0e0b07; --panel:#15110b; --panel2:#1b1610; --line:#2a2114;
+      --ink:#ece2cf; --ink-dim:#8a7c63; --amber:#f0a838; --green:#7ec98a; --red:#e0685a; --blue:#5a9fe0;
+      --mono: ui-monospace,"SF Mono","Menlo","Consolas",monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%}
+    body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13px;line-height:1.4}
+    a{color:var(--amber)}
+    header{
+      position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);
+      padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+    }
+    header .title{color:var(--amber);font-weight:700;letter-spacing:.16em;font-size:14px}
+    header .spacer{flex:1}
+    button.tool{
+      background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;
+      padding:8px 12px;font-family:var(--mono);font-size:12px;cursor:pointer;
+    }
+    button.tool:hover{border-color:var(--amber)}
+    button.tool.primary{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
+    button.tool.warn{color:var(--red)}
+    button.tool.on{background:var(--green);color:#0e1a10;border-color:var(--green);font-weight:700}
+    #status{color:var(--ink-dim);font-size:11.5px;min-width:120px}
+    #status.ok{color:var(--green)} #status.err{color:var(--red)}
+    .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+    .tab{
+      background:var(--panel2);color:var(--ink-dim);border:1px solid var(--line);border-radius:7px;
+      padding:7px 12px;font-family:var(--mono);font-size:12px;cursor:pointer;text-transform:capitalize;
+    }
+    .tab.on{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
+    main{padding:14px;max-width:1200px;margin:0 auto}
+    .hint{color:var(--ink-dim);font-size:11.5px;margin:0 0 12px}
+    .collbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+    .collbar h2{margin:0;font-size:14px;color:var(--amber);letter-spacing:.06em}
+    .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+    table{border-collapse:collapse;width:100%;min-width:640px}
+    th,td{border-bottom:1px solid var(--line);padding:6px 7px;text-align:left;white-space:nowrap}
+    th{background:var(--panel2);color:var(--ink-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0}
+    th.sortable{cursor:pointer;user-select:none}
+    th.sortable:hover{color:var(--amber)}
+    th.on{color:var(--amber)}
+    input.filter{width:auto;min-width:130px;max-width:220px;margin-left:auto}
+    tr:hover td{background:rgba(240,168,56,0.03)}
+    input[type=text],input[type=number]{
+      background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+      padding:5px 6px;font-family:var(--mono);font-size:12px;width:100%;min-width:52px;
+    }
+    input[type=number]{min-width:56px;width:64px}
+    input.key{min-width:96px;color:var(--amber)}
+    input.name{min-width:120px}
+    input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:5px;background:#0c0905;padding:0;cursor:pointer}
+    select{background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:12px}
+    input:focus,select:focus{outline:none;border-color:var(--amber)}
+    .del{background:none;border:1px solid var(--line);color:var(--red);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:var(--mono)}
+    .del:hover{border-color:var(--red)}
+    .addrow{margin-top:10px}
+    .addrow button{background:var(--panel2);border:1px dashed var(--line);color:var(--green);border-radius:7px;padding:8px 14px;cursor:pointer;font-family:var(--mono);font-size:12px}
+    .addrow button:hover{border-color:var(--green)}
+    textarea.json{
+      width:100%;min-height:60vh;background:#0c0905;color:var(--ink);border:1px solid var(--line);
+      border-radius:9px;padding:12px;font-family:var(--mono);font-size:12.5px;line-height:1.5;resize:vertical;
+    }
+    textarea.json:focus{outline:none;border-color:var(--amber)}
+    .jsonerr{color:var(--red);font-size:12px;margin-top:6px;min-height:16px}
+    dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;max-width:680px;width:92%;padding:0}
+    dialog::backdrop{background:rgba(6,4,2,.7)}
+    .dlg-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+    .dlg-head b{color:var(--amber);letter-spacing:.08em}
+    .dlg-body{padding:14px 16px}
+    .dlg-body p{margin:0 0 10px;color:var(--ink-dim)}
+    .dlg-body textarea{width:100%;height:44vh;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11.5px}
+    /* Biome cards */
+    .bcard{border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:12px 14px;margin-bottom:12px}
+    .bhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    .bhead b{color:var(--amber);letter-spacing:.04em}
+    .bbtn{background:#0c0905;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:3px 9px;margin-left:5px;cursor:pointer;font-family:var(--mono)}
+    .bbtn:hover:not([disabled]){border-color:var(--amber)}
+    .bbtn[disabled]{opacity:.35;cursor:default}
+    .bgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px 12px}
+    .bfield{display:flex;flex-direction:column;gap:3px;color:var(--ink-dim);font-size:10px;letter-spacing:.04em}
+    .bfield input[type=text],.bfield input[type=number],.bfield select{
+      background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+      padding:5px 6px;font-family:var(--mono);font-size:12px;width:100%;
+    }
+    .bfield input[type=checkbox]{width:16px;height:16px}
+    .bfield input:focus,.bfield select:focus{outline:none;border-color:var(--amber)}
+    .tier-table{min-width:0;width:auto;max-width:220px;margin-top:4px}
+    .tier-table td,.tier-table th{padding:4px 8px;white-space:nowrap}
+    .tier-table input[type=number]{width:70px;min-width:0}
+    .bmons{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+    .bmons-l{color:var(--ink-dim);font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+    .chips{display:flex;flex-wrap:wrap;gap:6px}
+    .chip{
+      background:#0c0905;border:1px solid var(--line);color:var(--ink-dim);border-radius:20px;
+      padding:4px 11px;font-family:var(--mono);font-size:11px;cursor:pointer;
+    }
+    .chip:hover{border-color:var(--amber)}
+    .chip.on{background:var(--green);color:#0e1a10;border-color:var(--green);font-weight:700}
+    .bmix{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+    .bmixrow{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+    .bmixname{flex:0 0 96px;color:var(--ink-dim);font-size:11px;overflow:hidden;text-overflow:ellipsis}
+    .bmixw{flex:1;min-width:0;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:4px 5px;font-family:var(--mono);font-size:11.5px;text-align:center}
+    .bmixw:focus{outline:none;border-color:var(--amber)}
+    .bmixrow.head .bmixw{border:none;background:none;color:var(--ink-dim);font-size:10px;padding:0}
+    .bmixw.lbl{border:none;background:none;color:var(--ink-dim);font-size:10px;letter-spacing:.05em}
+    .bmixw.locked{border:1px dashed var(--line);background:#0c0905;color:var(--ink-dim);opacity:.5;display:flex;align-items:center;justify-content:center;cursor:not-allowed}
+    .bmixw.over{border-color:var(--red);color:var(--red)}
+    .bmixrow.total .bmixw.tot{border:none;background:none;color:var(--ink-dim);font-size:10.5px}
+    .bmixrow.total .bmixname{color:var(--ink-dim);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+    /* Classes editor */
+    .cpick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+    .ctab2{background:var(--panel2);border:1px solid var(--line);color:var(--ink-dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:12px;cursor:pointer}
+    .ctab2.on{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
+    .ctab2.add{color:var(--green);border-style:dashed}
+    .csec{margin:16px 0 6px;color:var(--amber);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+    .refwrap{max-width:920px}
+    .reflist{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+    .refrow{padding:10px 14px;border-bottom:1px solid var(--line)}
+    .refrow:last-child{border-bottom:none}
+    .refname{color:var(--ink);font-weight:700;font-size:12px;margin-bottom:4px}
+    .refformula{color:var(--amber);font-family:var(--mono);font-size:11.5px;background:#0c0905;border:1px solid var(--line);border-radius:6px;padding:6px 10px;display:inline-block;margin-bottom:4px;line-height:1.5}
+    .refnote{color:var(--ink-dim);font-size:11px;line-height:1.5}
+    .cform{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px}
+    .cfld{display:flex;flex-direction:column;gap:3px;color:var(--ink-dim);font-size:10px;letter-spacing:.04em}
+    .cfld input,.cfld select,.cfld textarea{
+      background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+      padding:6px 7px;font-family:var(--mono);font-size:12px;width:100%;
+    }
+    .cfld input:focus,.cfld select:focus,.cfld textarea:focus{outline:none;border-color:var(--amber)}
+    /* Skill tree grid — Diablo-style, cells are a skill or a blank */
+    .stree{border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto;background:var(--panel2)}
+    .strow{display:grid;grid-template-columns:64px repeat(5,minmax(190px,1fr));gap:8px;margin-bottom:8px;align-items:start}
+    .stier{align-self:start;padding-top:8px;color:var(--amber);font-size:11px;font-weight:700;letter-spacing:.04em}
+    .scell{border:1px solid var(--line);border-radius:8px;background:#0c0905;display:flex;flex-direction:column;gap:5px}
+    .scell.filled{border-color:var(--green);padding:7px}
+    .scell.blank{border-style:dashed;min-height:48px;align-items:center;justify-content:center}
+    .sadd{background:none;border:0;color:var(--ink-dim);font-size:20px;cursor:pointer;width:100%;min-height:48px}
+    .sadd:hover{color:var(--green)}
+    .shead{display:flex;gap:5px;align-items:center}
+    .scell .sname{flex:1;background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:12px;font-weight:600}
+    .scell .sname:focus{outline:none;border-color:var(--amber)}
+    .scell .sdesc{background:#15110b;color:var(--ink-dim);border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-family:var(--mono);font-size:10.5px;resize:vertical;line-height:1.4}
+    .scell .sdesc:focus{outline:none;border-color:var(--amber)}
+    .slevels{display:flex;flex-direction:column;gap:3px}
+    .slvrow{display:flex;align-items:center;gap:5px}
+    .slvl{width:20px;color:var(--amber);font-size:10px;font-weight:700}
+    .slvrow input{flex:1;background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 5px;font-family:var(--mono);font-size:10.5px}
+    .slvrow input:focus{outline:none;border-color:var(--amber)}
+    .sdots{display:flex;gap:5px;justify-content:center;padding:2px 0}
+    .sdot{width:9px;height:9px;border-radius:50%;border:1px solid var(--ink-dim);background:transparent}
+    .sdot.on{background:var(--amber);border-color:var(--amber)}
+    .sprereq{border-top:1px solid var(--line);padding-top:6px}
+    .sprereq .chips .chip{font-size:10px;padding:3px 8px}
+    .swire{display:flex;gap:4px}
+    .swire input,.swire select{background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 5px;font-family:var(--mono);font-size:10.5px;min-width:0;width:100%}
+    .swire input:focus,.swire select:focus{outline:none;border-color:var(--amber)}
+    .cols-note{color:var(--ink-dim);font-size:11px;margin:8px 0 0;line-height:1.5}
+    .gh-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .dlg-body label{display:block;color:var(--ink-dim);font-size:11px;letter-spacing:.04em}
+    .dlg-body label input{
+      width:100%;margin-top:4px;background:#0c0905;color:var(--ink);border:1px solid var(--line);
+      border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12.5px;
+    }
+    .dlg-body label input:focus{outline:none;border-color:var(--amber)}
+    #ghMsg.ok{color:var(--green)} #ghMsg.err{color:var(--red)}
+    #ghState{color:var(--green)}
+    /* flip-to-code cards + inline descriptions */
+    .bhead-r{display:flex;gap:6px;align-items:center}
+    .bbtn.flip{color:var(--blue);border-color:var(--line)}
+    .bbtn.flip:hover{border-color:var(--blue)}
+    .bfield.wide{grid-column:1/-1}
+    .bfield textarea,.edesc{background:#15110b;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 7px;font-family:var(--mono);font-size:11.5px;resize:vertical;line-height:1.4}
+    .bfield textarea:focus,.edesc:focus{outline:none;border-color:var(--amber)}
+    .codewrap{margin-top:4px}
+    .codebox{width:100%;background:#0c0905;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;white-space:pre;tab-size:2}
+    .codebox:focus{outline:none;border-color:var(--blue)}
+    .codemsg{font-size:11px;margin-top:5px}
+    .codemsg.ok{color:var(--green)} .codemsg.err{color:var(--red)}
+    /* formulae reference */
+    .ref{max-width:1200px;margin:10px auto 0;padding:0 14px}
+    .ref details{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:0 14px}
+    .ref summary{cursor:pointer;color:var(--amber);font-weight:700;letter-spacing:.05em;padding:11px 0;font-size:12px;list-style:none}
+    .ref summary::-webkit-details-marker{display:none}
+    .ref summary::before{content:"▸ ";color:var(--ink-dim)}
+    .ref details[open] summary::before{content:"▾ "}
+    .ref .refbody{padding-bottom:10px}
+    .ref h4{color:var(--green);margin:12px 0 4px;font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+    .ref table{border-collapse:collapse;width:100%;font-size:11.5px;margin-bottom:6px}
+    .ref td{border-bottom:1px solid var(--line);padding:4px 8px;vertical-align:top}
+    .ref td:first-child{color:var(--ink-dim);white-space:nowrap;width:170px}
+    .ref code{color:var(--blue);background:#0c0905;padding:1px 5px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <header>
+    <span class="title">CANTORI · EDITOR</span>
+    <span id="status">loading…</span>
+    <span class="spacer"></span>
+    <button class="tool primary" id="btnPlay">▶ Playtest</button>
+    <button class="tool on" id="btnStop" style="display:none">■ Stop playtest</button>
+    <button class="tool" id="btnGh">☁ Save to GitHub</button>
+    <button class="tool" id="btnCopy">⧉ Copy for Claude</button>
+    <button class="tool" id="btnDownload">⤓ Download data.js</button>
+    <button class="tool warn" id="btnRevert">↺ Revert to shipped</button>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <section class="ref">
+    <details>
+      <summary>Formulae &amp; stat reference — how the numbers actually work</summary>
+      <div class="refbody">
+        <h4>Combat</h4>
+        <table>
+          <tr><td>Hit chance</td><td><code>50% + (acc − eva) × 3%</code>, clamped to 10%–95% (even acc/eva = 50%; each point of accuracy over evasion = +3%). A target that hasn't noticed you is auto-hit for <code>×1.5</code> damage (surprise).</td></tr>
+          <tr><td>Your accuracy</td><td><code>base + DEX + weapon acc + level acc</code></td></tr>
+          <tr><td>Your evasion</td><td><code>base + DEX + level eva + armor subtype</code> (light +2, medium 0, heavy −3)</td></tr>
+          <tr><td>Damage dealt</td><td><code>roll(dmgMin..dmgMax) + STR bonus + bonuses − armor block − VIT resist</code>, minimum 1. Armor block is itself a fresh roll of <code>defMin..defMax</code> each hit, so heavier armor absorbs a variable amount.</td></tr>
+          <tr><td>Critical hit</td><td>Base <code>5%</code> chance for <code>200%</code> damage, each raised by the class's per-level <code>crit</code> / <code>critDmg</code> gains (added, not multiplied).</td></tr>
+          <tr><td>Attack cost (time)</td><td><code>1 / (weapon speed × (1 + haste))</code> — lower is faster. Monsters bank <code>speed</code> energy per turn and act once per whole point.</td></tr>
+          <tr><td>Weapon range</td><td><code>1</code> = melee (adjacent). <code>2+</code> = tap a monster within reach + line of sight to strike (spear 2, bow 5).</td></tr>
+        </table>
+        <h4>Enchants (proc rolls per hit at <code>proc</code>)</h4>
+        <table>
+          <tr><td>burn</td><td><code>power × burstMult</code> now, then a single burning stack (<code>dotTurns</code>). Refreshes — never stacks.</td></tr>
+          <tr><td>poison</td><td><code>initial</code> hit now, then <code>perTurn</code> for <code>turns</code>. Every proc adds an independent stack.</td></tr>
+          <tr><td>shock</td><td><code>power × burstMult</code>, stun chance <code>= burst × stunPer / target level</code>.</td></tr>
+          <tr><td>thorns</td><td>when you're struck, reflect <code>power × mult</code> back at the attacker.</td></tr>
+          <tr><td>haste</td><td>passive while worn — folds into attack speed above (<code>mult</code>).</td></tr>
+          <tr><td>defense</td><td>passive while worn — adds <code>amount</code> flat mitigation to every block. Rolls on armor / rings / necklaces.</td></tr>
+          <tr><td>power =</td><td>weapon top-end damage (on your strike) · armor def (thorns/retaliation) · tier + plus (jewelry)</td></tr>
+        </table>
+        <h4>Progression</h4>
+        <table>
+          <tr><td>Max HP</td><td><code>baseHp + VIT</code> (1 VIT = 1 HP; baseHp defaults to 13), plus the class <code>levelUp</code> hp gained per level.</td></tr>
+          <tr><td>HP regen</td><td>Heals to full over the class's <code>regenTurns</code>, sped up by Vitality: <code>effective = regenTurns − VIT × vitRegen</code>. Per-turn heal = <code>maxHP / effective</code> (default 600 turns, factor 2).</td></tr>
+          <tr><td>MP regen</td><td>Same shape, sped up by Intelligence: <code>effective = mpRegenTurns − INT × intRegen</code>, per-turn = <code>maxMP / effective</code> (default 600, factor 2).</td></tr>
+          <tr><td>Identify</td><td><code>need = (tier + plus) × (rand 1..10 + rarity rank)</code>; +1 progress each time you use the item (strike / get hit).</td></tr>
+          <tr><td>XP to level</td><td><code>level × 8</code>. On level: main stat +2, secondary +1, +1 free point, plus the class <code>levelUp</code> set (hp/mp/acc/eva).</td></tr>
+          <tr><td>Monster XP</td><td><code>ceil(minFloor / 2)</code> — floor 1–2 = 1, floor 3–4 = 2, floor 5 = 3. Bosses give a larger scaled reward.</td></tr>
+        </table>
+        <h4>Loot &amp; stats</h4>
+        <table>
+          <tr><td>Drop rolls</td><td>rarity (white 50 / green 30 / blue 15 / purple 5) → category weights → tier by floor band → type within tier by its <code>rarity %</code> (blank = splits the remainder).</td></tr>
+          <tr><td>STR</td><td>damage &amp; weapon requirements</td></tr>
+          <tr><td>DEX</td><td>accuracy &amp; evasion</td></tr>
+          <tr><td>VIT</td><td>health &amp; damage resistance</td></tr>
+          <tr><td>INT</td><td>wand/spell power &amp; identifying</td></tr>
+          <tr><td>RES</td><td>enchant procs &amp; magic resist</td></tr>
+          <tr><td>LCK</td><td>critical hits &amp; a little of everything</td></tr>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <main id="main"></main>
+
+  <dialog id="copyDlg">
+    <div class="dlg-head"><b>Copy this to Claude</b><button class="tool" id="copyClose">✕</button></div>
+    <div class="dlg-body">
+      <p>Paste this whole block into the chat and say “update the game data with this”. Or use “Copy” to grab it.</p>
+      <textarea id="copyText" readonly></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="tool primary" id="copyNow">Copy</button>
+        <span id="copyMsg" style="color:var(--green);align-self:center"></span>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="ghDlg">
+    <div class="dlg-head"><b>Save to GitHub</b><button class="tool" id="ghClose">✕</button></div>
+    <div class="dlg-body">
+      <p id="ghState"></p>
+      <div class="gh-grid">
+        <label>Repo owner<input type="text" id="ghOwner"></label>
+        <label>Repo name<input type="text" id="ghRepo"></label>
+        <label>Branch<input type="text" id="ghBranch"></label>
+        <label>File path<input type="text" id="ghPath"></label>
+      </div>
+      <label style="display:block;margin-top:10px">GitHub token
+        <input type="password" id="ghToken" placeholder="ghp_… or github_pat_… (stored only in this browser)">
+      </label>
+      <p class="cols-note">
+        Make a <b>fine-grained token</b>: GitHub → Settings → Developer settings → Fine-grained tokens →
+        Generate. Repository access = <b>only this repo</b>; Permissions → <b>Contents: Read and write</b>.
+        The token is saved in this browser only (never committed) and you can revoke it anytime.
+      </p>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="tool primary" id="ghSave">💾 Commit data.js</button>
+        <button class="tool" id="ghSaveToken">Save token</button>
+        <button class="tool warn" id="ghForget">Forget token</button>
+        <span id="ghMsg" style="align-self:center;font-size:12px"></span>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="./data.js?v=75"></script>
+  <script src="./editor.js?v=75"></script>
+</body>
+</html>

@@ -4,15 +4,57 @@ A permadeath roguelike dungeon crawler — in the spirit of Shattered Pixel
 Dungeon — built as a web game so it plays on a phone (iPhone included) with no
 App Store, and eventually offline.
 
-## Where we are: Depth 0 — "First Light"
+## Where we are: Milestone 4 — "The Long Way Down"
 
-The foundation. A single torch-lit stone room you can walk around, with a light
-radius that previews the fog-of-war coming next. It proves the whole pipeline:
-a tiled dungeon, a character, touch + keyboard controls, on a real phone.
+The full journey. The dungeon is **five biomes of five floors each** (25 floors,
+then a win):
+
+1. **Forest** — grass & trees · boss: **The Pied Piper**
+2. **Cave** — brick & pebble · boss: **Stone Golem**
+3. **Tomb** — tiled floors, stone brick · boss: **three Cultists**
+4. **Arcane Tomb** — runed marble · boss: **The Mummy**
+5. **The Beyond** — otherworldly · boss: **The Demi-God**
+
+Each biome has its own tileset and monster set. The 5th floor of each is sealed
+by a boss — beat it and the way down opens where it fell. Slay the Demi-God on
+floor 25 and you **win**. (Bosses are big, hard fights for now; special
+behaviours come later.) Content lives in `data.js` → `biomes` / `bosses`.
+
+## Earlier: Milestone 3 — "Spoils"
+
+Loot and growth. Levels are strewn with items — weapons, armor, gold, and
+mystery potions and scrolls. Walk over something to pick it up; open your **pack**
+(🎒) to equip gear or use consumables. Weapons raise your attack, armor blunts
+incoming blows. Potions and scrolls are **unidentified** until you use one — a
+healing draught or a mouthful of poison, you won't know until you drink it.
+Killing monsters grants XP; leveling up raises your max HP and attack. Gold is
+tallied for score.
+
+Consumables: healing / strength / poison potions; magic-mapping / teleport
+scrolls. Built on everything before it — turn-based combat, permadeath,
+procedural dungeons, fog of war, camera, zoom, and floor map.
+
+**Graphics:** the game now renders classic pixel-art sprites (hero, monsters,
+items, terrain) from **Dungeon Crawl Stone Soup**, which are CC0 / public
+domain. See `ART-CREDITS.md`. Sprites live in `assets/tiles/` and are drawn with
+the torch lighting laid over them.
 
 **Controls**
-- **Phone:** tap a tile to walk toward it.
-- **Keyboard:** arrow keys or WASD.
+- **Phone:** tap an explored tile — the character finds a route and walks there,
+  around walls, diagonals included.
+- **Keyboard:** arrows / WASD, plus 8-direction keys (vi-keys `y u b n` and the
+  numpad) for diagonal steps.
+- **Attack:** walk into a monster.
+- **Pack:** the `🎒` button or `I` — tap gear to equip it, tap a potion/scroll to
+  use it; `✕` / `🎒` / `Esc` to close.
+- **Descend:** step onto the `>` stairs.
+- **Zoom:** pinch, the on-screen `+` / `−` buttons, the mouse wheel, or `+` / `−`.
+- **Floor map:** the `▦` button or `M` — shows the whole explored level, with
+  your position and the stairs; tap it (or `Esc`) to close.
+- **After death:** tap the screen (or `Enter`) to start a new run.
+
+The browser console exposes a small `window.cantori` dev helper
+(`descend()`, `regenerate()`, `restart()`, `hurt(n)`, `place(x,y)`, `peek()`).
 
 ## Play it locally
 
@@ -24,24 +66,63 @@ python3 -m http.server 8000
 # then open http://localhost:8000 in a browser
 ```
 
+## Content editor (no code needed)
+
+Open **`editor.html`** (e.g. `…github.io/Cantori/editor.html`) to add, edit, or
+remove monsters, gear (weapons, armor, and the ring/trinket/necklace jewelry),
+consumables, and bosses through tables; shape **biomes** as cards (with a
+click-to-toggle monster picker); and build **classes** with a form + a **5×5
+skill tree** (5 tiers × 5 options, blank to start, hover a skill to read it).
+Loot config and the design-reference tabs (stats, gods) stay as JSON. Three ways
+to use your edits:
+
+- **▶ Playtest** — saves your changes to this browser and opens the game using
+  them. The game shows a green **⚙ DRAFT** badge while a draft is active; tap it
+  (or **■ Stop playtest**) to go back to the live content.
+- **☁ Save to GitHub** — commits `data.js` straight to the repo (auto-deploys via
+  Pages, works on iPhone). One-time setup: make a GitHub **fine-grained token**
+  (Settings → Developer settings → Fine-grained tokens → Generate; give it access
+  to **only this repo**, Permissions → **Contents: Read and write**), paste it into
+  the dialog, and hit **Save token**. The token lives only in your browser; revoke
+  it anytime. After that, **💾 Commit data.js** publishes your edits directly.
+- **⧉ Copy for Claude** — copies a ready-made `data.js`; paste it into the chat, or
+  into GitHub's web file editor, to commit without a token.
+- **⤓ Download data.js** — saves the file directly.
+
+Your draft lives only in your browser until you export it — nothing is sent
+anywhere.
+
 ## Project layout
 
 ```
 index.html            the page
+editor.html / .js     the content editor (admin) — tables + JSON, playtest/export
 styles.css            the shell (dark, torch-lit)
-game.js               the game — room, player, light, controls
+data.js               ALL editable content — monsters, gear, consumables, biomes,
+                      loot config, and the design-stage classes / stats / gods
+loot.js               loot roll engine (rarity/tier/affix/identify) — a module
+game.js               the engine — dungeon, fog, combat, UI (being split into
+                      modules like loot.js to keep each file small)
+DESIGN.md             the design spec (rogue-lite vision, stats, gods, town)
+assets/tiles/         pixel-art sprites (CC0, see ART-CREDITS.md)
 manifest.webmanifest  lets it install to a phone home screen
 icons/                app icons (generated by tools/make_icons.py)
 tools/make_icons.py   regenerates the icons, no dependencies
 ```
 
+To tune or add content — a tougher rat, a new weapon, drop rates — use
+`editor.html`, or edit `data.js` directly; you don't need to touch the engine.
+See `DESIGN.md` for where the game is headed.
+
 ## The roadmap
 
 Built one "depth" at a time, playable at the end of each:
 
-- **0 · First Light** — walk around a room _(you are here)_
-- **1 · The Descent** — random dungeons, corridors, fog of war, stairs down
-- **2 · Teeth in the Dark** — monsters, combat, health, permadeath
-- **3 · Spoils** — items, inventory, weapons, potions, scrolls
-- **4 · The Long Way Down** — many monsters, scaling difficulty, a win
+- **0 · First Light** — walk around a room _(done)_
+- **1 · The Descent** — random dungeons, corridors, fog of war, stairs down _(done)_
+- **2 · Teeth in the Dark** — monsters, combat, health, permadeath _(done)_
+- **3 · Spoils** — items, inventory, weapons, potions, scrolls _(done)_
+- **4 · The Long Way Down** — biomes, bosses, a winnable run _(you are here)_
 - **5 · Made for the Pocket** — app icon, sound, refined touch, full offline play
+
+See `DESIGN.md` for the rogue-lite direction (stats, classes, gods, the town).

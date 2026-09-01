@@ -16,26 +16,144 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=75">
 </head>
 <body>
   <div id="app">
     <header id="hud">
       <span class="mark">CANTORI</span>
-      <span class="depth">Depth&nbsp;0 · First Light</span>
+      <span class="stats">
+        <span class="lv" id="lv">Lv 1</span>
+        <span class="enemies" id="enemies" title="Enemies in sight — tap to jump between them">☠ 0</span>
+        <span class="depth" id="depthLabel">Depth&nbsp;1</span>
+      </span>
     </header>
+
+    <div id="turnBar" title="Turn timer — depletes as actions cost time; haste drains it slower, slow drains it faster">
+      <span class="tseg"><span class="tfill"></span></span><span class="tseg"><span class="tfill"></span></span><span class="tseg"><span class="tfill"></span></span><span class="tseg"><span class="tfill"></span></span><span class="tseg"><span class="tfill"></span></span>
+    </div>
 
     <div id="stage">
       <canvas id="game"></canvas>
+      <canvas id="map" hidden style="position:absolute;left:0;top:0"></canvas>
+      <div id="controls" style="position:absolute;right:14px;bottom:14px">
+        <button id="btnChar" type="button" aria-label="Character" title="Character (C)">👤</button>
+        <button id="btnBag" type="button" aria-label="Pack" title="Pack (I)">🎒</button>
+        <button id="btnExamine" type="button" aria-label="Examine" title="Examine (X)">🔍</button>
+        <button id="btnMap" type="button" aria-label="Floor map" title="Floor map (M)">▦</button>
+      </div>
+
+      <div id="vitals" style="position:absolute;left:14px;bottom:14px">
+        <div class="vbar hp"><span class="vlabel">HP</span><span class="vtrack"><span class="vfill" id="vHp"></span></span><span class="vnum" id="vHpNum">20/20</span></div>
+        <div class="vbar mp"><span class="vlabel">MP</span><span class="vtrack"><span class="vfill" id="vMp"></span></span><span class="vnum" id="vMpNum">100/100</span></div>
+        <div class="vbar hg"><span class="vlabel">FD</span><span class="vtrack"><span class="vfill" id="vHg"></span></span><span class="vnum" id="vHgNum">100/100</span></div>
+      </div>
+
+      <div id="banner" hidden><div class="banner-in"><div class="banner-t" id="bannerT"></div><div class="banner-s" id="bannerS"></div></div></div>
     </div>
 
+    <footer id="hotbar"></footer>
+
     <footer id="hint">
-      <span>Tap a tile to walk toward it</span>
-      <span class="sep">·</span>
-      <span>arrow keys / WASD on a keyboard</span>
+      <div id="log"><div class="logline">Explore · tap to move · swipe to look around · reach the <b>&gt;</b> stairs · ▦ map</div></div>
     </footer>
   </div>
 
-  <script src="./game.js"></script>
+  <div id="inv" hidden>
+    <div class="inv-card">
+      <div class="inv-head">
+        <span>PACK</span>
+        <span class="inv-head-right">
+          <span id="invGold">0 gold</span>
+          <button id="invClose" type="button" aria-label="Close pack">✕</button>
+        </span>
+      </div>
+      <div class="inv-stats" id="invStats"></div>
+      <div class="inv-equip" id="invEquip"></div>
+      <div class="inv-grid" id="invGrid"></div>
+      <div class="inv-detail" id="invDetail"></div>
+      <div class="inv-hint">tap a slot to select · ✕ or 🎒 to close</div>
+    </div>
+  </div>
+
+  <div id="char" hidden>
+    <div class="char-card">
+      <div class="char-head">
+        <span>CHARACTER</span>
+        <button id="charClose" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="char-tabs">
+        <button class="ctab on" data-tab="stats" type="button">Stats</button>
+        <button class="ctab" data-tab="skills" type="button">Skills</button>
+        <button class="ctab" data-tab="boons" type="button">Boons</button>
+      </div>
+      <div id="charBody"></div>
+    </div>
+  </div>
+
+  <div id="shop" hidden>
+    <div class="inv-card">
+      <div class="inv-head">
+        <span>MERCHANT</span>
+        <span class="inv-head-right">
+          <span id="shopGold">0 gold</span>
+          <button id="shopClose" type="button" aria-label="Close">✕</button>
+        </span>
+      </div>
+      <div class="shop-section">
+        <div class="shop-label">For Sale — tap to buy</div>
+        <div class="shop-stock" id="shopStock"></div>
+      </div>
+      <div class="shop-section">
+        <div class="shop-label">Sell Your Gear — tap to sell</div>
+        <div class="shop-sell" id="shopSell"></div>
+      </div>
+      <div class="inv-hint">✕ to leave the merchant</div>
+    </div>
+  </div>
+
+  <div id="fountain" hidden>
+    <div class="go-card">
+      <div class="go-title">FOUNTAIN</div>
+      <div class="go-sub" id="fountainSub"></div>
+      <div class="inv-actions" id="fountainActions" style="justify-content:center;margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div id="classSelect" hidden>
+    <div class="boon-card">
+      <div class="boon-title">CHOOSE YOUR HERO</div>
+      <div class="boon-sub">Who enters the dungeon this run?</div>
+      <div class="boon-choices" id="classChoices"></div>
+    </div>
+  </div>
+
+  <div id="boons" hidden>
+    <div class="boon-card">
+      <div class="boon-title">CHOOSE A BOON</div>
+      <div class="boon-sub">A god extends a blessing — take one.</div>
+      <div class="boon-choices" id="boonChoices"></div>
+    </div>
+  </div>
+
+  <div id="gameover" hidden>
+    <div class="go-card">
+      <div class="go-title">YOU DIED</div>
+      <div class="go-sub" id="goSub"></div>
+      <div class="go-tap">tap to begin a new run</div>
+    </div>
+  </div>
+
+  <div id="win" hidden>
+    <div class="go-card">
+      <div class="go-title victory">VICTORY</div>
+      <div class="go-sub">You slew the Demi-God and conquered the Beyond.</div>
+      <div class="go-tap">tap to begin a new run</div>
+    </div>
+  </div>
+
+  <script src="./data.js?v=75"></script>
+  <script src="./loot.js?v=75"></script>
+  <script src="./game.js?v=75"></script>
 </body>
 </html>
