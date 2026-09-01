@@ -100,14 +100,15 @@ These are the packets that unblock your own work on classes, bosses and monsters
 
 | Packet | Does | ~size | Status |
 |---|---|---|---|
-| C1 | Tile property table; register `WATER/CHASM/RUBBLE/GRASS/EMBERS` in `passable`, `blocksSight`, `floodReach`, `fixOpenCorners`, pathing, renderer. **No generator changes** — tiles exist but nothing places them yet | 5k | todo |
-| C2 | Forest/Lake painter: rivers, ponds, reed beds | 4k | todo |
+| [C1](packets/C1-tile-properties.md) | Tile property table replacing scattered constant checks; declares `WATER/CHASM/RUBBLE/GRASS`. **No behaviour change** — nothing places them yet | 5k | **brief ready** |
+| [C2](packets/C2-biome-painters.md) | Water, grass and rubble painted per biome, driven from `data.js` | 5k | **brief ready** |
 | C3 | Caves painter: chasms + rubble, and falling to the next floor | 5k | todo |
 | C4 | Generalize `makeThornVaults` into a room-template system | 5k | todo |
 | C5 | Six room templates as data: library, garden, flooded, crossing, sarcophagus, ritual circle | 4k | todo |
 
 C1 is the dangerous one — rule 5 in `CLAUDE.md` exists because a tile missed in one
 predicate makes rare seeds unwinnable. Do it alone, and extend the smoke test with it.
+C1 changes no behaviour on purpose — it is the refactor that makes C2/C3 small.
 
 ## Track D — systems *(code)*
 
