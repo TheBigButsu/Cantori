@@ -1046,7 +1046,7 @@
         { name: "Tiered value lookup", formula: "tierValues[clamp(1, 5, item's gear tier) − 1]", note: "Any enchant with a `tierValues` array (5 numbers) on the Enchants tab reads its number from the TIER of the item carrying it — an untiered item counts as tier 1. Falls back to the effect's flat legacy field if `tierValues` is absent." },
         { name: "Poison", formula: "dose = round(weapon power × tiered %); stack += dose; each turn: hp −= stack, then stack −= 1", note: "Doses from repeated procs pile onto ONE running stack rather than layering separate timers — a big early stack keeps hurting as it winds down." },
         { name: "Defense (enchant)", formula: "armor def min += tiered amount,  armor def max += tiered amount", note: "" },
-        { name: "Speed / haste", formula: "your speed multiplier includes (tiered value − 1) as an additive bonus", note: "So a tiered value of 1.8 alone means your attacks cost ×1.8 as fast; multiple haste sources (other items, Ourn's boons) stack additively around that." },
+        { name: "Speed / haste", formula: "your speed multiplier includes (tiered value − 1) as an additive bonus", note: "So a tiered value of 1.8 alone means you swing AND walk ×1.8 as fast; multiple haste sources (other items, Ourn's boons) stack additively around that." },
         { name: "Burn", formula: "instant burst = power × burstMult (0.5 default); DOT = ceil(burst / 2) per turn for dotTurns (3 default)", note: "Refreshes to the newest proc rather than stacking — only one burn timer at a time." },
         { name: "Shock", formula: "instant burst = power × burstMult (1.0 default); stun chance = (burst × stunPer (0.1 default)) / monster level", note: "" },
         { name: "Thorns", formula: "reflect = round(incoming damage × mult (0.5 default))", note: "Fires back at whatever just hit you." },
@@ -1056,7 +1056,9 @@
       title: "Action speed & turn cost",
       rows: [
         { name: "Attack cost", formula: "1 / (weapon speed × (1 + total haste) [+1 if a Metrognome is tuned to attack speed])", note: "Lower cost = more actions per monster turn." },
-        { name: "Walk cost", formula: "1 normally, 0.5 with a Metrognome tuned to walk speed", note: "" },
+        { name: "Walk cost", formula: "1 / (1 + total haste [+1 if a Metrognome is tuned to walk speed])", note: "Haste moves your feet as well as your weapon — that is what makes Ourn's tree a speed build rather than an attack-speed one. Weapon speed is deliberately NOT in here: a heavy axe slows your swing, not your walk." },
+        { name: "Every other action", formula: "1, flat", note: "A potion, a scroll, equipping, a skill, waiting. Haste never shortens these, so consumables always cost real tempo." },
+        { name: "Monster actions", formula: "each monster banks (its speed × your action's cost) per turn and acts once per whole point, capped at 2", note: "So speed 1.2 double-moves every 5th turn and speed 0.8 skips one turn in 5. Halving your own cost halves what every monster banks — that IS the haste." },
       ],
     },
     {

@@ -419,7 +419,17 @@
   // speed (its rolled variant), never both. Lower action-cost = you act more often
   // relative to monsters.
   const metroMode = () => (player.trinket && player.trinket.key === "metrognome" ? player.trinket.variant : null);
-  const walkCost = () => (metroMode() === "walk" ? 0.5 : 1);                       // +1 walk speed → half the cost
+  // Haste speeds up the two things you do in a fight: walking and swinging. It used
+  // to reach the swing only, which left Ourn's whole tree unable to move you a single
+  // tile sooner — Dilating Pupils, and a Speed of Light that promises the world slows
+  // around you, bought no kiting, no disengage, no running anything down. Walking is
+  // the action you take most, so haste that skips it isn't speed, it's attack speed.
+  // Weapon speed deliberately stays OUT of the walk: a heavy axe slows your swing,
+  // not your feet. That's the same split the Metrognome already draws between its two
+  // variants, and the two now stack the same additive way on both sides.
+  // Everything else — a potion, a scroll, equipping, a skill — remains a flat turn, so
+  // consumables still cost real tempo no matter how fast you are.
+  const walkCost = () => 1 / (1 + wornHaste() + (metroMode() === "walk" ? 1 : 0));
   const attackCost = () => 1 / (playerActSpeed() + (metroMode() === "attack" ? 1 : 0));
   // The "power" an item's enchant procs at: weapon top-end damage, armor defense,
   // or (for jewelry) its tier + plus.
@@ -4984,12 +4994,16 @@
     // baseline foe (monster defaults), plus the exact formula behind them.
     const accPct = Math.round(hitChance(playerAcc(), MON_EVA) * 100);
     const evaPct = Math.round((1 - hitChance(MON_ACC, playerEva())) * 100);
+    const hastePct = Math.round(wornHaste() * 100);
+    const hasteTxt = (hastePct >= 0 ? "+" : "") + hastePct + "%";
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">crit% = 5 + DEX + LCK + skills · crit dmg% = 200 + LCK×2 + skills</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
       `<div class="cline cformula">hit% = 50% + (attacker acc − defender eva) × 3%, clamped 10–95%</div>` +
+      `<div class="cline">Haste <b>${hasteTxt}</b> · a step costs <b>${walkCost().toFixed(2)}</b> turns · a swing <b>${attackCost().toFixed(2)}</b></div>` +
+      `<div class="cline cformula">step = 1 ÷ (1 + Haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + Haste) + Metrognome-attack) · under 1.00 you act more often than your foes</div>` +
       `<div class="cline cformula">incoming dmg ×(1 − RES%), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;

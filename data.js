@@ -45,7 +45,7 @@ window.CANTORI_DATA = {
       "minFloor": 3,
       "glyph": "x",
       "color": "#d68f8f",
-      "speed": 1,
+      "speed": 0.8,
       "acc": 15,
       "eva": 10,
       "range": 4,
@@ -90,7 +90,7 @@ window.CANTORI_DATA = {
       "charge": true,
       "glyph": "B",
       "color": "#8a6a44",
-      "speed": 1,
+      "speed": 0.8,
       "minFloor": 4
     },
     "harpy": {
@@ -109,6 +109,7 @@ window.CANTORI_DATA = {
       "atkMin": 2
     },
     "jackal": {
+      "speed": 1.2,
       "name": "Jackal",
       "hp": 3,
       "atkMin": 1,
@@ -117,6 +118,7 @@ window.CANTORI_DATA = {
       "color": "#b79a6b"
     },
     "hornet": {
+      "speed": 1.2,
       "name": "Hornet",
       "flying": true,
       "hp": 2,
@@ -126,6 +128,7 @@ window.CANTORI_DATA = {
       "color": "#e0a13c"
     },
     "ghoul": {
+      "speed": 0.8,
       "name": "Ghoul",
       "hp": 35,
       "atkMin": 3,
@@ -136,6 +139,7 @@ window.CANTORI_DATA = {
       "charge": true
     },
     "wraith": {
+      "speed": 1.2,
       "name": "Wraith",
       "hp": 6,
       "atkMin": 3,
@@ -145,6 +149,7 @@ window.CANTORI_DATA = {
       "minFloor": 1
     },
     "phantom": {
+      "speed": 1.2,
       "name": "Phantom",
       "hp": 5,
       "atkMin": 2,
@@ -154,6 +159,7 @@ window.CANTORI_DATA = {
       "minFloor": 1
     },
     "imp": {
+      "speed": 1.2,
       "name": "Imp",
       "hp": 5,
       "atkMin": 3,
@@ -163,6 +169,7 @@ window.CANTORI_DATA = {
       "minFloor": 1
     },
     "keener": {
+      "speed": 1.2,
       "name": "Keener",
       "hp": 4,
       "atkMin": 2,
