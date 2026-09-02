@@ -21,7 +21,7 @@ window.CANTORI_DATA = {
       "glyph": "b",
       "color": "#b491d6",
       "hp": 5,
-      "speed": 1.1,
+      "speed": 1,
       "atkMin": 1,
       "atkMax": 4,
       "eva": 20,
