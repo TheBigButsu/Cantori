@@ -29,6 +29,30 @@
   const STAIRS = 2;
   const DOOR = 3;              // hall entrance; passable, but a *closed* door blocks sight
   const THORN = 4;             // bramble barrier: you can push through, but it hurts
+  const WATER = 5;             // shallow water — declared for C2/C3, not placed yet
+  const CHASM = 6;             // fall-through gap — declared for C2/C3, not placed yet
+  const RUBBLE = 7;            // broken stone — declared for C2/C3, not placed yet
+  const GRASS = 8;             // tall grass — declared for C2/C3, not placed yet
+
+  // What a tile IS, rather than which constant it equals. Every predicate below reads
+  // this table, so a new tile is a row here plus a draw case — not a hunt through the file.
+  const TILE = {
+    [WALL]:   { solid: true, opaque: true },
+    [FLOOR]:  {},
+    [STAIRS]: {},
+    [DOOR]:   {},                                    // sight handled by doorOpen()
+    [THORN]:  { hurts: [5, 10], shun: true, noTravel: true, opaque: true },   // brambles are dense — you cannot see through them, nor they you
+    // Deep water: ground movement stops at the shore, only fliers cross. Deliberately
+    // NOT `solid` — it isn't a wall. You see across it, arrows fly over it, and the
+    // generator may carve through it; it only stops feet.
+    [WATER]:  { deep: true, blocksConnect: false },
+    [CHASM]:  { falls: true, shun: true, noTravel: true, blocksConnect: true },
+    [RUBBLE]: {},                                    // decorative for now — C3 gives it meaning
+    [GRASS]:  { conceals: true },
+  };
+  // Out of bounds is WALL, not "no properties" — otherwise the map edge stops
+  // counting as solid and canStep will happily cut a corner around it.
+  const tileProp = (x, y, k) => { const p = TILE[inBounds(x, y) ? map[y][x] : WALL]; return p ? p[k] : undefined; };
 
   let map = [];
   let visible = [];
@@ -140,7 +164,7 @@
     player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
-    _skillCache = { cls: null, skills: {}, byPos: {} };   // force a rebuild for the new class
+    _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
     player.skills = {};
     const sk = treeSkills(key).skills;
     for (const k of Object.keys(sk)) player.skills[k] = { rank: 0, cd: 0 };
@@ -168,18 +192,29 @@
   const isWall = (x, y) => !inBounds(x, y) || map[y][x] === WALL;
   const isDoor = (x, y) => inBounds(x, y) && map[y][x] === DOOR;
   const isThorn = (x, y) => inBounds(x, y) && map[y][x] === THORN;
-  const passable = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
-  // A door is open only while you stand on it, then swings/grows shut behind you —
-  // an open/close mechanism (the forest bushes "come back"). EXCEPT: a door a
-  // monster died on is propped open for good (you already fought there, no more
-  // ambush to spring) — until you walk back over that exact tile, which resets
-  // it to the normal close-behind-you cycle.
+  const shuns = (x, y) => !!tileProp(x, y, "shun");     // monsters (and drops/teleports) avoid these tiles
+  // Walkable on foot. Deep water counts as blocked here, which is what makes every
+  // spawn, drop, knockback and auto-travel route dodge it without a special case.
+  // Anything that flies asks canStep/passableFor instead.
+  const passable = (x, y) => inBounds(x, y) && !tileProp(x, y, "solid") && !tileProp(x, y, "deep");
+  // Same question, asked on behalf of a specific mover: fliers cross deep water.
+  // (Chasms stay off-limits to everything — they're `shun` + `falls`, not `deep`.)
+  const passableFor = (mover, x, y) =>
+    inBounds(x, y) && !tileProp(x, y, "solid") && (!tileProp(x, y, "deep") || !!(mover && mover.flying));
+  // A door is open while you OR a live monster stands on it, then swings/grows shut
+  // behind whoever left — an open/close mechanism (the forest bushes "come back").
+  // Without the monster check, something crossing a bush while you watch would slide
+  // through the fully-closed sprite with no reaction, and vision would stay blocked
+  // at that tile even though you can plainly see whatever is standing right on it.
+  // EXCEPT: a door a monster died on is propped open for good (you already fought
+  // there, no more ambush to spring) — until you walk back over that exact tile,
+  // which resets it to the normal close-behind-you cycle.
   let propOpenDoors = new Set();   // "y*MAP_W+x" keys, reset every new level
-  const doorOpen = (x, y) => (player.x === x && player.y === y) || propOpenDoors.has(y * MAP_W + x);
+  const doorOpen = (x, y) => (player.x === x && player.y === y) || propOpenDoors.has(y * MAP_W + x) || !!monsterAt(x, y);
   const propDoorOpenAt = (x, y) => { if (inBounds(x, y) && map[y][x] === DOOR) propOpenDoors.add(y * MAP_W + x); };
   // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
   // room stays hidden until you reach its doorway, enabling surprise ambushes.
-  const blocksSight = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (map[y][x] === DOOR && !doorOpen(x, y));
+  const blocksSight = (x, y) => !inBounds(x, y) || tileProp(x, y, "opaque") || (map[y][x] === DOOR && !doorOpen(x, y));
 
   function blankGrid(fill) {
     const g = [];
@@ -805,7 +840,7 @@
     if (m) {
       for (let i = 0; i < 200; i++) {
         const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
-        if (passable(x, y) && map[y][x] !== THORN && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
+        if (passable(x, y) && !shuns(x, y) && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
           spawnBurst(m.x, m.y, "#c79bff"); m.x = x; m.y = y; snapEntity(m);
           spawnBurst(x, y, "#c79bff"); floatText(x, y, "✦", "#e0c6ff");
           break;
@@ -998,7 +1033,9 @@
   function floodReach(sx, sy, blockThorns) {
     const seen = new Set([sy * MAP_W + sx]);
     const q = [[sx, sy]];
-    const blocked = (x, y) => !inBounds(x, y) || map[y][x] === WALL || (blockThorns && map[y][x] === THORN);
+    // `passable` already rejects walls and deep water; blocksConnect is for tiles that
+    // are technically enterable but must never count as a route (a chasm you fall into).
+    const blocked = (x, y) => !passable(x, y) || tileProp(x, y, "blocksConnect") || (blockThorns && tileProp(x, y, "hurts"));
     while (q.length) {
       const [x, y] = q.shift();
       for (const [dx, dy] of DIRS8) {
@@ -1019,7 +1056,18 @@
   // "can I see it" and "can I walk to it" consistent everywhere.
   function allRoomsReachable(rooms, sx, sy) {
     const reach = floodReach(sx, sy, false);
-    return rooms.every((r) => { const c = roomCenter(r); return reach.has(c.y * MAP_W + c.x); });
+    return rooms.every((r) => {
+      const c = roomCenter(r);
+      if (reach.has(c.y * MAP_W + c.x)) return true;
+      // The centre tile itself may be one you can't stand on — a pond in the middle of
+      // the room. The room is still perfectly reachable; ask whether ANY of it is
+      // before condemning the floor. (Only runs when the centre misses, so the common
+      // case stays a single Set lookup.)
+      for (let y = r.y; y < r.y + r.h; y++)
+        for (let x = r.x; x < r.x + r.w; x++)
+          if (reach.has(y * MAP_W + x)) return true;
+      return false;
+    });
   }
   function fixOpenCorners(rooms) {
     if (!rooms.length) return;
@@ -1145,6 +1193,105 @@
   let lastRooms = [];   // the current floor's room rects (dev/inspection)
   let lastAttach = 0;   // how many of them are attached (doorway, no hallway)
 
+  // Biome-specific terrain (C2): grows an organic blob of `tile`, up to `size` tiles,
+  // outward from a seed floor tile — a randomized flood fill so the shape reads as
+  // natural rather than a rectangle. Never touches a cell `skip` rejects or anything
+  // that isn't plain FLOOR (so it can't overwrite another painter's work, and — since
+  // this runs before doors/stairs/thorns/trees exist — there's nothing else on the map
+  // to protect yet).
+  function paintTerrainBlob(tile, x0, y0, size, skip) {
+    const seen = new Set([y0 * MAP_W + x0]);
+    const frontier = [[x0, y0]];
+    const cells = [];
+    while (cells.length < size && frontier.length) {
+      const [x, y] = frontier.splice(randInt(0, frontier.length - 1), 1)[0];
+      if (map[y][x] !== FLOOR || skip(x, y)) continue;
+      map[y][x] = tile; cells.push([x, y]);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, k = ny * MAP_W + nx;
+        if (!inBounds(nx, ny) || seen.has(k)) continue;
+        seen.add(k);
+        if (map[ny][nx] === FLOOR && !skip(nx, ny)) frontier.push([nx, ny]);
+      }
+    }
+    return cells;
+  }
+  // Scatter `cfg[countKey]` blobs of `tile` (a [min,max] roll each), each sized from
+  // `cfg.size` (default a small patch), seeded on random floor tiles across the level.
+  // `keep` vets a finished blob (see paintTerrain's connectivity check) and, when it
+  // says no, that blob alone is undone — the rest of the level keeps its terrain.
+  function paintTerrainFeature(tile, cfg, countKey, skip, keep) {
+    if (!cfg || !cfg[countKey]) return [];
+    const n = randInt(cfg[countKey][0], cfg[countKey][1]);
+    const size = cfg.size || [3, 6];
+    const seeds = [];
+    const painted = [];
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) if (map[y][x] === FLOOR && !skip(x, y)) seeds.push([x, y]);
+    for (let i = 0; i < n && seeds.length; i++) {
+      const [x, y] = seeds[randInt(0, seeds.length - 1)];
+      const cells = paintTerrainBlob(tile, x, y, randInt(size[0], size[1]), skip);
+      if (keep && !keep()) { for (const [cx, cy] of cells) map[cy][cx] = FLOOR; continue; }
+      for (const c of cells) painted.push(c);
+    }
+    return painted;
+  }
+  // Every cell this level's painters coloured in, so a late failure can undo exactly
+  // those and nothing else — see unpaintTerrain.
+  let paintedCells = [];
+  // Undo the terrain paint, cell by cell. Deliberately NOT a whole-grid snapshot
+  // restore: doors, stairs, thorn vaults and trees are written to the map *after*
+  // painting, and rolling the grid back would erase them. A cell that has since
+  // become something else is left alone. Turning water back into floor only ever
+  // adds passability, so this is safe to call at any point in generation.
+  function unpaintTerrain(tiles) {
+    for (const [x, y, t] of paintedCells) if (map[y][x] === t && (!tiles || tiles.indexOf(t) >= 0)) map[y][x] = FLOOR;
+    paintedCells = tiles ? paintedCells.filter(([, , t]) => tiles.indexOf(t) < 0) : [];
+  }
+  // Paint the current biome's water/grass/rubble onto the room+corridor graph,
+  // driven from data.js → biomes[].terrain. A biome with no `terrain` block is a
+  // no-op, so it generates exactly as it did before this painter existed. Runs after
+  // thinCorridors/sealDeadEndStubs (the graph is settled) and before placeDoors (so
+  // there's nothing walkable placed yet to dodge).
+  //
+  // Deep water blocks movement, so a pool can sever a floor the way a wall would.
+  // Guard it twice: each blob is vetted the moment it lands, and any that costs the
+  // level a tile it could previously walk to is undone on the spot (a pool that
+  // reaches a corridor wall, or rings an alcove). Then the whole paint is re-checked
+  // room by room. Grass and rubble can't sever anything, but they go through the
+  // same path — one code path is cheaper to keep honest than two.
+  function paintTerrain(rooms) {
+    paintedCells = [];
+    const terrain = biome && biome.terrain;
+    if (!terrain || !rooms.length) return;
+    const anchor = roomCenter(rooms[0]);          // becomes the player's start tile right after this runs
+    const skip = (x, y) => x === anchor.x && y === anchor.y;
+    const before = floodReach(anchor.x, anchor.y, false);
+    // Every tile walkable before painting must still be walkable, or still be
+    // reachable — a tile that became water is fine, a tile stranded behind it is not.
+    const keep = () => {
+      const after = floodReach(anchor.x, anchor.y, false);
+      for (const k of before) {
+        if (after.has(k)) continue;
+        if (!passable(k % MAP_W, Math.floor(k / MAP_W))) continue;   // it IS the water now
+        return false;
+      }
+      return true;
+    };
+    const record = (tile, cells) => { for (const [x, y] of cells) paintedCells.push([x, y, tile]); };
+    // Water keeps clear of walls entirely: a pool that touches one can plug a corridor
+    // or seal a doorway, and `keep` would then throw the whole blob away — which is why
+    // an unrestricted painter left most floors dry. Confined to open ground it grows
+    // into a pond with a walkable shore all the way round, which cannot sever anything
+    // and reads as deliberate. At this point in generation the map is only FLOOR and
+    // WALL, so "not next to a wall" is the whole test.
+    const nearWall = (x, y) => DIRS8.some(([dx, dy]) => !inBounds(x + dx, y + dy) || map[y + dy][x + dx] === WALL);
+    if (terrain.water) record(WATER, paintTerrainFeature(WATER, terrain.water, "pools", (x, y) => skip(x, y) || nearWall(x, y), keep));
+    if (terrain.grass) record(GRASS, paintTerrainFeature(GRASS, terrain.grass, "patches", skip, keep));
+    if (terrain.rubble) record(RUBBLE, paintTerrainFeature(RUBBLE, terrain.rubble, "patches", skip, keep));
+    fixOpenCorners(rooms);
+    if (!allRoomsReachable(rooms, anchor.x, anchor.y)) unpaintTerrain();   // never ship a severed floor
+  }
+
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
@@ -1207,6 +1354,8 @@
       biomeScrollFloors = new Set(floors.slice(0, 2));
     }
 
+    paintTerrain(rooms);   // biome-specific water/grass/rubble (C2) — no-op without a terrain block
+
     placeDoors(rooms);
     narrowRoomBreaches(rooms);   // one door per breach — close any extra undoored floor beside it
     sealDeadEndStubs(rooms);   // re-check: narrowRoomBreaches can itself wall off a door's only branch
@@ -1235,6 +1384,17 @@
     spawnItems(rooms);
     placeTrees(rooms, restricted);                     // obstacle trees in the larger rooms
     fixOpenCorners(rooms);   // trees are wall tiles too — re-sweep for any new diagonal touches
+    // Last line of defence (CLAUDE.md rule 5). Deep water blocks movement, and doors,
+    // thorn vaults and trees all land AFTER the terrain paint — so a pool that was
+    // harmless when painted can still end up sealing the way onward once a tree drops
+    // beside it. If the way onward isn't walkable from the start tile, take the terrain
+    // back out: turning water into floor only ever opens routes, and a plain floor
+    // beats an unfinishable one.
+    if (paintedCells.length) {
+      const goal = bossActive ? (monsters.find((m) => DATA.bosses[m.type]) || monsters[0]) : findStairs();
+      const reach = floodReach(player.x, player.y, false);
+      if (!goal || !reach.has(goal.y * MAP_W + goal.x)) unpaintTerrain();
+    }
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -1246,7 +1406,7 @@
     bursts = [];
     streaks = [];
     spirals = [];
-    pendingNodeBlasts = [];
+    _boss.reset();
     screenFlash = null;
     snapPlayer();
     updateHUD();       // vitals + enemy counter reflect the new floor at once
@@ -1294,7 +1454,7 @@
     bursts = [];
     streaks = [];
     spirals = [];
-    pendingNodeBlasts = [];
+    _boss.reset();
     screenFlash = null;
     snapPlayer();
     updateHUD();
@@ -1308,11 +1468,12 @@
     });
   }
   function makeBoss(key, x, y) {
+    // spread the whole row so authored fields (speed, acc, eva, ranged, range,
+    // anything a playbook wants) survive — the way makeMonster copies VERMIN
     const b = DATA.bosses[key];
-    return {
-      x, y, type: key, boss: true, name: b.name, glyph: "@", color: "#f0a838", level: depth,
-      hp: b.hp, maxHp: b.hp, atkMin: b.atkMin, atkMax: b.atkMax,
-    };
+    return Object.assign({}, b, {
+      x, y, type: key, boss: true, glyph: "@", color: "#f0a838", level: depth, hp: b.hp, maxHp: b.hp,
+    });
   }
   function monName(m) {
     return m.boss ? m.name : (VERMIN[m.type] ? VERMIN[m.type].name : m.type);
@@ -1327,11 +1488,13 @@
     for (const [x, y] of spots) {
       if (placed >= n) break;
       if (map[y] && map[y][x] === FLOOR && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
-        monsters.push(makeBoss(key, x, y));
+        const b = makeBoss(key, x, y);
+        monsters.push(b);
+        _boss.onSpawn(b);
         placed++;
       }
     }
-    if (placed === 0) monsters.push(makeBoss(key, cx, cy));
+    if (placed === 0) { const b = makeBoss(key, cx, cy); monsters.push(b); _boss.onSpawn(b); }
   }
 
   function freeFloorSpot(rooms) {
@@ -1410,6 +1573,7 @@
   // no such spot at all (its whole perimeter shared via doors/attachments),
   // tries every other room, closest-generated-to-`room` first, before ever
   // falling back to just standing it in the room's open center.
+  const findStairs = () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; };
   function placeExit(rooms, room) {
     const flankedSpots = (r) => {
       const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
@@ -1422,13 +1586,17 @@
       });
     };
     const pick = (arr) => arr[randInt(0, arr.length - 1)];
+    // A spot is only usable if you can actually stand next to it. Since terrain is
+    // painted before this runs, a ring tile whose whole inward side is deep water
+    // would open onto a pond — carve the stairs somewhere you can walk to instead.
+    const standable = ([x, y]) => DIRS8.some(([dx, dy]) => passable(x + dx, y + dy));
     const order = [room].concat(rooms.filter((r) => r !== room).slice().reverse());
     for (const r of order) {
-      const flanked = flankedSpots(r);
+      const flanked = flankedSpots(r).filter(standable);
       if (flanked.length) { const [x, y] = pick(flanked); map[y][x] = STAIRS; return; }
     }
     for (const r of order) {
-      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
+      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL).filter(standable);
       if (ring.length) { const [x, y] = pick(ring); map[y][x] = STAIRS; return; }
     }
     // Absolute last resort — every room's whole perimeter is shared (doors/attachments).
@@ -1569,7 +1737,7 @@
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
     gainXP(xp);
     tickBoonKillCounters();
-    if (target.type === "healing_node") golemNodeDeath(target);
+    _boss.onKill(target);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
@@ -1696,7 +1864,7 @@
       let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
       const crit = Math.random() < critChance();       // 5%+ chance for 200%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
-      if (target.type === "golem") dmg = Math.max(1, dmg - golemShield(target));  // healing nodes shield the golem
+      dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
@@ -1815,7 +1983,7 @@
     const spots = []; const seen = new Set();
     for (let t = 0; t < 400 && spots.length < count; t++) {
       const x = cx + randInt(-radius, radius), y = cy + randInt(-radius, radius);
-      if (!inBounds(x, y) || !passable(x, y) || map[y][x] === THORN) continue;
+      if (!inBounds(x, y) || !passable(x, y) || shuns(x, y)) continue;
       const k = y * MAP_W + x;
       if (seen.has(k) || itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
       seen.add(k); spots.push({ x, y });
@@ -1834,7 +2002,7 @@
       const cand = [];
       for (let y = room.y; y < room.y + room.h; y++) {
         for (let x = room.x; x < room.x + room.w; x++) {
-          if (!passable(x, y) || map[y][x] === THORN) continue;
+          if (!passable(x, y) || shuns(x, y)) continue;
           if (itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
           cand.push([x, y]);
         }
@@ -2031,14 +2199,18 @@
   }
 
   // ---- Movement / a player action -----------------------------------------
-  function canStep(x, y, dx, dy) {
+  // `mover` is optional and means "on whose behalf" — omit it for the player and for
+  // anything walking on foot; pass the monster so a flier may cross deep water.
+  function canStep(x, y, dx, dy, mover) {
     const nx = x + dx, ny = y + dy;
-    if (!passable(nx, ny)) return false;
+    if (!passableFor(mover, nx, ny)) return false;
     // no diagonal squeeze past a corner flanked by walls OR thorns — so a wall of
-    // brambles can't be slipped around diagonally without stepping through it
+    // brambles can't be slipped around diagonally without stepping through it. Water
+    // flanks the same way for whoever can't enter it: a walker can't cut the corner
+    // between two ponds, a flier doesn't notice them.
     if (dx !== 0 && dy !== 0) {
-      const blockA = isWall(x + dx, y) || isThorn(x + dx, y);
-      const blockB = isWall(x, y + dy) || isThorn(x, y + dy);
+      const blockA = !passableFor(mover, x + dx, y) || shuns(x + dx, y);
+      const blockB = !passableFor(mover, x, y + dy) || shuns(x, y + dy);
       if (blockA && blockB) return false;
     }
     return true;
@@ -2094,7 +2266,7 @@
       const tr = trapAt(player.x, player.y);
       if (tr && !tr.sprung) { triggerTrap(tr); if (dead) return true; }
       if (map[player.y][player.x] === STAIRS) { descend(); return true; }  // fresh level, no world turn
-      worldTurn(walkCost());     // Metrognome (walk) → you cover ground faster than your foes
+      worldTurn(walkCost());     // Metrognome (walk) → you cover ground faster than your foes. Terrain never costs extra time: it shapes the route instead of taxing it, and a costlier step used to hand every monster in earshot a free second action.
       return true;
     }
     return false;
@@ -2288,7 +2460,7 @@
   // could stall or oscillate against an inner diagonal corner (the neighbor
   // that would cut distance is corner-blocked, and every other neighbor ties),
   // which read as monsters getting "stuck" chasing around a bend.
-  function monsterPathStep(sx, sy, tx, ty) {
+  function monsterPathStep(sx, sy, tx, ty, mover) {
     if (sx === tx && sy === ty) return null;
     const key = (x, y) => y * MAP_W + x;
     const prev = new Map();
@@ -2301,7 +2473,7 @@
       if (cx === tx && cy === ty) break;
       for (const [dx, dy] of DIRS8) {
         const nx = cx + dx, ny = cy + dy;
-        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy) || isThorn(nx, ny)) continue;
+        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy, mover) || shuns(nx, ny)) continue;
         // occupied tiles block passage, unless a tile IS the goal (so the search
         // can still route a monster up next to the player or another monster)
         if ((nx !== tx || ny !== ty) && (monsterAt(nx, ny) || (nx === player.x && ny === player.y))) continue;
@@ -2317,6 +2489,23 @@
     path.reverse();
     return path.length > 1 ? path[1] : null;   // path[0] is the monster's own tile
   }
+  // EVERY ordinary monster step goes through here. A world turn hands the acting
+  // monster a leg buffer (see worldTurn) and this records the tile it actually
+  // landed on, so the renderer walks the real path. Diffing a monster's position
+  // before and after its whole action instead — which is what this replaced —
+  // loses every tile in between, and the tween then draws one straight line from
+  // start to finish: a monster that legally stepped around a bush was drawn
+  // sliding clean through the bush, and one that stepped past you was drawn
+  // sliding through you. That is the "teleport" players were seeing.
+  //
+  // A charge is the deliberate exception: it really does cross several tiles in
+  // one straight dash, so it moves without recording legs and keeps the longer
+  // `moveMs` slide it sets for itself.
+  let legLog = null;   // { m, legs } while a monster is taking its action
+  function moveMonster(m, nx, ny) {
+    m.x = nx; m.y = ny;
+    if (legLog && legLog.m === m) legLog.legs.push([nx, ny]);
+  }
   function stepMonsterTo(m, tx, ty) {
     // monsterPathStep lets the GOAL tile itself be occupied (so a path can still
     // route up to it) — but if that goal happens to be the very next step (the
@@ -2324,35 +2513,53 @@
     // monsters on one tile. Every monster must have its own tile, so re-check
     // occupancy here before actually moving; fall through to the greedy
     // heuristic below (which already excludes occupied tiles) if it's blocked.
-    const step = monsterPathStep(m.x, m.y, tx, ty);
-    if (step && !monsterAt(step[0], step[1]) && !(step[0] === player.x && step[1] === player.y)) { m.x = step[0]; m.y = step[1]; return; }
+    const step = monsterPathStep(m.x, m.y, tx, ty, m);
+    if (step && !monsterAt(step[0], step[1]) && !(step[0] === player.x && step[1] === player.y)) { moveMonster(m, step[0], step[1]); return; }
     // No path found (e.g. fully boxed in this turn) — fall back to the old
     // greedy "closest open neighbor" so the monster doesn't just freeze.
-    let best = null, bestD = Infinity;
+    // Seeded with the CURRENT distance, so the fallback can only ever take a step
+    // that gets strictly closer. Seeding it with Infinity meant any legal
+    // neighbour beat "stay put": a monster already standing on its target was
+    // shoved straight back off it (every neighbour ties at distance 1), which is
+    // how a search could turn into a two-tile-per-action shuffle.
+    let best = null, bestD = cheb(m.x, m.y, tx, ty);
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;   // monsters won't brave brambles
+      if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny)) continue;   // monsters won't brave hazards they shun
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       const d = cheb(nx, ny, tx, ty);
       if (d < bestD) { bestD = d; best = [nx, ny]; }
     }
-    if (best) { m.x = best[0]; m.y = best[1]; }
+    if (best) moveMonster(m, best[0], best[1]);
   }
+  // Wandering used to be a greedy step toward a random tile with no memory of where
+  // it came from. When the target sits behind something the monster won't cross —
+  // a thorn it shuns, a closed door — the greedy rule has no way out: from A the
+  // best step is B, from B the best step is A, and it paces between them forever.
+  // Two additions break that: never step straight back onto the tile just left
+  // unless there is nowhere else to go, and give up on a target that isn't getting
+  // closer instead of only when no step improves at all.
+  // Wandering was a greedy step toward a random tile: move to whichever neighbour
+  // has the lowest Chebyshev distance. Greedy stepping has no escape from a local
+  // minimum, so a monster whose target sits behind something it will not cross —
+  // a thorn it shuns, a closed door — paces between two tiles indefinitely.
+  // Measured on that rule, 15 of 18 roaming monsters covered three tiles or fewer
+  // over 300 turns; the median never left its starting tile.
+  //
+  // Wandering now uses the same BFS the hunting AI already uses, which cannot be
+  // trapped that way, and re-rolls its destination once it stops making progress.
+  const PATROL_PATIENCE = 12;
   function patrolStep(m) {
-    if (!m.patrol || (m.x === m.patrol.x && m.y === m.patrol.y)) m.patrol = randomFloor();
-    if (!m.patrol) return;
-    let best = null, bestD = Infinity;
-    for (const [dx, dy] of DIRS8) {
-      const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny)) continue;
-      if (nx === player.x && ny === player.y) continue;
-      if (monsterAt(nx, ny)) continue;
-      const d = cheb(nx, ny, m.patrol.x, m.patrol.y);
-      if (d < bestD) { bestD = d; best = [nx, ny]; }
+    if (!m.patrol || (m.x === m.patrol.x && m.y === m.patrol.y)) {
+      m.patrol = randomFloor(); m.patrolBest = null; m.patrolStale = 0;
     }
-    if (best && bestD < cheb(m.x, m.y, m.patrol.x, m.patrol.y)) { m.x = best[0]; m.y = best[1]; }
-    else m.patrol = randomFloor();       // stuck — pick a new destination
+    if (!m.patrol) return;
+    stepMonsterTo(m, m.patrol.x, m.patrol.y);
+    const d = cheb(m.x, m.y, m.patrol.x, m.patrol.y);
+    if (m.patrolBest == null || d < m.patrolBest) { m.patrolBest = d; m.patrolStale = 0; return; }
+    // Not closer than our best so far: blocked, circling, or it cannot be reached.
+    if (++m.patrolStale >= PATROL_PATIENCE) { m.patrol = randomFloor(); m.patrolBest = null; m.patrolStale = 0; }
   }
   // Shattered Pixel Dungeon-style hunt: losing sight doesn't mean forgetting —
   // a monster with a lastSeen trail heads straight there. Arriving to an empty
@@ -2368,19 +2575,31 @@
     }
     return null;
   }
+  // ONE step per call, always. The two phases used to run back to back: the same
+  // action walked the monster onto the last-seen tile and then straight off it
+  // toward a search spot, so a search was two tiles of movement per action (four
+  // for anything that acted twice), and it ping-ponged — having stepped away it
+  // was no longer on lastSeen, so the next action walked it back and off again.
+  // An `m.searching` latch splits the phases so arriving IS that action's move.
   function chaseLastSeen(m) {
-    stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
-    if (m.x !== m.lastSeen.x || m.y !== m.lastSeen.y) return;   // still travelling there
-    if (m.searchTurns == null) m.searchTurns = SEARCH_TURNS;
+    // Phase 1 — travel to the tile we last saw the player on.
+    if (!m.searching) {
+      stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
+      if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) {   // arrived; start poking around next action
+        m.searching = true; m.searchTurns = SEARCH_TURNS; m.searchSpot = null;
+      }
+      return;
+    }
+    // Phase 2 — an empty tile isn't proof you vanished; check a few spots nearby.
     if (m.searchTurns > 0) {
       m.searchTurns--;
       if (!m.searchSpot || (m.x === m.searchSpot.x && m.y === m.searchSpot.y)) {
         m.searchSpot = nearbySearchSpot(m.lastSeen.x, m.lastSeen.y);
       }
       if (m.searchSpot) stepMonsterTo(m, m.searchSpot.x, m.searchSpot.y);
-    } else {
-      m.lastSeen = null; m.aware = false; m.searchTurns = null; m.searchSpot = null;
+      return;
     }
+    m.lastSeen = null; m.aware = false; m.searching = false; m.searchTurns = null; m.searchSpot = null;
   }
   function doCharge(m) {
     const dir = straightDir(m);
@@ -2389,7 +2608,7 @@
     while (cheb(m.x, m.y, player.x, player.y) > 1) {
       const nx = m.x + dir[0], ny = m.y + dir[1];
       if (nx === player.x && ny === player.y) break;
-      if (!canStep(m.x, m.y, dir[0], dir[1]) || isThorn(nx, ny) || monsterAt(nx, ny)) break;
+      if (!canStep(m.x, m.y, dir[0], dir[1], m) || shuns(nx, ny) || monsterAt(nx, ny)) break;
       m.x = nx; m.y = ny; moved++;
     }
     if (moved > 0) {                                         // make the dash READ: streak + a slower slide + a roar
@@ -2410,7 +2629,7 @@
     let best = null, bestScore = -Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || isThorn(nx, ny) || monsterAt(nx, ny)) continue;
+      if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny) || monsterAt(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       const ddx = player.x - nx, ddy = player.y - ny;
       const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
@@ -2419,7 +2638,7 @@
       if (aligned && dist >= 2 && dist <= CHARGE_MAX && lineOfSight(nx, ny, player.x, player.y)) score += 100;  // a charge lane = great
       if (score > bestScore) { bestScore = score; best = [nx, ny]; }
     }
-    if (best) { m.x = best[0]; m.y = best[1]; }
+    if (best) moveMonster(m, best[0], best[1]);
     else stepMonsterTo(m, player.x, player.y);
   }
 
@@ -2475,7 +2694,7 @@
     let placed = 0;
     for (let t = 0; t < 240 && placed < count; t++) {
       const gx = cx + randInt(-radius, radius), gy = cy + randInt(-radius, radius);
-      if (!inBounds(gx, gy) || map[gy][gx] === WALL || map[gy][gx] === THORN) continue;
+      if (!inBounds(gx, gy) || tileProp(gx, gy, "solid") || shuns(gx, gy)) continue;
       if (cheb(gx, gy, cx, cy) > radius) continue;
       if (monsterAt(gx, gy) || (gx === player.x && gy === player.y)) continue;
       const mm = makeMonster(type, gx, gy); mm.aware = true;
@@ -2483,272 +2702,11 @@
     }
     return placed;
   }
-  function snapEntity(m) { m.rx = m.x; m.ry = m.y; m.lx = m.x; m.ly = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; }
-
-  // ---- The Pied Piper (forest boss) ---------------------------------------
-  function piperAct(m) {
-    if (m.beam) { piperFireBeam(m); return; }        // fire the line telegraphed last turn
-    const see = canSee(m);
-    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }
-    // Entrance: the first time it sees you, it calls vermin to your side.
-    if (see && !m.summoned) {
-      m.summoned = true;
-      spawnNear("rat", player.x, player.y, 3, 2);
-      spawnNear("snake", player.x, player.y, 3, 1);
-      flashScreen("#7a1e1e", 320);
-      sayMonster(m, "Friends, friends everywhere", "#e07aa0");
-      log("The Piper's shrill tune summons vermin around you!", "hurt");
-      return;
-    }
-    // Halfway: vanish (up to 10 tiles) and leave a brood behind.
-    if (!m.phased && m.hp <= m.maxHp * 0.5) { m.phased = true; piperPhaseShift(m); return; }
-    const d = cheb(m.x, m.y, player.x, player.y);
-    // Signature attack: telegraph a straight line, then send an exploding rat down it.
-    if ((m.beamCd | 0) <= 0 && see && d >= 2 && lineOfSight(m.x, m.y, player.x, player.y)) {
-      piperCastBeam(m); m.beamCd = 7; return;
-    }
-    if (m.beamCd > 0) m.beamCd--;
-    if (d === 1) { attack(m, player); return; }
-    if (see) { stepMonsterTo(m, player.x, player.y); return; }
-    if (m.lastSeen) { chaseLastSeen(m); return; }
-    patrolStep(m);
-  }
-  function piperPhaseShift(m) {
-    const ox = m.x, oy = m.y;
-    let best = null, bestScore = -1;
-    for (let t = 0; t < 300; t++) {
-      const x = m.x + randInt(-10, 10), y = m.y + randInt(-10, 10);
-      if (!inBounds(x, y) || map[y][x] === WALL || map[y][x] === THORN) continue;
-      const dd = cheb(x, y, m.x, m.y);
-      if (dd < 3 || dd > 10) continue;
-      if (monsterAt(x, y) || (x === player.x && y === player.y)) continue;
-      const score = cheb(x, y, player.x, player.y);   // prefer landing far from the player
-      if (score > bestScore) { bestScore = score; best = { x, y }; }
-    }
-    spawnBurst(ox, oy, "#c79bff");
-    if (best) { m.x = best.x; m.y = best.y; snapEntity(m); }
-    spawnBurst(m.x, m.y, "#c79bff"); flashScreen("#7a4fb0", 380);
-    spawnNear("rat", ox, oy, 2, 3);
-    spawnNear("snake", ox, oy, 2, 2);
-    m.aware = true; m.lastSeen = { x: player.x, y: player.y };
-    log("The Piper vanishes in a swirl, leaving its brood behind!", "hurt");
-  }
-  // Build a straight line through the player's tile (wall to wall) and mark it red.
-  function piperCastBeam(m) {
-    const dx = player.x - m.x, dy = player.y - m.y;
-    const adx = Math.abs(dx), ady = Math.abs(dy);
-    let dir;
-    if (adx === 0 && ady === 0) dir = [1, 0];
-    else if (adx >= 2 * ady) dir = [Math.sign(dx), 0];
-    else if (ady >= 2 * adx) dir = [0, Math.sign(dy)];
-    else dir = [Math.sign(dx) || 1, Math.sign(dy) || 1];
-    const pass = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
-    let sx = player.x, sy = player.y;                 // back up to the piper-side wall
-    while (pass(sx - dir[0], sy - dir[1])) { sx -= dir[0]; sy -= dir[1]; }
-    const tiles = [];
-    for (let x = sx, y = sy; pass(x, y); x += dir[0], y += dir[1]) tiles.push([x, y]);
-    m.beam = { dir, tiles };
-    flashScreen("#c02020", 300);                      // a sharp red pulse — impossible to miss
-    floatText(player.x, player.y, "⚠", "#ff5a5a");
-    sayMonster(m, "Dance for me", "#ff6a6a");
-    log("The Piper marks a line of death — MOVE off it!", "hurt");
-  }
-  function piperFireBeam(m) {
-    const line = m.beam.tiles; m.beam = null;         // the red line clears as the rat launches
-    const start = line[0];
-    let hitIdx = -1;
-    for (let i = 0; i < line.length; i++) if (line[i][0] === player.x && line[i][1] === player.y) { hitIdx = i; break; }
-    const end = line[hitIdx >= 0 ? hitIdx : line.length - 1];
-    spawnProjectile(start[0], start[1], end[0], end[1], "#e0685a");
-    spawnBurst(end[0], end[1], "#ff6a4a");
-    if (hitIdx >= 0) {
-      const dmg = 30;
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
-      log("The exploding rat slams into you! (-" + dmg + ")", "hurt");
-      updateHUD();
-      if (player.hp <= 0) { die(); return; }
-    } else {
-      spawnNear("rat", end[0], end[1], 1, 2);         // bursts on the wall, two rats spill out
-      log("You dodge! The rat bursts on the wall — two more scurry out.", "hit");
-    }
-  }
-
-  // ---- The Stone Golem (boss) ------------------------------------------------
-  // Live Healing Nodes shield the golem: -10 incoming damage per node (see the
-  // golem branch in attack()). Killing a node arms a delayed 5x5 blast at its
-  // spot — pendingNodeBlasts, ticked in worldTurn like the bomb trap's fuse.
-  const golemShield = (g) => 10 * monsters.filter((x) => x.type === "healing_node" && x.hp > 0).length;
-  let pendingNodeBlasts = [];
-  function golemAct(m) {
-    if (m.windup) { golemResolveWindup(m); return; }
-    const see = canSee(m);
-    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }
-    if (m.slamCd > 0) m.slamCd--;
-    // Healing-node respawn timer — only once the golem has phased below 50%.
-    if (m.phased) {
-      m.nodeCd = (m.nodeCd == null) ? randInt(20, 30) : m.nodeCd - 1;
-      if (m.nodeCd <= 0) {
-        m.nodeCd = randInt(20, 30);
-        const live = monsters.filter((x) => x.type === "healing_node" && x.hp > 0).length;
-        if (live < 2 && spawnNear("healing_node", m.x, m.y, 6, 1)) {
-          log("The Golem calls forth another stone guardian.", "hurt");
-        }
-      }
-    }
-    // Phase shift at 50% HP: knockback, maybe stun, and a pair of healing nodes — once.
-    if (!m.phased && m.hp <= m.maxHp * 0.5) { m.phased = true; golemPhaseShift(m); return; }
-    const d = cheb(m.x, m.y, player.x, player.y);
-    if (see && (m.slamCd | 0) <= 0 && d >= 2 && d <= 5) { golemBeginSlam(m); return; }
-    if (see && d >= 3 && lineOfSight(m.x, m.y, player.x, player.y) && Math.random() < 0.5) { golemBeginBoulder(m); return; }
-    if (d === 1) { attack(m, player); return; }
-    if (see) { stepMonsterTo(m, player.x, player.y); return; }
-    if (m.lastSeen) { chaseLastSeen(m); return; }
-    patrolStep(m);
-  }
-  function golemResolveWindup(m) {
-    const w = m.windup;
-    w.turns--;
-    if (w.turns > 0) return;   // still telegraphing this turn — the golem takes no other action
-    m.windup = null;
-    if (w.kind === "boulder") golemFireBoulder(m, w); else golemFireSlam(m, w);
-  }
-  // Boulder Throw: 1-turn telegraph, then a straight rolling boulder to the
-  // first wall or the player, exploding in a 3×3 for 15–30.
-  function golemBeginBoulder(m) {
-    const dx = Math.sign(player.x - m.x) || 1, dy = Math.sign(player.y - m.y) || 0;
-    m.windup = { kind: "boulder", turns: 1, dx, dy };
-    floatText(m.x, m.y, "⚠", "#c9a24a");
-    sayMonster(m, "Grrrhh...", "#c9a24a");
-    log("The Golem hefts a boulder overhead!", "hurt");
-  }
-  function golemFireBoulder(m, w) {
-    const pass = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
-    let x = m.x, y = m.y;
-    for (let i = 0; i < 24; i++) {
-      const nx = x + w.dx, ny = y + w.dy;
-      if (!pass(nx, ny)) break;
-      x = nx; y = ny;
-      if (x === player.x && y === player.y) break;   // collides with the player early
-    }
-    spawnProjectile(m.x, m.y, x, y, "#9a8264");
-    spawnStreak(m.x, m.y, x, y, "#9a8264", 260);
-    spawnBurst(x, y, "#c9a24a");
-    let hit = false;
-    for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++) {
-      if (!inBounds(xx, yy)) continue;
-      floatText(xx, yy, "✸", "#c9a24a");
-      if (xx === player.x && yy === player.y) hit = true;
-    }
-    if (hit) {
-      const dmg = randInt(15, 30);
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-      log("The boulder slams down — you're caught in the blast! (-" + dmg + ")", "hurt");
-      updateHUD();
-      if (player.hp <= 0) die();
-    } else {
-      log("The boulder crashes into the ground nearby.");
-    }
-  }
-  // Ground Slam: a 2-turn telegraph (the golem stays fully attackable meanwhile),
-  // then a forward cone 3→5→7 tiles wide over 3 rows, 20–60 damage, 10-turn CD.
-  function golemConeTiles(gx, gy, dx, dy) {
-    const tiles = [];
-    for (let r = 1; r <= 3; r++) {
-      const half = r;                          // width 2r+1 → 3, 5, 7
-      const fx = gx + dx * r, fy = gy + dy * r;
-      for (let w = -half; w <= half; w++) {
-        const tx = dx !== 0 ? fx : fx + w;
-        const ty = dx !== 0 ? fy + w : fy;
-        if (inBounds(tx, ty)) tiles.push([tx, ty]);
-      }
-    }
-    return tiles;
-  }
-  function golemBeginSlam(m) {
-    let dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
-    if (Math.abs(player.x - m.x) >= Math.abs(player.y - m.y)) { dx = dx || 1; dy = 0; } else { dy = dy || 1; dx = 0; }
-    const tiles = golemConeTiles(m.x, m.y, dx, dy);
-    m.windup = { kind: "slam", turns: 2, dx, dy, tiles };
-    flashScreen("#7a5a2e", 260);
-    sayMonster(m, "BRACE!", "#e0a848");
-    log("The Golem plants its feet and winds up a ground slam!", "hurt");
-  }
-  function golemFireSlam(m, w) {
-    for (const [x, y] of w.tiles) floatText(x, y, "▨", "#e0a848");
-    flashScreen("#5a3e1e", 300);
-    m.slamCd = 10;
-    const hit = w.tiles.some(([x, y]) => x === player.x && y === player.y);
-    if (hit) {
-      const dmg = randInt(20, 60);
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
-      log("The ground slam catches you! (-" + dmg + ")", "hurt");
-      updateHUD();
-      if (player.hp <= 0) die();
-    } else {
-      log("You dodge clear of the ground slam.", "hit");
-    }
-  }
-  // Phase shift at 50% HP: knock the player back (up to 5 tiles, stopping at a
-  // wall — a wall stop stuns 1–3 turns), then call two Healing Nodes to its side.
-  function golemPhaseShift(m) {
-    const dx = Math.sign(player.x - m.x) || 1, dy = Math.sign(player.y - m.y) || 0;
-    let x = player.x, y = player.y, moved = 0, hitWall = false;
-    for (let i = 0; i < 5; i++) {
-      const nx = x + dx, ny = y + dy;
-      if (!inBounds(nx, ny) || map[ny][nx] === WALL) { hitWall = true; break; }
-      x = nx; y = ny; moved++;
-    }
-    if (moved > 0) { player.x = x; player.y = y; computeFOV(); snapPlayer(); }
-    spawnBurst(player.x, player.y, "#9a8a6a"); flashScreen("#4a3a20", 300);
-    if (hitWall) {
-      const stun = randInt(1, 3);
-      player.stun = (player.stun || 0) + stun;
-      floatText(player.x, player.y, "STUNNED", "#e0a848");
-      log("You're slammed into the wall and stunned for " + stun + " turns!", "hurt");
-    } else {
-      log("The Golem's backhand sends you reeling!", "hurt");
-    }
-    sayMonster(m, "RRAAAGH!", "#e0685a");
-    spawnNear("healing_node", m.x, m.y, 6, 2);
-    log("Cracks split the Golem's hide — it calls stone guardians to its side!", "hurt");
-    updateHUD();
-  }
-  // A Healing Node's death arms a 1-turn-telegraphed 5×5 blast at its spot:
-  // 0–20 damage to the player if they're caught in it, healing the golem by
-  // exactly the damage actually dealt (0 if the player dodges clear).
-  function golemNodeDeath(node) {
-    // turns:2 so it survives the tickNodeBlasts() call inside THIS same action
-    // (2→1) and only resolves on the player's next action (1→0) — a genuine
-    // 1-turn warning, not an instant same-action blast.
-    pendingNodeBlasts.push({ x: node.x, y: node.y, turns: 2 });
-    floatText(node.x, node.y, "⚠", "#ff8f4a");
-    log("The Healing Node cracks — it's about to burst!", "hurt");
-  }
-  function tickNodeBlasts() {
-    if (!pendingNodeBlasts.length) return;
-    for (const b of pendingNodeBlasts.slice()) {
-      if (--b.turns > 0) continue;
-      pendingNodeBlasts = pendingNodeBlasts.filter((x) => x !== b);
-      spawnBurst(b.x, b.y, "#ff8f4a"); flashScreen("#7a2e1e", 220);
-      for (let yy = b.y - 2; yy <= b.y + 2; yy++) for (let xx = b.x - 2; xx <= b.x + 2; xx++) {
-        if (inBounds(xx, yy)) floatText(xx, yy, "✸", "#ffb26a");
-      }
-      const inBlast = cheb(player.x, player.y, b.x, b.y) <= 2;
-      const dmg = inBlast ? randInt(0, 20) : 0;
-      if (dmg > 0) {
-        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-        log("The node explodes — you're caught in it! (-" + dmg + ")", "hurt");
-        updateHUD();
-      } else if (inBlast) {
-        log("The node bursts, but you're clear of the worst of it.");
-      }
-      const golem = monsters.find((x) => x.type === "golem" && x.hp > 0);
-      if (golem && dmg > 0) {
-        const heal = Math.min(golem.maxHp - golem.hp, dmg);
-        if (heal > 0) { golem.hp += heal; floatText(golem.x, golem.y, "+" + heal, "#8ed69a"); }
-      }
-      if (dead) return;
-    }
+  // Teleported, not walked: drop any walk path, including legs banked earlier in
+  // this same turn — a blink must never be drawn as a stroll across the floor.
+  function snapEntity(m) {
+    m.rx = m.x; m.ry = m.y; m.tx = m.x; m.ty = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; m.wp = null;
+    if (legLog && legLog.m === m) legLog.legs.length = 0;
   }
 
   function monsterAct(m) {
@@ -2765,15 +2723,24 @@
     }
     if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
     if (m.type === "healing_node") return;                       // passive — never acts, just shields the golem
-    if (m.type === "piper") { piperAct(m); return; }             // the Pied Piper has its own playbook
-    if (m.type === "golem") { golemAct(m); return; }              // the Stone Golem has its own playbook
+    // A boss with a registered playbook (bosses.js) runs its own turn instead
+    // of the default AI below — see docs/BOSSES.md.
+    const pb = _boss.playbookFor(m.type);
+    if (pb && pb.act) { pb.act(m); return; }
+    defaultAct(m);
+  }
+  function defaultAct(m) {
     // Maelon's Endless Dread: a terrified monster runs directly away from the player.
     if (m.fleeing > 0) {
       m.fleeing--;
       const dx = Math.sign(m.x - player.x) || (Math.random() < 0.5 ? 1 : -1);
       const dy = Math.sign(m.y - player.y) || (Math.random() < 0.5 ? 1 : -1);
       const nx = m.x + dx, ny = m.y + dy;
-      if (inBounds(nx, ny) && passable(nx, ny) && !isThorn(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
+      // canStep, not a bare passableFor: a panicking monster still can't squeeze
+      // diagonally past a corner. And the player occupies a tile like anything
+      // else — without this check a monster fleeing along your axis would flee
+      // straight *through* you.
+      if (canStep(m.x, m.y, dx, dy, m) && !shuns(nx, ny) && !monsterAt(nx, ny) && !(nx === player.x && ny === player.y)) moveMonster(m, nx, ny);
       return;
     }
     // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just the player.
@@ -2793,7 +2760,7 @@
       }
       // no other target closer than the player → fall through to normal player-seeking behavior
     }
-    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
+    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -2839,6 +2806,7 @@
   // fast weapon (cost < 1) monsters act less often, and a slow one (cost > 1)
   // lets them act more than once. Housekeeping (cooldowns, regen, spawns) ticks
   // once per player action regardless.
+  const MAX_ACTS_PER_TURN = 2;   // no monster may take more than this in one world turn
   function worldTurn(cost) {
     cost = cost == null ? 1 : cost;
     turns++;
@@ -2865,14 +2833,44 @@
       activeWalls = stillUp;
     }
     tickBombs(); if (dead) return;              // armed bomb traps count down and detonate
-    tickNodeBlasts(); if (dead) return;         // a killed Healing Node's telegraphed blast counts down
+    _boss.tick(); if (dead) return;             // a boss's delayed effects (e.g. the Golem's node blasts)
     panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
-      while (m.energy >= 1 && m.hp > 0 && !dead) {
-        m.energy -= 1;
+      // Record each tile this turn actually steps onto, so the renderer can walk
+      // the real path instead of interpolating straight through whatever the
+      // monster stepped around (see animEntity). moveMonster does the recording
+      // at the point of the move — reading m.x/m.y before and after each action
+      // instead only ever yields the tile the action ENDED on, so any action that
+      // moved more than once was drawn as a straight glide through the tiles in
+      // between.
+      const legs = [];
+      legLog = { m, legs };
+      // Hard cap on actions per world turn. A slow weapon costs the player more
+      // than 1, which hands every monster 2 actions — that is the intended rule,
+      // but a third would be unreadable however it is drawn, so banked energy
+      // beyond two acts is simply dropped rather than spent.
+      let acts = 0;
+      while (m.energy >= 1 && acts < MAX_ACTS_PER_TURN && m.hp > 0 && !dead) {
+        m.energy -= 1; acts++;
         monsterAct(m);
+      }
+      legLog = null;
+      m.acts = acts;   // actions taken this world turn — a monster may move at most
+                       // one tile per action, which tests/smoke.js asserts
+      if (m.energy >= 1) m.energy = 0;    // dropped, per the cap above — banking a whole
+                                          // action here just moved the burst to next turn
+      // No legs this turn means nothing to walk (it charged, blinked, or stood
+      // still), so clear the path rather than leaving last turn's behind — a
+      // stale wp outranks moveMs in animEntity, which turned a bear's long
+      // charge slide back into a single 120ms hop to a tile it already left.
+      m.wp = null;
+      if (legs.length) {
+        m.wp = legs;                       // ALWAYS walk the real tiles, one at a time
+        // Split one move's worth of time across the legs, so a two-step turn reads
+        // as two distinct hops without the world running at half speed.
+        m.legMs = MOVE_MS / legs.length;
       }
       if (dead) return;
     }
@@ -2881,6 +2879,11 @@
     searchForTraps();
     maybeReinforce();
     updateHotbar();
+    // Doors/bushes count as open while something stands in them, so the monsters
+    // that just moved have changed what you can see through. Recompute before the
+    // frame is drawn, otherwise a monster stepping into a doorway stays hidden
+    // until your NEXT action and then pops into view somewhere else entirely.
+    computeFOV();
     updateHUD();      // refresh vitals + enemy-in-sight counter every turn
   }
 
@@ -2902,7 +2905,7 @@
       for (const [dx, dy] of DIRS8) {
         const nx = cx + dx, ny = cy + dy;
         if (!explored[ny] || !explored[ny][nx]) continue;
-        if (!canStep(cx, cy, dx, dy) || isThorn(nx, ny)) continue;  // never auto-walk through thorns
+        if (!canStep(cx, cy, dx, dy) || tileProp(nx, ny, "noTravel")) continue;  // never auto-walk through no-travel hazards
         const k = key(nx, ny);
         if (prev.has(k)) continue;
         prev.set(k, [cx, cy]);
@@ -3269,6 +3272,18 @@
     ctx.fillStyle = shade("#c53a4a", b);
     ctx.beginPath(); ctx.arc(cx - tile * 0.12, cy + tile * 0.08, Math.max(1.2, tile * 0.05), 0, Math.PI * 2); ctx.fill();
   }
+  // Placeholder draws for the C1 hazard tiles — nothing places them yet (that's
+  // C2/C3), but a tile with no draw case would render as an invisible hole.
+  // Deeper and darker than the puddle this used to be — water is a barrier now, and
+  // it has to read as one at a glance, not as floor with a blue tint.
+  function drawWater(px, py, b) {
+    ctx.fillStyle = shade("#123a5e", b); ctx.fillRect(px, py, tile, tile);
+    ctx.fillStyle = shade("#1d5480", b * 0.9); ctx.fillRect(px, py + tile * 0.18, tile, tile * 0.16);
+    ctx.fillStyle = shade("#1d5480", b * 0.7); ctx.fillRect(px, py + tile * 0.62, tile, tile * 0.12);
+  }
+  function drawChasm(px, py, b) { ctx.fillStyle = shade("#0c0c10", b); ctx.fillRect(px, py, tile, tile); }
+  function drawRubble(px, py, b) { ctx.fillStyle = shade("#6f6a5e", b); ctx.fillRect(px, py, tile, tile); }
+  function drawGrass(px, py, b) { ctx.fillStyle = shade("#3a6b2e", b); ctx.fillRect(px, py, tile, tile); }
   // Wall-mounted torch: a bracket and a flickering flame, with a soft glow pool.
   function drawTorch(px, py, b, now) {
     const cx = px + tile / 2;
@@ -3471,19 +3486,53 @@
   // ---- Animation: smooth movement, attack lunges, hit flashes, floaters ----
   const MOVE_MS = 120, BUMP_MS = 130, HIT_MS = 170, FLOAT_MS = 850;
   const easeOut = (p) => 1 - (1 - p) * (1 - p);
+  // How far through an effect we are, clamped to 0..1. requestAnimationFrame hands
+  // the frame's START timestamp, which can be EARLIER than the performance.now()
+  // an effect stamped itself with inside the input handler that spawned it — so a
+  // brand-new effect gets a NEGATIVE age on its first frame. Unclamped that runs
+  // radii and tweens backwards past their start, and canvas throws outright on a
+  // negative arc radius ("The radius provided (-0.23) is negative"), which kills
+  // the whole frame.
+  const anim01 = (now, at, dur) => Math.min(1, Math.max(0, (now - at) / dur));
   let floaters = [];
+  // Anything faster than speed 1 banks enough energy to act twice in a single
+  // worldTurn — a bat (speed 1.1) does it about every tenth turn — and both acts
+  // resolve before a frame is ever drawn. Tweening straight from where it started
+  // to where it finished cuts the corner: two legal steps around a tree render as
+  // one diagonal glide straight through it, which reads as a monster teleporting
+  // through walls. So a turn that moves an entity more than once records the tiles
+  // it actually visited (`e.wp`), and the tween walks them a leg at a time.
+  // A charge is untouched: it covers several tiles in ONE act, really does travel
+  // in a straight line, and sets its own `moveMs` for the longer slide.
   function animEntity(e, now) {
-    if (e.rx === undefined) { e.rx = e.x; e.ry = e.y; e.lx = e.x; e.ly = e.y; e.ax = e.x; e.ay = e.y; e.at = 0; }
-    if (e.x !== e.lx || e.y !== e.ly) { e.ax = e.rx; e.ay = e.ry; e.at = now; e.lx = e.x; e.ly = e.y; }
-    if (reduceMotion) { e.rx = e.x; e.ry = e.y; return; }
-    const k = easeOut(Math.min(1, (now - e.at) / (e.moveMs || MOVE_MS)));
-    e.rx = e.ax + (e.x - e.ax) * k;
-    e.ry = e.ay + (e.y - e.ay) * k;
-    if (k >= 1 && e.moveMs) e.moveMs = 0;    // one-off slow slide (e.g. a charge) done → back to normal
+    if (e.rx === undefined) {
+      e.rx = e.x; e.ry = e.y; e.ax = e.x; e.ay = e.y; e.tx = e.x; e.ty = e.y; e.at = 0;
+    }
+    if (reduceMotion) { e.rx = e.x; e.ry = e.y; e.tx = e.x; e.ty = e.y; e.wp = null; return; }
+    const dur = (e.wp && e.wp.length && e.legMs) ? e.legMs : (e.moveMs || MOVE_MS);
+    if (e.wp && e.wp.length) {
+      // Mid multi-step turn: only start the next leg once this one has played out,
+      // so the path is drawn tile by tile instead of as one straight line.
+      if (now - e.at >= dur) {
+        e.ax = e.tx; e.ay = e.ty;
+        const next = e.wp.shift();
+        e.tx = next[0]; e.ty = next[1];
+        e.at = now;
+        if (!e.wp.length) e.legMs = 0;    // last leg played — back to normal timing
+      }
+    } else if (e.tx !== e.x || e.ty !== e.y) {
+      // Ordinary single move — retarget immediately from wherever we're drawn, so
+      // fast play stays responsive rather than queueing up lag.
+      e.ax = e.rx; e.ay = e.ry; e.tx = e.x; e.ty = e.y; e.at = now;
+    }
+    const k = easeOut(anim01(now, e.at, dur));
+    e.rx = e.ax + (e.tx - e.ax) * k;
+    e.ry = e.ay + (e.ty - e.ay) * k;
+    if (k >= 1 && e.moveMs && !(e.wp && e.wp.length)) e.moveMs = 0;   // one-off slow slide done
   }
   function bumpOffset(e, now) {
     if (reduceMotion || !e.bumpAt) return [0, 0];
-    const p = (now - e.bumpAt) / BUMP_MS;
+    const p = anim01(now, e.bumpAt, BUMP_MS);
     if (p >= 1) return [0, 0];
     const a = Math.sin(Math.PI * p) * 0.35;
     return [(e.bumpDx || 0) * a, (e.bumpDy || 0) * a];
@@ -3532,7 +3581,7 @@
   function flashScreen(color, dur) { if (!reduceMotion) screenFlash = { color: color || "#b491d6", at: performance.now(), dur: dur || 420 }; }
   function snapPlayer() {
     player.rx = player.x; player.ry = player.y;
-    player.lx = player.x; player.ly = player.y;
+    player.tx = player.x; player.ty = player.y; player.wp = null;
     player.ax = player.x; player.ay = player.y; player.at = 0;
   }
   function updateAnims(now) {
@@ -3547,10 +3596,22 @@
     if (screenFlash && now - screenFlash.at >= screenFlash.dur) screenFlash = null;
   }
 
+  // Boss playbooks live in bosses.js (a self-contained module) — wire it up
+  // here, after flash/floatText/etc. above so every dep it needs already
+  // exists (map/monsters/dead are reassigned wholesale elsewhere in this file,
+  // so those three go in as accessors rather than snapshot values).
+  const _boss = window.CantoriBosses({
+    getMap: () => map, getMonsters: () => monsters, isDead: () => dead,
+    player, WALL, attack, canSee, chaseLastSeen, cheb, computeFOV, die, flash, flashScreen,
+    floatText, inBounds, lineOfSight, log, monsterAt, patrolStep, randInt, sayMonster, shuns,
+    snapEntity, snapPlayer, spawnBurst, spawnNear, spawnProjectile, spawnStreak, stepMonsterTo,
+    tileProp, updateHUD, normalAct: defaultAct,
+  });
+
   // ---- Draw: dungeon view --------------------------------------------------
   function hitFlash(e, px, py, now) {
     if (!e.hitAt) return;
-    const p = (now - e.hitAt) / HIT_MS;
+    const p = anim01(now, e.hitAt, HIT_MS);
     if (p >= 1) return;
     ctx.fillStyle = "rgba(255,255,255," + ((1 - p) * 0.5).toFixed(3) + ")";
     ctx.fillRect(px, py, tile, tile);
@@ -3583,6 +3644,10 @@
           if (t === STAIRS) drawImg(SPRITES[biome.exitSprite || "stairs"], px, py);
           else if (t === DOOR) drawDoor(px, py, !doorOpen(mx, my), b);
           else if (t === THORN) drawThorn(px, py, b);
+          else if (t === WATER) drawWater(px, py, b);
+          else if (t === CHASM) drawChasm(px, py, b);
+          else if (t === RUBBLE) drawRubble(px, py, b);
+          else if (t === GRASS) drawGrass(px, py, b);
         }
         dim(px, py, 1 - b);                                   // torch falloff / memory
         if (!vis) { ctx.fillStyle = "rgba(70,90,130,0.10)"; ctx.fillRect(px, py, tile, tile); }
@@ -3684,6 +3749,7 @@
     // monsters (glide + lunge + flash; bosses render larger)
     for (const m of monsters) {
       if (m.hp <= 0 || !inBounds(m.x, m.y) || !visible[m.y][m.x]) continue;
+      if (tileProp(m.x, m.y, "conceals") && cheb(m.x, m.y, player.x, player.y) > 1) continue;   // tall grass hides it until you're beside it
       const [bx, by] = bumpOffset(m, now);
       const px = SX(m.rx + bx), py = SY(m.ry + by);
       if (!drawSpriteFit(SPRITES[m.type], px, py, m.boss ? 1.5 : 1)) {
@@ -3720,7 +3786,7 @@
 
     // ranged projectiles (a small glowing bolt travelling tile-to-tile)
     for (const pr of projectiles) {
-      const p = Math.min(1, (now - pr.at) / pr.dur);
+      const p = anim01(now, pr.at, pr.dur);
       const x = pr.x0 + (pr.x1 - pr.x0) * p, y = pr.y0 + (pr.y1 - pr.y0) * p;
       const cx = SX(x) + tile / 2, cy = SY(y) + tile / 2;
       ctx.fillStyle = pr.color;
@@ -3732,7 +3798,7 @@
 
     // bursts: an expanding ring plus sparks flung outward (teleports etc.)
     for (const bt of bursts) {
-      const p = Math.min(1, (now - bt.at) / bt.dur);
+      const p = anim01(now, bt.at, bt.dur);
       const cx = SX(bt.x) + tile / 2, cy = SY(bt.y) + tile / 2;
       ctx.strokeStyle = bt.color; ctx.lineWidth = Math.max(1.5, tile * 0.08);
       ctx.globalAlpha = Math.max(0, 1 - p);
@@ -3748,7 +3814,7 @@
 
     // motion streaks: a fat tapering dash from start tile to end tile (charge / arrow)
     for (const s of streaks) {
-      const p = Math.min(1, (now - s.at) / s.dur);
+      const p = anim01(now, s.at, s.dur);
       const x0 = SX(s.x0) + tile / 2, y0 = SY(s.y0) + tile / 2;
       const x1 = SX(s.x1) + tile / 2, y1 = SY(s.y1) + tile / 2;
       ctx.globalAlpha = Math.max(0, 1 - p);
@@ -3763,7 +3829,7 @@
 
     // spirals: an unfurling twist (the teleport trap's signature)
     for (const s of spirals) {
-      const p = Math.min(1, (now - s.at) / s.dur);
+      const p = anim01(now, s.at, s.dur);
       const cx = SX(s.x) + tile / 2, cy = SY(s.y) + tile / 2;
       ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(1.5, tile * 0.09);
       ctx.globalAlpha = Math.max(0, 1 - p);
@@ -3783,7 +3849,7 @@
     ctx.textBaseline = "middle";
     ctx.font = `700 ${Math.max(11, Math.floor(tile * 0.5))}px ${bodyFont()}`;
     for (const f of floaters) {
-      const p = (now - f.at) / FLOAT_MS;
+      const p = anim01(now, f.at, FLOAT_MS);
       const fx = SX(f.x) + tile / 2, fy = SY(f.y) + tile / 2 - p * tile * 0.9;
       ctx.globalAlpha = Math.max(0, 1 - p);
       ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillText(f.text, fx + 1, fy + 1);
@@ -3794,7 +3860,7 @@
     // monster speech: a taunt in a small dark bubble above the speaker
     for (const s of speeches) {
       const m = s.m; if (!m || m.hp <= 0) continue;
-      const p = (now - s.at) / SPEECH_MS;
+      const p = anim01(now, s.at, SPEECH_MS);
       const rise = Math.min(1, p * 4);                       // pop up quickly, then hold
       const bx = SX(m.rx != null ? m.rx : m.x) + tile / 2;
       const by = SY(m.ry != null ? m.ry : m.y) - tile * (0.35 + rise * 0.15);
@@ -3819,7 +3885,7 @@
 
     // teleport whoosh: a brief full-view colour wash
     if (screenFlash) {
-      const p = Math.min(1, (now - screenFlash.at) / screenFlash.dur);
+      const p = anim01(now, screenFlash.at, screenFlash.dur);
       ctx.globalAlpha = Math.max(0, 0.55 * (1 - p));
       ctx.fillStyle = screenFlash.color;
       ctx.fillRect(0, 0, viewCols * tile, viewRows * tile);
@@ -3870,6 +3936,10 @@
         if (t === STAIRS) { mctx.fillStyle = been ? "#f6b845" : "#7c6231"; mctx.fillRect(px, py, sz, sz); }
         else if (t === DOOR) { mctx.fillStyle = been ? "#8a6a3a" : "#4e3e24"; mctx.fillRect(px, py, sz, sz); }
         else if (t === THORN) { mctx.fillStyle = been ? "#4a6a34" : "#2c3d20"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === WATER) { mctx.fillStyle = been ? "#3a6a9a" : "#1e3a52"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === CHASM) { mctx.fillStyle = been ? "#1a1a1e" : "#0c0c0e"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === RUBBLE) { mctx.fillStyle = been ? "#8a8578" : "#4e4a40"; mctx.fillRect(px, py, sz, sz); }
+        else if (t === GRASS) { mctx.fillStyle = been ? "#4a7a3a" : "#2a4520"; mctx.fillRect(px, py, sz, sz); }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -4240,7 +4310,7 @@
     if (passable(player.x, player.y) && !itemAt(player.x, player.y)) return { x: player.x, y: player.y };
     for (const [dx, dy] of DIRS8) {
       const x = player.x + dx, y = player.y + dy;
-      if (passable(x, y) && map[y][x] !== THORN && !itemAt(x, y)) return { x, y };
+      if (passable(x, y) && !shuns(x, y) && !itemAt(x, y)) return { x, y };
     }
     return null;
   }
@@ -4379,36 +4449,100 @@
   let pendingSkill = null;
   let charOpen = false;
   let charTab = "stats";
+  let charSelSkill = null;   // id of the node selected in the Skills tree, or null
 
   // ---- Skills --------------------------------------------------------------
-  // Usable skills are built from the class's skill tree. A tree cell becomes a
-  // real skill once it carries a `ranks` array (per-level mechanics); cells with
-  // only description text are authoring scaffold and are skipped. `kind` picks the
-  // behavior: "rush" (directional dash), "spin" (area strike), or "passive" (a
-  // continuous modifier). Passives may set `when` = a weapon subtype they require.
+  // Usable skills are built from the class's skill tree: a flat list of nodes,
+  // each with a stable `id` and grid-ish `x`/`y` layout coordinates. A node
+  // becomes a real skill once it carries a `ranks` array (per-level mechanics);
+  // nodes with only description text are authoring scaffold and are skipped.
+  // `kind` picks the behavior: "rush" (directional dash), "spin" (area strike),
+  // or "passive" (a continuous modifier). Passives may set `when` = a weapon
+  // subtype they require.
   // Falls back to a class's legacy `skills` map if the tree wires nothing yet.
-  let _skillCache = { cls: null, skills: {}, byPos: {} };
+
+  // Trees were once a fixed 5×5 grid, and a prerequisite named a cell by its
+  // [tier, slot] coordinate. The grid was the only thing stopping trees from
+  // being real trees: a coordinate can only point at a cell that exists in the
+  // row above, so a node with two parents from different rows, a diamond, or two
+  // branches of unequal depth were all inexpressible. Nodes carry ids instead,
+  // and prerequisites name ids.
+  //   node = { id, x, y, name, icon, kind, when, desc, levels, ranks,
+  //            req: ["id", …], reqAny: [["id", minRank], …] }
+  // `key` is accepted as an alias for `id` — the runtime skill keys that
+  // player.skills, the hotbar and the dev hooks are keyed by never changed; only
+  // the way prerequisites address each other did.
+  //
+  // normalizeTree accepts EITHER shape and always hands back the flat one. It is
+  // cheap and it stays forever: editor.html rewrites data.js wholesale, so a
+  // stale draft in localStorage — or an old data.js out of git history — must
+  // still open rather than brick the Skills tab.
+  const TREE_COLS = 5;   // only a fallback layout width, for nodes authored without x/y
+  const skillSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  function normalizeTree(raw) {
+    if (!Array.isArray(raw)) return [];
+    const nodes = [], byPos = {};
+    if (raw.some((row) => Array.isArray(row))) {   // old shape: rows of cells, blanks are null
+      raw.forEach((tier, y) => (Array.isArray(tier) ? tier : []).forEach((cell, x) => {
+        if (!cell || !cell.name) return;
+        const n = Object.assign({}, cell);
+        n.id = n.id || n.key || skillSlug(n.name);
+        n.x = x; n.y = y;                          // the grid WAS the layout — keep it as-is
+        byPos[y + "," + x] = n.id;
+        nodes.push(n);
+      }));
+    } else {
+      // A node written by hand may omit its coordinates; lay those out in reading
+      // order so the tree still draws as something rather than stacking at 0,0.
+      raw.forEach((cell, i) => {
+        if (!cell || !(cell.id || cell.key || cell.name)) return;
+        const n = Object.assign({}, cell);
+        n.id = n.id || n.key || skillSlug(n.name);
+        n.x = typeof n.x === "number" ? n.x : i % TREE_COLS;
+        n.y = typeof n.y === "number" ? n.y : (i / TREE_COLS) | 0;
+        nodes.push(n);
+      });
+    }
+    // Canonicalize prerequisites so everything downstream sees exactly one shape:
+    // both req and reqAny become [["id", minRank], …]. An entry may arrive as an
+    // old [tier, slot(, minRank)] coordinate (numbers), a bare "id", or ["id"]
+    // with the rank left implicit — all three mean the same thing, rank 1. A rank
+    // of the string "max" means that skill's own top rank, so a gate authored as
+    // "maxed out" stays maxed out if the skill later gains a fifth rank. A
+    // reference that resolves to nothing keeps an empty id, so the node stays
+    // locked exactly as it did when a coordinate pointed at a blank cell.
+    const toRef = (r) => {
+      if (typeof r === "string") return [r, 1];
+      if (!Array.isArray(r) || !r.length) return null;
+      if (typeof r[0] === "number") return [byPos[r[0] + "," + r[1]] || "", r[2] || 1];
+      return [String(r[0] || ""), r[1] || 1];
+    };
+    for (const n of nodes) {
+      n.req = (n.req || []).map(toRef).filter(Boolean);
+      n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
+    }
+    return nodes;
+  }
+  let _skillCache = { cls: null, skills: {}, byId: {} };
   function treeSkills(cls) {
     if (_skillCache.cls === cls) return _skillCache;
     const c = DATA.classes[cls] || {};
-    const tree = Array.isArray(c.skillTree) ? c.skillTree : [];
-    const skills = {}, byPos = {};
-    const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-    tree.forEach((tier, t) => (tier || []).forEach((cell, s) => {
-      if (!cell || !cell.name || !Array.isArray(cell.ranks) || !cell.ranks.length) return;
-      const key = cell.key || slug(cell.name);
-      skills[key] = {
-        name: cell.name, icon: cell.icon || "✦", desc: cell.desc || "",
-        kind: cell.kind || "passive", when: cell.when || null,
-        max: cell.ranks.length, ranks: cell.ranks, levels: cell.levels || [],
-        req: cell.req || [], reqAny: cell.reqAny || [], pos: [t, s],
+    const skills = {}, byId = {};
+    for (const n of normalizeTree(c.skillTree)) {
+      byId[n.id] = n;                              // every node, wired or scaffold — the graph index
+      if (!n.name || !Array.isArray(n.ranks) || !n.ranks.length) continue;
+      skills[n.id] = {
+        name: n.name, icon: n.icon || "✦", desc: n.desc || "",
+        kind: n.kind || "passive", when: n.when || null,
+        max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
+        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0,
+        minLevel: n.minLevel || 0, pos: { x: n.x, y: n.y },
       };
-      byPos[t + "," + s] = key;
-    }));
+    }
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
       for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], pos: null }, c.skills[k]);
     }
-    _skillCache = { cls, skills, byPos };
+    _skillCache = { cls, skills, byId };
     return _skillCache;
   }
   // Active abilities unlocked by a boon (not part of the class skill tree). Each
@@ -4460,24 +4594,48 @@
   }
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
-  function skillAtPos(t, s) { return treeSkills(player.cls).byPos[t + "," + s]; }
-  // req: every listed [tier,slot] must be learned (rank >= 1) — an AND of positions.
-  // reqAny: at least ONE listed [tier,slot,minRank] must reach minRank (default 1) —
+  // req: every listed [id, minRank] must be at minRank — an AND.
+  // reqAny: at least ONE listed [id, minRank] must reach minRank (default 1) —
   // an OR, used for things like "4 points in any one of the first-tier skills."
+  // normalizeTree() has already rewritten both into these canonical id forms, so
+  // there is one lookup here whichever shape the tree was authored in, and a
+  // prerequisite can name any node in the tree rather than only a grid neighbour.
+  // Total points sunk into this class's tree. player.statPoints is what's UNSPENT,
+  // which is the opposite of what a "12 points in the tree" gate wants.
+  const skillPointsSpent = () => Object.keys(player.skills || {}).reduce((n, k) => n + (player.skills[k].rank || 0), 0);
+  // How many ranks a prerequisite reference actually demands. "max" means the
+  // required skill's own top rank, so "Spin, maxed" survives Spin gaining a rank.
+  function reqRank(id, minRank) {
+    if (minRank !== "max") return minRank || 1;
+    const sk = classSkills();
+    return sk[id] ? sk[id].max : 1;
+  }
+  const refMet = ([id, minRank]) => { const st = player.skills[id]; return !!(st && st.rank >= reqRank(id, minRank)); };
   function prereqsMet(d) {
+    if (d.reqPoints && skillPointsSpent() < d.reqPoints) return false;   // a deep-tree gate, not a named prerequisite
+    if (d.minLevel && player.level < d.minLevel) return false;           // a node the character grows into, not one they earn
     const req = d.req || [];
-    if (req.length && !req.every(([t, s]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= 1); })) return false;
+    if (req.length && !req.every(refMet)) return false;
     const reqAny = d.reqAny || [];
-    if (reqAny.length) {
-      return reqAny.some(([t, s, minRank]) => { const k = skillAtPos(t, s); const st = k && player.skills[k]; return !!(st && st.rank >= (minRank || 1)); });
-    }
+    if (reqAny.length) return reqAny.some(refMet);
     return true;
   }
   function prereqNames(d) {
-    const names = (d.req || []).map(([t, s]) => { const k = skillAtPos(t, s); return (k && classSkills()[k]) ? classSkills()[k].name : null; }).filter(Boolean);
+    const sk = classSkills();
+    // A lock has to say what would open it — "Spin" and "Spin, maxed" are very
+    // different asks, and a player who can't tell them apart assumes a bug.
+    const refName = ([id, minRank]) => {
+      const nm = sk[id] ? sk[id].name : null;
+      if (!nm) return null;
+      const need = reqRank(id, minRank);
+      return need <= 1 ? nm : nm + (minRank === "max" || (sk[id] && need >= sk[id].max) ? ", maxed" : " (rank " + need + ")");
+    };
+    const names = (d.req || []).map(refName).filter(Boolean);
+    if (d.reqPoints) names.unshift(d.reqPoints + " points spent in the tree (you have " + skillPointsSpent() + ")");
+    if (d.minLevel) names.unshift("character level " + d.minLevel + " (you are " + player.level + ")");
     const reqAny = d.reqAny || [];
     if (reqAny.length) {
-      const parts = reqAny.map(([t, s, minRank]) => { const k = skillAtPos(t, s); const nm = (k && classSkills()[k]) ? classSkills()[k].name : null; return nm ? (nm + " (rank " + (minRank || 1) + ")") : null; }).filter(Boolean);
+      const parts = reqAny.map(refName).filter(Boolean);
       if (parts.length) names.push(parts.join(" or "));
     }
     return names;
@@ -4563,7 +4721,7 @@
       if (m) {
         const pdx = Math.sign(x - player.x) || (horiz ? 0 : 1), pdy = Math.sign(y - player.y) || (horiz ? 1 : 0);
         const nx = x + pdx, ny = y + pdy;
-        if (inBounds(nx, ny) && passable(nx, ny) && !isThorn(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
+        if (inBounds(nx, ny) && passableFor(m, nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
         else continue;
       }
       activeWalls.push({ x, y, turns: 21 });   // +1: this cast's own worldTurn() below ticks it once already
@@ -4607,7 +4765,7 @@
     pendingSkill = null;
     const m = monsterAt(tx, ty);
     if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
-    m.berserk = ANGER_TURNS; m.aware = true; m.lastSeen = { x: player.x, y: player.y };
+    m.berserk = ANGER_TURNS; m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false;
     floatText(m.x, m.y, "😡", "#e0685a");
     log("Kethara's Anger consumes the " + monName(m) + " — it turns on everything nearby.", "hit");
     player.skills[key].cd = Math.max(0, 100 - eff("RES"));
@@ -4784,6 +4942,10 @@
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
         t === THORN ? "A wall of thorns — you can force through, but it'll draw blood. Something waits beyond." :
+        t === WATER ? "Deep water — too deep to wade. You'll have to go around; winged things won't." :
+        t === CHASM ? "A chasm — step in and you'll fall straight through to the floor below." :
+        t === RUBBLE ? "Loose rubble — broken stone underfoot." :
+        t === GRASS ? "Tall grass — thick enough to hide in." :
         "Open ground.");
   }
 
@@ -4799,6 +4961,9 @@
     if (!body) return;
     body.innerHTML = charTab === "stats" ? charStatsHTML() : charTab === "skills" ? charSkillsHTML() : charBoonsHTML();
     if (charTab === "skills") {
+      for (const el of body.querySelectorAll(".sknode-wrap")) {
+        el.addEventListener("click", () => { charSelSkill = el.getAttribute("data-key"); renderChar(); });
+      }
       for (const key of Object.keys(classSkills())) {
         const btn = document.getElementById("upg-" + key);
         if (btn) btn.addEventListener("click", () => learnSkill(key));
@@ -4829,44 +4994,113 @@
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
+  // Grid layout for the skill tree: nodes at their authored x/y (see
+  // normalizeTree), one column per branch, spaced a node-diameter apart so
+  // there's room for an arrow between rows. A skill with no x/y (a boon
+  // active, granted outside the tree) gets stacked in reading order on a
+  // row of its own below the real tree rather than overlapping node 0,0.
+  function skillTreeLayout(sk) {
+    const NODE = 88, COL = 176, ROW = 176;
+    const keys = Object.keys(sk);
+    const wired = [], loose = [];
+    let maxTreeY = -1;
+    for (const key of keys) {
+      const d = sk[key];
+      if (d.pos && typeof d.pos.x === "number" && typeof d.pos.y === "number") { wired.push(key); maxTreeY = Math.max(maxTreeY, d.pos.y); }
+      else loose.push(key);
+    }
+    const looseRow = maxTreeY + 1;
+    const pos = {};
+    let maxX = 0, maxY = maxTreeY;
+    for (const key of wired) { const d = sk[key]; pos[key] = { x: d.pos.x, y: d.pos.y }; maxX = Math.max(maxX, d.pos.x); }
+    loose.forEach((key, i) => { pos[key] = { x: i, y: looseRow }; maxX = Math.max(maxX, i); maxY = Math.max(maxY, looseRow); });
+    return {
+      pos, NODE,
+      cx: (key) => pos[key].x * COL + COL / 2,
+      cy: (key) => pos[key].y * ROW + ROW / 2,
+      width: (maxX + 1) * COL, height: (maxY + 1) * ROW + 30,
+    };
+  }
+  function skillFmt(r) {
+    const p = [];
+    if (r.dmg != null) p.push((r.dmg >= 0 ? "+" : "") + r.dmg + " dmg");
+    if (r.acc != null) p.push("+" + r.acc + " acc");
+    if (r.eva != null) p.push("+" + r.eva + " eva");
+    if (r.range) p.push("range " + r.range);
+    if (r.stun) p.push(Math.round(r.stun * 100) + "% stun");
+    if (r.freeAction) p.push("free action");
+    if (r.cd != null) p.push(r.cd + "t cd");
+    return p.join(", ") || "—";
+  }
+  // The lower detail card for whichever node is selected — same markup/CSS
+  // (`.skillrow`) the old flat list used, just for one skill at a time.
+  function charSkillDetailHTML(sk, key) {
+    if (!key || !sk[key]) return `<div class="cline">Tap a node above to see what it does.</div>`;
+    const d = sk[key], st = player.skills[key];
+    const nextDef = st.rank < d.max ? d.ranks[st.rank] : null;
+    const levelGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
+    const prereqLocked = st.rank === 0 && !prereqsMet(d);
+    const locked = prereqLocked || !!levelGate;
+    const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || skillFmt(d.ranks[st.rank - 1])) : null;
+    const nextTxt = st.rank < d.max ? (d.levels[st.rank] || skillFmt(d.ranks[st.rank])) : "Maxed.";
+    const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
+    const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
+    const kindTag = d.kind === "passive" ? " · passive" : "";
+    const reqParts = [];
+    if (prereqLocked) reqParts.push(prereqNames(d).join(", ") || "a prerequisite");
+    if (levelGate) reqParts.push("character level " + levelGate);
+    const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${reqParts.join(", ")}</div>` : "";
+    return `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
+      `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
+      `<div class="sdesc">${d.desc}</div>` + reqTxt +
+      `<div class="snext">${curTxt ? "Now: " + curTxt + "<br>" : ""}${st.rank < d.max ? "Next: " + nextTxt : nextTxt}</div>` +
+      `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
+  }
   function charSkillsHTML() {
     const sk = classSkills();
     const keys = Object.keys(sk);
     if (!keys.length) return `<div class="cline">This class has no skills yet.</div>`;
-    const fmt = (r) => {
-      const p = [];
-      if (r.dmg != null) p.push((r.dmg >= 0 ? "+" : "") + r.dmg + " dmg");
-      if (r.acc != null) p.push("+" + r.acc + " acc");
-      if (r.eva != null) p.push("+" + r.eva + " eva");
-      if (r.range) p.push("range " + r.range);
-      if (r.stun) p.push(Math.round(r.stun * 100) + "% stun");
-      if (r.freeAction) p.push("free action");
-      if (r.cd != null) p.push(r.cd + "t cd");
-      return p.join(", ") || "—";
+    if (charSelSkill && !sk[charSelSkill]) charSelSkill = null;
+    const layout = skillTreeLayout(sk);
+    const stateOf = (key) => {
+      const d = sk[key], st = player.skills[key];
+      if (st.rank >= 1) return "invested";
+      return prereqsMet(d) ? "available" : "locked";
     };
-    let html = `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>`;
+    let nodesHtml = "";
     for (const key of keys) {
       const d = sk[key], st = player.skills[key];
-      const nextDef = st.rank < d.max ? d.ranks[st.rank] : null;
-      const levelGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
-      const prereqLocked = st.rank === 0 && !prereqsMet(d);
-      const locked = prereqLocked || !!levelGate;
-      const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || fmt(d.ranks[st.rank - 1])) : null;
-      const nextTxt = st.rank < d.max ? (d.levels[st.rank] || fmt(d.ranks[st.rank])) : "Maxed.";
-      const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
-      const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
-      const kindTag = d.kind === "passive" ? " · passive" : "";
-      const reqParts = [];
-      if (prereqLocked) reqParts.push(prereqNames(d).join(", ") || "a prerequisite");
-      if (levelGate) reqParts.push("character level " + levelGate);
-      const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${reqParts.join(", ")}</div>` : "";
-      html += `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
-        `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
-        `<div class="sdesc">${d.desc}</div>` + reqTxt +
-        `<div class="snext">${curTxt ? "Now: " + curTxt + "<br>" : ""}${st.rank < d.max ? "Next: " + nextTxt : nextTxt}</div>` +
-        `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
+      const x = layout.cx(key) - layout.NODE / 2, y = layout.cy(key) - layout.NODE / 2;
+      const sel = key === charSelSkill;
+      const icon = d.iconSprite ? `<img class="skicon-img" src="${d.iconSprite}" alt="">` : `<span class="skicon">${d.icon}</span>`;
+      nodesHtml += `<div class="sknode-wrap" data-key="${key}" style="left:${x}px;top:${y}px;width:${layout.NODE}px">` +
+        (sel ? `<div class="sksel" style="width:${layout.NODE + 16}px;height:${layout.NODE + 16}px;left:-8px;top:-8px"></div>` : "") +
+        `<div class="sknode st-${stateOf(key)}">${icon}</div>` +
+        `<div class="skbadge">${st.rank}/${d.max}</div></div>`;
     }
-    return html;
+    // One arrow per prerequisite reference (req = AND, reqAny = OR — both
+    // drawn the same way; the arrow itself only tells you whether *that*
+    // source is invested, not whether it's enough to unlock the target).
+    let arrowsHtml = "";
+    for (const key of keys) {
+      const d = sk[key];
+      const refs = (d.req || []).concat(d.reqAny || []).map((r) => r[0]);
+      for (const srcKey of refs) {
+        if (!sk[srcKey] || !layout.pos[srcKey]) continue;
+        const invested = player.skills[srcKey] && player.skills[srcKey].rank >= 1;
+        const cls = invested ? "amber" : "grey";
+        const x1 = layout.cx(srcKey), y1 = layout.cy(srcKey) + layout.NODE / 2;
+        const x2 = layout.cx(key), y2 = layout.cy(key) - layout.NODE / 2;
+        arrowsHtml += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="skarrow ${cls}" marker-end="url(#skarrow-${cls})"/>`;
+      }
+    }
+    return `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>` +
+      `<div class="skilltree-wrap"><div class="skilltree" style="width:${layout.width}px;height:${layout.height}px">` +
+      `<svg class="skilltree-svg" width="${layout.width}" height="${layout.height}"><defs>` +
+      `<marker id="skarrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead amber"/></marker>` +
+      `<marker id="skarrow-grey" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead grey"/></marker>` +
+      `</defs>${arrowsHtml}</svg>${nodesHtml}</div></div>` +
+      charSkillDetailHTML(sk, charSelSkill);
   }
   function charBoonsHTML() {
     const boons = DATA.boons || {};
@@ -5108,6 +5342,12 @@
     throwSkillAt: (key, x, y) => executeThrowSkill(key, x, y),
     setClass: (key) => { applyClass(key); renderChar(); updateHotbar(); updateHUD(); },
     anims: () => ({ projectiles: projectiles.length, streaks: streaks.length, spirals: spirals.length, bursts: bursts.length }),
+    // Where each monster is actually being DRAWN (rx/ry) versus where it logically
+    // is (x/y), plus any queued movement legs — so animation can be tested, not
+    // just eyeballed.
+    renderPos: () => monsters.filter((m) => m.hp > 0).map((m) => ({
+      type: m.type, x: m.x, y: m.y, rx: m.rx, ry: m.ry, wp: (m.wp || []).slice(),
+    })),
     rooms: () => lastRooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
     attachInfo: () => ({ attached: lastAttach, total: lastRooms.length }),
     grant: (n) => { player.statPoints += (n || 1); renderChar(); updateHotbar(); },
@@ -5150,6 +5390,10 @@
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    passableAt: (x, y) => passable(x, y),                          // on foot — deep water says no
+    passableFlying: (x, y) => passableFor({ flying: true }, x, y),
+    tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),
+    tileDeclared: (t) => Object.prototype.hasOwnProperty.call(TILE, t),
     pan: (dxPx, dyPx) => panBy(dxPx, dyPx),
     addXp: (n) => gainXP(n || 0),
     doorOpenAt: (x, y) => doorOpen(x, y),
@@ -5168,20 +5412,40 @@
     confirmUpgradeOn: (slotKey) => { const it = player[slotKey]; if (pendingUpgrade && it && GEAR[it.key].cat !== "trinket") confirmUpgrade(it); },
     cancelUpgrade: () => { pendingUpgrade = false; },
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
-    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },
-    golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? golemShield(g) : 0; },
+    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; m.searching = false; m.searchTurns = null; m.searchSpot = null; } },
+    golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? _boss.golemShield(g) : 0; },
     forceSlam: (i) => { const m = monsters[i]; if (m) { m.slamCd = 0; m.aware = true; } },
-    nodeBlasts: () => pendingNodeBlasts.map((b) => Object.assign({}, b)),
+    nodeBlasts: () => _boss.nodeBlasts(),
     setMonsterHp: (i, hp) => { const m = monsters[i]; if (m) m.hp = Math.min(hp, m.maxHp); },
     placeMonster: (i, x, y) => { const m = monsters[i]; if (m) { m.x = x; m.y = y; } },
     bossRoomRect: () => (bossRoom ? { x: bossRoom.x, y: bossRoom.y, w: bossRoom.w, h: bossRoom.h } : null),
     nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
-    stairsAt: () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; },
+    stairsAt: () => findStairs(),
+    // Can the player physically walk to (tx, ty)? Terrain-only flood fill, the same
+    // one the generator uses to guarantee connectivity — so tests/smoke.js can prove
+    // a floor is completable without depending on monster positions or explored state.
+    reach: (tx, ty, blockThorns) => inBounds(tx, ty) && floodReach(player.x, player.y, !!blockThorns).has(ty * MAP_W + tx),
     step: (dx, dy) => playerAct(dx, dy),
     place: (x, y) => { if (passable(x, y)) { player.x = x; player.y = y; computeFOV(); snapPlayer(); } },
     tap: (x, y) => walkTo(x, y),
     walking: () => walkPath.length,
-    tick: () => { if (!dead) worldTurn(); },
+    tick: (cost) => { if (!dead) worldTurn(cost); },   // pass a cost to exercise difficult terrain
+    // Take one world turn and report the exact tiles each monster walked. A
+    // movement bug shows up here as a chain with a gap in it — two tiles that
+    // aren't neighbours — which is precisely what the renderer would then have
+    // to draw as a glide straight through the wall, bush or player in between.
+    // Charges and teleports deliberately record no legs (they set their own
+    // animation), so the caller skips those.
+    tickPaths: (cost) => {
+      if (dead) return [];
+      const before = monsters.filter((m) => m.hp > 0).map((m) => ({ m, x: m.x, y: m.y }));
+      worldTurn(cost);
+      return before.filter((b) => b.m.hp > 0).map((b) => ({
+        type: b.m.type, boss: !!b.m.boss, charge: !!b.m.charge, acts: b.m.acts | 0,
+        from: [b.x, b.y], to: [b.m.x, b.m.y],
+        legs: (b.m.wp || []).map((t) => t.slice()),
+      }));
+    },
     turns: () => turns,
     // ---- Boon-system test hooks ----
     setKillCount: (n) => { player.killCount = n; },

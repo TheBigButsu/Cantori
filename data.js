@@ -995,26 +995,8 @@ window.CANTORI_DATA = {
       "spawnEvery": 25,
       "spawnCap": 100,
       "terrain": {
-        "water": {
-          "pools": [
-            1,
-            2
-          ],
-          "size": [
-            4,
-            10
-          ]
-        },
-        "grass": {
-          "patches": [
-            2,
-            4
-          ],
-          "size": [
-            3,
-            6
-          ]
-        }
+        "water": { "pools": [1, 2], "size": [4, 10] },
+        "grass": { "patches": [2, 4], "size": [3, 6] }
       }
     },
     {
@@ -1032,16 +1014,7 @@ window.CANTORI_DATA = {
       "boss": "golem",
       "door": "door",
       "terrain": {
-        "rubble": {
-          "patches": [
-            2,
-            4
-          ],
-          "size": [
-            3,
-            7
-          ]
-        }
+        "rubble": { "patches": [2, 4], "size": [3, 7] }
       }
     },
     {
@@ -1086,16 +1059,7 @@ window.CANTORI_DATA = {
       "final": true,
       "door": "door",
       "terrain": {
-        "water": {
-          "pools": [
-            1,
-            3
-          ],
-          "size": [
-            5,
-            14
-          ]
-        }
+        "water": { "pools": [1, 3], "size": [5, 14] }
       }
     }
   ],
@@ -1332,10 +1296,7 @@ window.CANTORI_DATA = {
             "A kill during the rage delays that decay by (character level) turns."
           ],
           "req": [
-            [
-              "smite",
-              1
-            ]
+            "smite"
           ]
         },
         {
@@ -1352,10 +1313,7 @@ window.CANTORI_DATA = {
             "Cooldown 70, and healing beyond your maximum becomes a shield."
           ],
           "req": [
-            [
-              "smite",
-              1
-            ]
+            "smite"
           ]
         },
         {
