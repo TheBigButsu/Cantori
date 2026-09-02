@@ -4679,11 +4679,13 @@
       });
     }
     // Canonicalize prerequisites so everything downstream sees exactly one shape:
-    // req = ["id", …], reqAny = [["id", minRank], …]. An entry may arrive as an
+    // both req and reqAny become [["id", minRank], …]. An entry may arrive as an
     // old [tier, slot(, minRank)] coordinate (numbers), a bare "id", or ["id"]
-    // with the rank left implicit — all three mean the same thing. A reference
-    // that resolves to nothing keeps an empty id, so the node stays locked
-    // exactly as it did when a coordinate pointed at a blank cell.
+    // with the rank left implicit — all three mean the same thing, rank 1. A rank
+    // of the string "max" means that skill's own top rank, so a gate authored as
+    // "maxed out" stays maxed out if the skill later gains a fifth rank. A
+    // reference that resolves to nothing keeps an empty id, so the node stays
+    // locked exactly as it did when a coordinate pointed at a blank cell.
     const toRef = (r) => {
       if (typeof r === "string") return [r, 1];
       if (!Array.isArray(r) || !r.length) return null;
@@ -4691,7 +4693,7 @@
       return [String(r[0] || ""), r[1] || 1];
     };
     for (const n of nodes) {
-      n.req = (n.req || []).map(toRef).filter(Boolean).map((r) => r[0]);
+      n.req = (n.req || []).map(toRef).filter(Boolean);
       n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
     }
     return nodes;
@@ -4708,7 +4710,8 @@
         name: n.name, icon: n.icon || "✦", desc: n.desc || "",
         kind: n.kind || "passive", when: n.when || null,
         max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
-        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0, pos: { x: n.x, y: n.y },
+        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0,
+        minLevel: n.minLevel || 0, pos: { x: n.x, y: n.y },
       };
     }
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
@@ -4766,7 +4769,7 @@
   }
   function skillDef(key) { return classSkills()[key]; }
   function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
-  // req: every listed id must be learned (rank >= 1) — an AND.
+  // req: every listed [id, minRank] must be at minRank — an AND.
   // reqAny: at least ONE listed [id, minRank] must reach minRank (default 1) —
   // an OR, used for things like "4 points in any one of the first-tier skills."
   // normalizeTree() has already rewritten both into these canonical id forms, so
@@ -4775,23 +4778,39 @@
   // Total points sunk into this class's tree. player.statPoints is what's UNSPENT,
   // which is the opposite of what a "12 points in the tree" gate wants.
   const skillPointsSpent = () => Object.keys(player.skills || {}).reduce((n, k) => n + (player.skills[k].rank || 0), 0);
+  // How many ranks a prerequisite reference actually demands. "max" means the
+  // required skill's own top rank, so "Spin, maxed" survives Spin gaining a rank.
+  function reqRank(id, minRank) {
+    if (minRank !== "max") return minRank || 1;
+    const sk = classSkills();
+    return sk[id] ? sk[id].max : 1;
+  }
+  const refMet = ([id, minRank]) => { const st = player.skills[id]; return !!(st && st.rank >= reqRank(id, minRank)); };
   function prereqsMet(d) {
     if (d.reqPoints && skillPointsSpent() < d.reqPoints) return false;   // a deep-tree gate, not a named prerequisite
+    if (d.minLevel && player.level < d.minLevel) return false;           // a node the character grows into, not one they earn
     const req = d.req || [];
-    if (req.length && !req.every((id) => { const st = player.skills[id]; return !!(st && st.rank >= 1); })) return false;
+    if (req.length && !req.every(refMet)) return false;
     const reqAny = d.reqAny || [];
-    if (reqAny.length) {
-      return reqAny.some(([id, minRank]) => { const st = player.skills[id]; return !!(st && st.rank >= (minRank || 1)); });
-    }
+    if (reqAny.length) return reqAny.some(refMet);
     return true;
   }
   function prereqNames(d) {
     const sk = classSkills();
-    const names = (d.req || []).map((id) => (sk[id] ? sk[id].name : null)).filter(Boolean);
+    // A lock has to say what would open it — "Spin" and "Spin, maxed" are very
+    // different asks, and a player who can't tell them apart assumes a bug.
+    const refName = ([id, minRank]) => {
+      const nm = sk[id] ? sk[id].name : null;
+      if (!nm) return null;
+      const need = reqRank(id, minRank);
+      return need <= 1 ? nm : nm + (minRank === "max" || (sk[id] && need >= sk[id].max) ? ", maxed" : " (rank " + need + ")");
+    };
+    const names = (d.req || []).map(refName).filter(Boolean);
     if (d.reqPoints) names.unshift(d.reqPoints + " points spent in the tree (you have " + skillPointsSpent() + ")");
+    if (d.minLevel) names.unshift("character level " + d.minLevel + " (you are " + player.level + ")");
     const reqAny = d.reqAny || [];
     if (reqAny.length) {
-      const parts = reqAny.map(([id, minRank]) => { const nm = sk[id] ? sk[id].name : null; return nm ? (nm + " (rank " + (minRank || 1) + ")") : null; }).filter(Boolean);
+      const parts = reqAny.map(refName).filter(Boolean);
       if (parts.length) names.push(parts.join(" or "));
     }
     return names;
@@ -5240,7 +5259,7 @@
     let arrowsHtml = "";
     for (const key of keys) {
       const d = sk[key];
-      const refs = (d.req || []).concat((d.reqAny || []).map((r) => r[0]));
+      const refs = (d.req || []).concat(d.reqAny || []).map((r) => r[0]);
       for (const srcKey of refs) {
         if (!sk[srcKey] || !layout.pos[srcKey]) continue;
         const invested = player.skills[srcKey] && player.skills[srcKey].rank >= 1;

@@ -1330,8 +1330,14 @@ window.CANTORI_DATA = {
             "Reaches 4 tiles, cooldown 90, and every kill takes a further 10 turns off the cooldown."
           ],
           "req": [
-            "smite",
-            "spin"
+            [
+              "smite",
+              "max"
+            ],
+            [
+              "spin",
+              "max"
+            ]
           ]
         },
         {
@@ -1364,9 +1370,8 @@ window.CANTORI_DATA = {
             "Heals for VIT + STR + your character level.",
             "Heals for (VIT + STR) + twice your character level."
           ],
-          "req": [
-            "healing_smite"
-          ]
+          "req": [],
+          "minLevel": 15
         }
       ]
     },

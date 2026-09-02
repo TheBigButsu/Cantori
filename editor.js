@@ -190,9 +190,10 @@
         nodes.push(n);
       });
     }
-    // Canonicalize prerequisites to req = ["id", …] and reqAny = [["id", minRank], …].
-    // An entry may arrive as an old [tier, slot(, minRank)] coordinate (numbers),
-    // a bare "id", or ["id"] with the rank left implicit.
+    // Canonicalize prerequisites to [["id", minRank], …] — the same shape for req
+    // and reqAny both, matching game.js. An entry may arrive as an old
+    // [tier, slot(, minRank)] coordinate (numbers), a bare "id", or ["id"] with the
+    // rank left implicit (meaning 1); a rank of "max" means that skill's top rank.
     const toRef = (r) => {
       if (typeof r === "string") return [r, 1];
       if (!Array.isArray(r) || !r.length) return null;
@@ -203,9 +204,10 @@
       if (n.key === n.id) delete n.key;            // `key` is only an alias for `id`
       n.desc = n.desc || "";
       n.levels = Array.isArray(n.levels) ? n.levels.slice(0, 4) : [];
-      n.req = (n.req || []).map(toRef).filter(Boolean).map((r) => r[0]);
+      n.req = (n.req || []).map(toRef).filter(Boolean);
       n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
       if (!n.reqAny.length) delete n.reqAny;
+      if (!(n.minLevel > 0)) delete n.minLevel;
     }
     return nodes;
   }
@@ -804,7 +806,7 @@
       // that requires this skill — carry the references along with the rename.
       for (const n of o.skillTree) {
         if (n === cell) continue;
-        n.req = (n.req || []).map((id) => (id === from ? to : id));
+        n.req = (n.req || []).map((r) => (Array.isArray(r) && r[0] === from ? [to, r[1]] : r));
         if (n.reqAny) n.reqAny = n.reqAny.map((r) => (Array.isArray(r) && r[0] === from ? [to, r[1]] : r));
       }
     };
@@ -825,6 +827,11 @@
     rp.value = cell.reqPoints || "";
     rp.oninput = () => { const v = parseInt(rp.value, 10); if (v > 0) cell.reqPoints = v; else delete cell.reqPoints; };
     wire.appendChild(rp);
+    const ml = document.createElement("input"); ml.type = "number"; ml.min = "0"; ml.placeholder = "min level";
+    ml.title = "gate on CHARACTER level — for a skill you grow into rather than earn from another skill";
+    ml.value = cell.minLevel || "";
+    ml.oninput = () => { const v = parseInt(ml.value, 10); if (v > 0) cell.minLevel = v; else delete cell.minLevel; };
+    wire.appendChild(ml);
     box.appendChild(wire);
     // 4 level rows + dots
     const dots = document.createElement("div"); dots.className = "sdots";
@@ -850,13 +857,29 @@
       const l = document.createElement("div"); l.className = "bmons-l"; l.textContent = "Requires:"; pr.appendChild(l);
       const chips = document.createElement("div"); chips.className = "chips";
       cell.req = cell.req || [];
+      // Each prerequisite carries how many ranks it demands. Clicking the chip turns
+      // it on at rank 1; clicking again cycles 2, 3, 4, "max", then off — so "Spin,
+      // maxed" is authorable here rather than only by hand-editing data.js.
+      const RANKS = [1, 2, 3, 4, "max"];
+      const at = (id) => cell.req.findIndex((r) => Array.isArray(r) && r[0] === id);
       for (const k of others) {
-        const chip = document.createElement("button"); chip.className = "chip" + (cell.req.indexOf(k.id) >= 0 ? " on" : ""); chip.textContent = k.name;
-        chip.onclick = () => {
-          const idx = cell.req.indexOf(k.id);
-          if (idx >= 0) cell.req.splice(idx, 1); else cell.req.push(k.id);
-          chip.classList.toggle("on");
+        const chip = document.createElement("button"); chip.className = "chip";
+        const paint = () => {
+          const i = at(k.id), rank = i >= 0 ? cell.req[i][1] : 0;
+          chip.className = "chip" + (i >= 0 ? " on" : "");
+          chip.textContent = k.name + (i < 0 || rank === 1 ? "" : rank === "max" ? " · max" : " · " + rank);
         };
+        chip.title = "click to require this skill; click again to raise the rank it must reach";
+        chip.onclick = () => {
+          const i = at(k.id);
+          if (i < 0) cell.req.push([k.id, 1]);
+          else {
+            const next = RANKS[RANKS.indexOf(cell.req[i][1]) + 1];
+            if (next === undefined) cell.req.splice(i, 1); else cell.req[i][1] = next;
+          }
+          paint();
+        };
+        paint();
         chips.appendChild(chip);
       }
       pr.appendChild(chips); box.appendChild(pr);

@@ -95,7 +95,7 @@ These are the packets that unblock your own work on classes, bosses and monsters
 | [B5](packets/B5-monster-flags-1.md) | `summoner`, `healer`, `blinker` behaviour flags | 3k | todo |
 | [B6](packets/B6-monster-flags-2.md) | `webber`, `drain`, `splitter`, `ambusher` flags | 3k | todo |
 | B7 | Teach `editor.js` every field B1–B6 added, so the editor stops dropping them | 3k | todo |
-| [B8](packets/B8-smite-variants.md) | Three smites replacing Smite, mutually exclusive; `exclusiveGroup` prerequisite type | 5k | **brief ready** |
+| [B8](packets/B8-smite-variants.md) | Smite upgrades into one of three mutually exclusive variants; `exclusiveGroup` and `supersedes` | 5k | **brief ready** |
 | [B9](packets/B9-heal-and-aura.md) | `heal` kind (Lay on Hands) + Kethara's Will as a passive — no new kind needed | 4k | **brief ready** |
 
 ## Track C — terrain and rooms *(code, then content)*
