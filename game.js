@@ -201,13 +201,16 @@
   // (Chasms stay off-limits to everything — they're `shun` + `falls`, not `deep`.)
   const passableFor = (mover, x, y) =>
     inBounds(x, y) && !tileProp(x, y, "solid") && (!tileProp(x, y, "deep") || !!(mover && mover.flying));
-  // A door is open only while you stand on it, then swings/grows shut behind you —
-  // an open/close mechanism (the forest bushes "come back"). EXCEPT: a door a
-  // monster died on is propped open for good (you already fought there, no more
-  // ambush to spring) — until you walk back over that exact tile, which resets
-  // it to the normal close-behind-you cycle.
+  // A door is open while you OR a live monster stands on it, then swings/grows shut
+  // behind whoever left — an open/close mechanism (the forest bushes "come back").
+  // Without the monster check, something crossing a bush while you watch would slide
+  // through the fully-closed sprite with no reaction, and vision would stay blocked
+  // at that tile even though you can plainly see whatever is standing right on it.
+  // EXCEPT: a door a monster died on is propped open for good (you already fought
+  // there, no more ambush to spring) — until you walk back over that exact tile,
+  // which resets it to the normal close-behind-you cycle.
   let propOpenDoors = new Set();   // "y*MAP_W+x" keys, reset every new level
-  const doorOpen = (x, y) => (player.x === x && player.y === y) || propOpenDoors.has(y * MAP_W + x);
+  const doorOpen = (x, y) => (player.x === x && player.y === y) || propOpenDoors.has(y * MAP_W + x) || !!monsterAt(x, y);
   const propDoorOpenAt = (x, y) => { if (inBounds(x, y) && map[y][x] === DOOR) propOpenDoors.add(y * MAP_W + x); };
   // Sight (FOV + line of sight) is blocked by walls and by *closed* doors — so a
   // room stays hidden until you reach its doorway, enabling surprise ambushes.
