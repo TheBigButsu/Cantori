@@ -1357,8 +1357,10 @@
       if (liveData && JSON.stringify(liveData) !== ghBaseline && !ghOverwriteArmed) {
         ghOverwriteArmed = true;
         ghMsg("Stopped: data.js on “" + c.branch + "” is NOT what this page loaded, so saving now would revert whatever changed since (" +
-              whatMoved(JSON.parse(ghBaseline), liveData) + "). Reload the editor (hard-refresh) to pick those changes up first, " +
+              whatMoved(JSON.parse(ghBaseline), liveData) + "). Hit “Load latest from branch” to start from what's actually there, " +
               "or press Commit again to overwrite them deliberately.", "err");
+        // (a plain page reload often will NOT clear this — GitHub Pages can serve a
+        // data.js behind the branch — which is what “Load latest from branch” is for)
         return;
       }
       let putRes = await put(live.sha);
@@ -1370,6 +1372,41 @@
       ghOverwriteArmed = false;
       ghMsg("Committed! GitHub Pages redeploys in ~1 min.", "ok");
       setStatus("Committed " + c.path + " to " + c.owner + "/" + c.repo + " (" + c.branch + ").", "ok");
+    } catch (e) {
+      ghMsg("Failed: " + e.message, "err");
+    }
+  }
+
+  // Pull data.js straight from the branch and start from it.
+  //
+  // "Reload the page" is NOT a reliable way to get current: editor.html is served
+  // by GitHub Pages, whose CDN can hand you a data.js a deploy or two behind the
+  // branch however hard you refresh. That is how you end up staring at an
+  // out-of-date warning you cannot clear. Reading through the API bypasses Pages
+  // entirely, so this always lands on what the branch actually holds.
+  async function ghPull() {
+    const c = ghSaveCfg();
+    const token = $("ghToken").value.trim() || ghToken();
+    if (!token) { ghMsg("Enter a token first.", "err"); return; }
+    if (!c.owner || !c.repo || !c.branch || !c.path) { ghMsg("Fill in owner / repo / branch / path.", "err"); return; }
+    if (!confirm("Load " + c.path + " from “" + c.branch + "”?\n\nAnything you have edited here and not committed is discarded.")) return;
+    ghMsg("Fetching…", "");
+    const api = "https://api.github.com/repos/" + c.owner + "/" + c.repo + "/contents/" + c.path;
+    const headers = { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    try {
+      const res = await fetch(api + "?ref=" + encodeURIComponent(c.branch) + "&_=" + Date.now(), { headers, cache: "no-store" });
+      if (!res.ok) throw new Error("read " + res.status + " — " + (await res.text()).slice(0, 140));
+      const parsed = parseDataFile(base64ToUtf8((await res.json()).content || ""));
+      if (!parsed || !parsed.monsters) throw new Error("that file didn't parse as Cantori data");
+      try { localStorage.removeItem(LSKEY); } catch (e) {}   // a stale draft would just win again
+      source = parsed;
+      ghBaseline = JSON.stringify(parsed);
+      ghOverwriteArmed = false;
+      staleDraft = false;
+      reseed();
+      refreshDraftButtons();
+      ghMsg("Loaded " + c.path + " from " + c.branch + " — you're on the live version now.", "ok");
+      setStatus("Loaded " + c.path + " from " + c.branch + ".", "ok");
     } catch (e) {
       ghMsg("Failed: " + e.message, "err");
     }
@@ -1411,9 +1448,9 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setStatus("Downloaded data.js", "ok");
   }
-  function doRevert() {
-    if (!confirm("Discard all edits and reload the shipped content?")) return;
-    source = clone(SHIPPED);
+  // Rebuild every tab's working state from `source`. Shared by Revert and by
+  // "Load latest from branch" — both replace the whole document wholesale.
+  function reseed() {
     for (const c of TABLE_COLLS) rows[c] = Object.entries(source[c] || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
     for (const c of JSON_COLLS) { let s = source[c] != null ? source[c] : {}; if (c === "loot") { s = Object.assign({}, s); delete s.enchants; } jsonText[c] = JSON.stringify(s, null, 2); jsonOk[c] = true; }
     enchantRows = Object.entries((source.loot && source.loot.enchants) || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
@@ -1421,6 +1458,11 @@
     classRows = Object.entries(source.classes || {}).map(([k, v]) => ({ key: k, obj: clone(v) }));
     classRows.forEach((r) => ensureClass(r.obj)); activeClass = 0;
     render();
+  }
+  function doRevert() {
+    if (!confirm("Discard all edits and reload the shipped content?")) return;
+    source = clone(SHIPPED);
+    reseed();
     setStatus("Reverted to shipped content.", "ok");
   }
 
@@ -1472,6 +1514,7 @@
   $("btnGh").onclick = openGh;
   $("ghClose").onclick = () => $("ghDlg").close();
   $("ghSave").onclick = ghCommit;
+  $("ghPull").onclick = ghPull;
   $("ghSaveToken").onclick = ghSaveToken;
   $("ghForget").onclick = ghForget;
 

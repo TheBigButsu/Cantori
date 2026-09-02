@@ -1483,6 +1483,10 @@
     // copy the whole template so ability flags (evasion/charge/ranged/range) carry over
     return Object.assign({}, VERMIN[type], {
       x, y, type, boss: false, hp: VERMIN[type].hp, maxHp: VERMIN[type].hp, level: depth,
+      // Asleep until something wakes it. This is the single biggest thing the state
+      // machine buys: a floor is quiet until you make it loud, you can creep past a
+      // room you don't fancy, and striking first actually means something.
+      state: SLEEPING, aware: false, target: null,
     });
   }
   function makeBoss(key, x, y) {
@@ -1491,6 +1495,7 @@
     const b = DATA.bosses[key];
     return Object.assign({}, b, {
       x, y, type: key, boss: true, glyph: "@", color: "#f0a838", level: depth, hp: b.hp, maxHp: b.hp,
+      state: WANDERING, aware: false, target: null,   // a boss is never asleep — it notices you walking in
     });
   }
   function monName(m) {
@@ -1576,7 +1581,8 @@
       if (map[y][x] !== FLOOR) continue;
       if (x === player.x && y === player.y) continue;
       if (monsterAt(x, y)) continue;
-      const mk = pickMonster(); if (mk) monsters.push(makeMonster(mk, x, y));
+      const mk = pickMonster();
+      if (mk) monsters.push(makeMonster(mk, x, y));   // a floor starts asleep — see makeMonster
     }
   }
 
@@ -1874,8 +1880,9 @@
     bonus = bonus || 0;
     if (attacker === player) {
       bump(player, target.x, target.y);
-      const surprise = !target.aware;                 // ambush: it never saw you coming
-      target.aware = true;
+      const surprise = !target.aware;                 // ambush: asleep, or wandering past you
+      startHunting(target);                           // it knows now
+      makeNoise(target.x, target.y);                  // and so does whatever is next door
       // Striking from invisibility spends it — you land the ambush, then you're
       // visible again. Without this the scroll is simply "win the floor".
       if (player.invisible) {
@@ -2591,25 +2598,49 @@
   //
   // Wandering now uses the same BFS the hunting AI already uses, which cannot be
   // trapped that way, and re-rolls its destination once it stops making progress.
-  const PATROL_PATIENCE = 12;
-  function patrolStep(m) {
-    if (!m.patrol || (m.x === m.patrol.x && m.y === m.patrol.y)) {
-      m.patrol = randomFloor(); m.patrolBest = null; m.patrolStale = 0;
-    }
-    if (!m.patrol) return;
-    stepMonsterTo(m, m.patrol.x, m.patrol.y);
-    const d = cheb(m.x, m.y, m.patrol.x, m.patrol.y);
-    if (m.patrolBest == null || d < m.patrolBest) { m.patrolBest = d; m.patrolStale = 0; return; }
-    // Not closer than our best so far: blocked, circling, or it cannot be reached.
-    if (++m.patrolStale >= PATROL_PATIENCE) { m.patrol = randomFloor(); m.patrolBest = null; m.patrolStale = 0; }
+  // ---- Monster state machine ----------------------------------------------
+  // Modelled on Shattered Pixel Dungeon's mob AI — the shape of it, written fresh
+  // for this engine. (SPD is GPL-3; none of its code is copied here, only the
+  // design, which is what makes its monsters read as alive: they sleep until
+  // something disturbs them, they investigate noises, and losing sight of you is
+  // not the same as forgetting you.)
+  //
+  // Every monster is in exactly one state, and holds at most one `target` cell —
+  // the place it is currently interested in. That single field covers all three
+  // reasons a monster walks somewhere: where it last saw you, where it heard
+  // something, and where it happens to be wandering. Collapsing them is why the
+  // states can hand off to each other so cheaply.
+  //
+  //   SLEEPING  -- notices you --> HUNTING        (a roll each turn, likelier up close)
+  //   SLEEPING  -- hears a noise --> WANDERING    (target = the noise)
+  //   WANDERING -- sees you ------> HUNTING
+  //   HUNTING   -- loses you -----> WANDERING     (target = where you were, so it searches there)
+  //   any       -- routed --------> FLEEING       (Maelon's Endless Dread)
+  const SLEEPING = "sleeping", WANDERING = "wandering", HUNTING = "hunting", FLEEING = "fleeing";
+  const PATROL_PATIENCE = 12;     // turns of no progress before a wander target is abandoned
+  const HUNT_PATIENCE = 10;       // turns out of sight before the chase is called off
+  const NOISE_RADIUS = 5;         // how far a scuffle carries
+
+  // `aware` is what the rest of the engine asks (surprise attacks, Faith's Pull,
+  // the boss playbooks), and it means exactly "is hunting me" — so it is kept as a
+  // consequence of the state rather than a second thing to remember.
+  function setState(m, st) {
+    m.state = st;
+    m.aware = (st === HUNTING);
   }
-  // Shattered Pixel Dungeon-style hunt: losing sight doesn't mean forgetting —
-  // a monster with a lastSeen trail heads straight there. Arriving to an empty
-  // tile isn't proof you vanished into thin air (through a bush, round a
-  // corner), so it spends a few turns poking around nearby before finally
-  // giving up and going back to idle patrol (Hunting → searching Wandering →
-  // idle Wandering, the same chain SPD's mobs use).
-  const SEARCH_TURNS = 4;
+  function startHunting(m, tx, ty) {
+    setState(m, HUNTING);
+    m.target = { x: tx != null ? tx : player.x, y: ty != null ? ty : player.y };
+    m.wanderBest = null; m.wanderStale = 0; m.huntBlind = 0;
+  }
+  // Give up the chase: keep looking around where the trail went cold rather than
+  // instantly forgetting. A wander target near the last known cell IS the search.
+  function stopHunting(m) {
+    const anchor = m.target || { x: m.x, y: m.y };
+    setState(m, WANDERING);
+    m.target = nearbySearchSpot(anchor.x, anchor.y) || anchor;
+    m.wanderBest = null; m.wanderStale = 0;
+  }
   function nearbySearchSpot(cx, cy) {
     for (let t = 0; t < 10; t++) {
       const nx = cx + randInt(-2, 2), ny = cy + randInt(-2, 2);
@@ -2617,32 +2648,78 @@
     }
     return null;
   }
-  // ONE step per call, always. The two phases used to run back to back: the same
-  // action walked the monster onto the last-seen tile and then straight off it
-  // toward a search spot, so a search was two tiles of movement per action (four
-  // for anything that acted twice), and it ping-ponged — having stepped away it
-  // was no longer on lastSeen, so the next action walked it back and off again.
-  // An `m.searching` latch splits the phases so arriving IS that action's move.
-  function chaseLastSeen(m) {
-    // Phase 1 — travel to the tile we last saw the player on.
-    if (!m.searching) {
-      stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
-      if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) {   // arrived; start poking around next action
-        m.searching = true; m.searchTurns = SEARCH_TURNS; m.searchSpot = null;
-      }
-      return;
+  // A noise at a tile. Sleepers wake into a search, wanderers redirect; anything
+  // already hunting you is past caring. This is what makes a fight pull the next
+  // room in instead of every scrap being a private duel — and it is the one way
+  // an invisible player still gives themselves away.
+  function makeNoise(x, y, radius) {
+    radius = radius || NOISE_RADIUS;
+    for (const m of monsters) {
+      if (m.hp <= 0 || m.type === "healing_node") continue;
+      if (m.state === HUNTING || m.state === FLEEING) continue;
+      if (cheb(m.x, m.y, x, y) > radius) continue;
+      if (m.state === SLEEPING) floatText(m.x, m.y, "?", "#e0d0a0");
+      setState(m, WANDERING);
+      m.target = { x, y };
+      m.wanderBest = null; m.wanderStale = 0;
     }
-    // Phase 2 — an empty tile isn't proof you vanished; check a few spots nearby.
-    if (m.searchTurns > 0) {
-      m.searchTurns--;
-      if (!m.searchSpot || (m.x === m.searchSpot.x && m.y === m.searchSpot.y)) {
-        m.searchSpot = nearbySearchSpot(m.lastSeen.x, m.lastSeen.y);
-      }
-      if (m.searchSpot) stepMonsterTo(m, m.searchSpot.x, m.searchSpot.y);
-      return;
-    }
-    m.lastSeen = null; m.aware = false; m.searching = false; m.searchTurns = null; m.searchSpot = null;
   }
+  // A sleeping monster rolls once a turn to notice you: certain at one tile away,
+  // halving with each tile after that, and impossible if it cannot see you at all
+  // — so a closed bush, a dark corner or a Scroll of Invisibility all buy you the
+  // same thing. Sleepers take the full surprise bonus when you strike first.
+  function noticesPlayer(m) {
+    if (!canSee(m)) return false;
+    return Math.random() * Math.max(1, cheb(m.x, m.y, player.x, player.y)) < 1;
+  }
+  function actSleeping(m) {
+    if (noticesPlayer(m)) {
+      startHunting(m);
+      floatText(m.x, m.y, "!", "#ffd98a");
+      return;
+    }
+    if (Math.random() < 0.04) floatText(m.x, m.y, "z", "#8fa0b8");   // an occasional snore, so it reads as asleep
+  }
+  function actWandering(m) {
+    if (canSee(m)) { startHunting(m); floatText(m.x, m.y, "!", "#ffd98a"); return; }
+    if (!m.target || (m.x === m.target.x && m.y === m.target.y)) {
+      m.target = randomFloor(); m.wanderBest = null; m.wanderStale = 0;
+    }
+    if (!m.target) return;
+    stepMonsterTo(m, m.target.x, m.target.y);
+    const d = cheb(m.x, m.y, m.target.x, m.target.y);
+    if (m.wanderBest == null || d < m.wanderBest) { m.wanderBest = d; m.wanderStale = 0; return; }
+    // Not getting closer: blocked, circling, or it simply cannot be reached.
+    if (++m.wanderStale >= PATROL_PATIENCE) { m.target = null; m.wanderBest = null; m.wanderStale = 0; }
+  }
+  function actHunting(m) {
+    // Chasing a trail you cannot reach is how a monster ends up jammed against a
+    // wall forever: it never arrives, so it never gives up. Sight resets the
+    // clock; running out of it drops the chase wherever it got to.
+    if (canSee(m)) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
+    else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
+    const d = cheb(m.x, m.y, player.x, player.y);
+    if (d === 1) { attack(m, player); return; }
+    if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
+    if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
+    // Kethara's Faith's Pull: a hunting monster caught in the aura paths to its
+    // center instead of you, for as long as the pull lasts.
+    if (pullZone && pullZone.turns > 0 && cheb(m.x, m.y, pullZone.x, pullZone.y) <= 4) {
+      stepMonsterTo(m, pullZone.x, pullZone.y);
+      return;
+    }
+    if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }
+    if (!m.target) { stopHunting(m); return; }
+
+    // Out of sight: walk the trail. Arriving to an empty tile is not proof you
+    // vanished — hand off to WANDERING, which pokes around here before drifting.
+    if (m.x === m.target.x && m.y === m.target.y) { stopHunting(m); return; }
+    stepMonsterTo(m, m.target.x, m.target.y);
+  }
+  // Kept for the boss playbooks (bosses.js), which describe their turns in these
+  // terms: "chase the trail" and "mill about". Both are the shared states.
+  const chaseLastSeen = actHunting;
+  const patrolStep = actWandering;
   function doCharge(m) {
     const dir = straightDir(m);
     const sx = m.x, sy = m.y;
@@ -2725,7 +2802,12 @@
       const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
       if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
       if (cheb(x, y, player.x, player.y) < 6) continue;    // arrive out of sight, at a distance
-      const mk = pickMonster(); if (mk) monsters.push(makeMonster(mk, x, y));
+      const mk = pickMonster();
+      if (mk) {
+        const mm = makeMonster(mk, x, y);
+        setState(mm, WANDERING);   // a reinforcement just walked in: awake, but it hasn't found you
+        monsters.push(mm);
+      }
       return;
     }
   }
@@ -2746,7 +2828,7 @@
       if (!inBounds(gx, gy) || tileProp(gx, gy, "solid") || shuns(gx, gy)) continue;
       if (cheb(gx, gy, cx, cy) > radius) continue;
       if (monsterAt(gx, gy) || (gx === player.x && gy === player.y)) continue;
-      const mm = makeMonster(type, gx, gy); mm.aware = true;
+      const mm = makeMonster(type, gx, gy); startHunting(mm);   // summoned onto you — already looking
       monsters.push(mm); placed++;
     }
     return placed;
@@ -2779,9 +2861,11 @@
     defaultAct(m);
   }
   function defaultAct(m) {
-    // Maelon's Endless Dread: a terrified monster runs directly away from the player.
+    if (!m.state) setState(m, WANDERING);           // anything created before states existed
+    // Maelon's Endless Dread: a terrified monster runs directly away from you.
     if (m.fleeing > 0) {
       m.fleeing--;
+      if (m.fleeing <= 0) setState(m, WANDERING);   // it stops running, but it has lost you
       const dx = Math.sign(m.x - player.x) || (Math.random() < 0.5 ? 1 : -1);
       const dy = Math.sign(m.y - player.y) || (Math.random() < 0.5 ? 1 : -1);
       const nx = m.x + dx, ny = m.y + dy;
@@ -2792,7 +2876,7 @@
       if (canStep(m.x, m.y, dx, dy, m) && !shuns(nx, ny) && !monsterAt(nx, ny) && !(nx === player.x && ny === player.y)) moveMonster(m, nx, ny);
       return;
     }
-    // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just the player.
+    // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just you.
     if (m.berserk > 0) {
       m.berserk--;
       let nearest = null, nd = Infinity;
@@ -2807,27 +2891,11 @@
         stepMonsterTo(m, nearest.x, nearest.y);
         return;
       }
-      // no other target closer than the player → fall through to normal player-seeking behavior
+      // nothing closer than you → fall through to the normal states
     }
-    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
-    const d = cheb(m.x, m.y, player.x, player.y);
-    // Adjacency alone used to be enough to swing — which would have let a monster
-    // keep mauling an invisible player it had no idea was standing there. While
-    // you're unseen, only something that already knows about you (you hit it, and
-    // gave yourself away) throws a punch.
-    if (player.invisible && !m.aware) { patrolStep(m); return; }
-    if (d === 1) { attack(m, player); return; }
-    if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
-    if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
-    // Kethara's Faith's Pull: an aware monster caught in the aura paths to its
-    // center instead of the player, for as long as the pull lasts.
-    if (pullZone && pullZone.turns > 0 && m.aware && cheb(m.x, m.y, pullZone.x, pullZone.y) <= 4) {
-      stepMonsterTo(m, pullZone.x, pullZone.y);
-      return;
-    }
-    if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }   // in sight → close in (chargers line up)
-    if (m.lastSeen) { chaseLastSeen(m); return; }   // lost sight → head to where you were last seen, then search nearby
-    patrolStep(m);                               // no lead → wander
+    if (m.state === SLEEPING) { actSleeping(m); return; }
+    if (m.state === HUNTING) { actHunting(m); return; }
+    actWandering(m);
   }
   // A lightweight monster-vs-monster strike (Anger of Kethara only) — no crits,
   // affixes, or identify progress; just a hit-chance roll and flat damage.
@@ -3671,7 +3739,7 @@
     getMap: () => map, getMonsters: () => monsters, isDead: () => dead,
     player, WALL, attack, canSee, chaseLastSeen, cheb, computeFOV, die, flash, flashScreen,
     floatText, inBounds, lineOfSight, log, monsterAt, patrolStep, randInt, sayMonster, shuns,
-    snapEntity, snapPlayer, spawnBurst, spawnNear, spawnProjectile, spawnStreak, stepMonsterTo,
+    snapEntity, snapPlayer, spawnBurst, spawnNear, spawnProjectile, spawnStreak, startHunting, stepMonsterTo,
     tileProp, updateHUD, normalAct: defaultAct,
   });
 
@@ -3830,6 +3898,14 @@
         const hx = px + (tile - bw) / 2, hy = py + tile * 0.06;
         ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(hx, hy, bw, bh);
         ctx.fillStyle = "#d9584a"; ctx.fillRect(hx, hy, bw * (m.hp / m.maxHp), bh);
+      }
+      // Asleep, and it needs to be obvious: creeping past it or striking first for
+      // the surprise bonus is only a decision if you can see it's an option.
+      if (m.state === SLEEPING) {
+        ctx.fillStyle = "#bcd3e6";
+        ctx.font = `700 ${Math.max(9, Math.floor(tile * 0.34))}px ${bodyFont()}`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("z", px + tile * 0.80, py + tile * 0.18);
       }
     }
 
@@ -4504,8 +4580,8 @@
       // ones already hunting you drop the trail instead of walking to your last
       // known tile and searching around it.
       for (const m of monsters) {
-        m.aware = false; m.lastSeen = null;
-        m.searching = false; m.searchTurns = null; m.searchSpot = null;
+        if (m.state === SLEEPING) continue;      // it never knew about you; let it sleep
+        setState(m, WANDERING); m.target = null;
       }
       floatText(player.x, player.y, "\u25cc", "#bfe0ff");
       log("You fade out of sight — every eye in the dungeon loses you. (" + INVIS_TURNS + " turns, and striking ends it)", "hit");
@@ -4520,7 +4596,7 @@
         if (dx * dx + dy * dy > THUNDER_R * THUNDER_R) continue;
         if (!lineOfSight(player.x, player.y, m.x, m.y)) continue;
         const dmg = randInt(0, maxDmg);           // 0 at the low end, by design: some of them ride it out
-        m.aware = true;
+        startHunting(m);
         if (dmg <= 0) { floatText(m.x, m.y, "0", "#cfe6b0"); continue; }
         m.hp -= dmg; hit++;
         flash(m); floatText(m.x, m.y, "-" + dmg, "#9ad0ff");
@@ -4528,6 +4604,7 @@
       }
       spawnBurst(player.x, player.y, "#9ad0ff");
       flashScreen("#2a4a70", 260);
+      makeNoise(player.x, player.y, THUNDER_R * 3);   // a thunderclap is heard well past what it hurts
       log(hit ? "THUNDERCLAP — the air detonates around you, catching " + hit + (hit === 1 ? " foe." : " foes.")
               : "THUNDERCLAP — the air detonates around you, and nothing is close enough to care.",
           hit ? "hit" : "");
@@ -4872,7 +4949,7 @@
     pendingSkill = null;
     const m = monsterAt(tx, ty);
     if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
-    m.berserk = ANGER_TURNS; m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false;
+    m.berserk = ANGER_TURNS; startHunting(m);
     floatText(m.x, m.y, "😡", "#e0685a");
     log("Kethara's Anger consumes the " + monName(m) + " — it turns on everything nearby.", "hit");
     player.skills[key].cd = Math.max(0, 100 - eff("RES"));
@@ -5019,7 +5096,8 @@
       if (m.charge) tags.push("charges");
       if ((m.eva != null ? m.eva : MON_EVA) >= 12) tags.push("evasive");
       if ((m.acc != null ? m.acc : MON_ACC) >= 12) tags.push("accurate");
-      if (!m.aware) tags.push("unaware");
+      if (m.state === SLEEPING) tags.push("asleep");
+      else if (!m.aware) tags.push("unaware");
       log(monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp + (tags.length ? " (" + tags.join(", ") + ")" : ""));
       return;
     }
@@ -5494,7 +5572,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, lastSeen: m.lastSeen ? { x: m.lastSeen.x, y: m.lastSeen.y } : null, searchTurns: m.searchTurns == null ? null : m.searchTurns })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault, boonKey: it.boonKey || null, boonGroup: it.boonGroup || null })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -5515,7 +5593,7 @@
       const m = makeMonster(type, x, y);
       if (hp != null) { m.hp = hp; m.maxHp = Math.max(hp, m.maxHp); }
       if (level != null) m.level = level;
-      m.aware = true;                        // no surprise multiplier, clean numbers
+      startHunting(m);                       // no surprise multiplier, clean numbers
       monsters.push(m); return true;
     },
     useIdx: (i) => actItem(i),
@@ -5524,9 +5602,11 @@
     confirmUpgradeOn: (slotKey) => { const it = player[slotKey]; if (pendingUpgrade && it && GEAR[it.key].cat !== "trinket") confirmUpgrade(it); },
     cancelUpgrade: () => { pendingUpgrade = false; },
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
-    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; m.searching = false; m.searchTurns = null; m.searchSpot = null; } },
+    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) startHunting(m, tx, ty); },
+    setMonsterState: (i, st) => { const m = monsters[i]; if (m) { setState(m, st); m.target = null; } },
+    noise: (x, y, r) => makeNoise(x, y, r),
     golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? _boss.golemShield(g) : 0; },
-    forceSlam: (i) => { const m = monsters[i]; if (m) { m.slamCd = 0; m.aware = true; } },
+    forceSlam: (i) => { const m = monsters[i]; if (m) { m.slamCd = 0; startHunting(m); } },
     nodeBlasts: () => _boss.nodeBlasts(),
     setMonsterHp: (i, hp) => { const m = monsters[i]; if (m) m.hp = Math.min(hp, m.maxHp); },
     placeMonster: (i, x, y) => { const m = monsters[i]; if (m) { m.x = x; m.y = y; } },
