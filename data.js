@@ -12,7 +12,7 @@ window.CANTORI_DATA = {
       "eva": 12,
       "atkMin": 1,
       "atkMax": 4,
-      "acc": 15
+      "acc": 5
     },
     "bat": {
       "name": "Bat",
@@ -25,14 +25,14 @@ window.CANTORI_DATA = {
       "atkMin": 1,
       "atkMax": 4,
       "eva": 20,
-      "acc": 30
+      "acc": 5
     },
     "snake": {
       "name": "Snake",
       "hp": 8,
       "glyph": "s",
       "color": "#7ec98a",
-      "minFloor": 2,
+      "minFloor": 3,
       "speed": 1,
       "acc": 10,
       "atkMin": 1,
@@ -43,7 +43,7 @@ window.CANTORI_DATA = {
       "walkSpeed": 0.8,
       "name": "Spider",
       "atkMax": 5,
-      "minFloor": 3,
+      "minFloor": 6,
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
@@ -56,7 +56,7 @@ window.CANTORI_DATA = {
     },
     "wolf": {
       "name": "Wolf",
-      "acc": 10,
+      "acc": 0,
       "glyph": "W",
       "color": "#9aa0a8",
       "hp": 16,
@@ -75,15 +75,14 @@ window.CANTORI_DATA = {
       "acc": 9,
       "glyph": "e",
       "color": "#e6c34a",
-      "minFloor": 3,
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "eva": 25
+      "eva": 25,
+      "minFloor": 2
     },
     "bear": {
-      "walkSpeed": 0.8,
-      "attackSpeed": 0.8,
+      "attackSpeed": 1,
       "name": "Bear",
       "hp": 35,
       "atkMin": 2,
@@ -94,7 +93,8 @@ window.CANTORI_DATA = {
       "glyph": "B",
       "color": "#8a6a44",
       "speed": 1,
-      "minFloor": 4
+      "minFloor": 4,
+      "walkSpeed": 1
     },
     "harpy": {
       "name": "Harpy",
@@ -106,7 +106,7 @@ window.CANTORI_DATA = {
       "range": 4,
       "glyph": "H",
       "color": "#6b6f7a",
-      "minFloor": 1,
+      "minFloor": 6,
       "hp": 35,
       "speed": 1,
       "atkMin": 2
@@ -143,7 +143,7 @@ window.CANTORI_DATA = {
       "atkMax": 9,
       "glyph": "G",
       "color": "#9fb07a",
-      "minFloor": 1,
+      "minFloor": 11,
       "charge": true
     },
     "wraith": {
@@ -155,7 +155,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "W",
       "color": "#8fa0c0",
-      "minFloor": 1
+      "minFloor": 12
     },
     "phantom": {
       "walkSpeed": 1.2,
@@ -166,7 +166,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "P",
       "color": "#7ee0d0",
-      "minFloor": 1
+      "minFloor": 13
     },
     "imp": {
       "walkSpeed": 1.2,
@@ -177,7 +177,7 @@ window.CANTORI_DATA = {
       "atkMax": 5,
       "glyph": "i",
       "color": "#c0c0e0",
-      "minFloor": 1
+      "minFloor": 14
     },
     "keener": {
       "walkSpeed": 1.2,
@@ -186,7 +186,7 @@ window.CANTORI_DATA = {
       "hp": 4,
       "atkMin": 2,
       "atkMax": 4,
-      "minFloor": 1,
+      "minFloor": 16,
       "glyph": "u",
       "color": "#6fb0d0"
     },
@@ -197,7 +197,7 @@ window.CANTORI_DATA = {
       "atkMax": 7,
       "glyph": "d",
       "color": "#e07030",
-      "minFloor": 1
+      "minFloor": 17
     },
     "healing_node": {
       "name": "Healing Node",
@@ -206,6 +206,33 @@ window.CANTORI_DATA = {
       "atkMax": 0,
       "glyph": "◈",
       "color": "#8ed69a"
+    },
+    "Goblin": {
+      "name": "Goblin",
+      "hp": 20,
+      "atkMin": 1,
+      "atkMax": 10,
+      "glyph": "?",
+      "color": "#c0c0c0",
+      "speed": 1,
+      "walkSpeed": 1,
+      "attackSpeed": 1,
+      "acc": 8,
+      "eva": 10,
+      "minFloor": 7
+    },
+    "Goblin_archer": {
+      "name": "Goblin Archer",
+      "hp": 15,
+      "atkMin": 0,
+      "atkMax": 8,
+      "glyph": "?",
+      "color": "#c0c0c0",
+      "acc": 20,
+      "eva": 0,
+      "range": 4,
+      "ranged": true,
+      "minFloor": 8
     }
   },
   "gear": {
@@ -297,7 +324,7 @@ window.CANTORI_DATA = {
       },
       "defMin": 3,
       "defMax": 25,
-      "evasion": -1
+      "evasion": -10
     },
     "ring_copper": {
       "cat": "ring",
@@ -309,7 +336,7 @@ window.CANTORI_DATA = {
     "ring_silver": {
       "cat": "ring",
       "name": "Silver Ring",
-      "tier": 2,
+      "tier": 3,
       "glyph": "o",
       "color": "#cfd4dc"
     },
@@ -333,9 +360,9 @@ window.CANTORI_DATA = {
     "amulet_jade": {
       "cat": "necklace",
       "name": "Jade Amulet",
-      "tier": 2,
       "glyph": "\"",
-      "color": "#7ec9a0"
+      "color": "#7ec9a0",
+      "tier": 3
     },
     "Axe": {
       "cat": "weapon",
@@ -430,7 +457,7 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "defMin": 0,
       "defMax": 2,
-      "evasion": 1,
+      "evasion": 10,
       "sub": "light"
     }
   },
@@ -554,11 +581,11 @@ window.CANTORI_DATA = {
         },
         "tier": 2,
         "tierValues": [
+          0.5,
+          0.75,
           1,
-          3,
-          6,
-          10,
-          15
+          1.5,
+          3
         ]
       },
       "electric": {
@@ -579,10 +606,10 @@ window.CANTORI_DATA = {
         },
         "tierValues": [
           1,
+          1.5,
+          2,
           3,
-          6,
-          10,
-          15
+          5
         ]
       },
       "Speed": {
@@ -604,33 +631,33 @@ window.CANTORI_DATA = {
           1.2,
           1.3,
           1.5,
-          1.8
+          1.75
         ]
       },
       "Swiftness": {
-      "name": "Swiftness",
-      "icon": "\ud83d\udc5f",
-      "color": "#bfe0ff",
-      "proc": 1,
-      "slots": [
-        "armor",
-        "trinket",
-        "necklace"
-      ],
-      "desc": "While worn, your steps cost less time \u2014 you cover ground faster than your foes. Scales with the item's tier.",
-      "effect": {
-        "type": "walkHaste",
-        "mult": 0.25
+        "name": "Swiftness",
+        "icon": "👟",
+        "color": "#bfe0ff",
+        "proc": 1,
+        "slots": [
+          "armor",
+          "trinket",
+          "necklace"
+        ],
+        "desc": "While worn, your steps cost less time — you cover ground faster than your foes. Scales with the item's tier.",
+        "effect": {
+          "type": "walkHaste",
+          "mult": 0.25
+        },
+        "tierValues": [
+          1.25,
+          1.5,
+          1.75,
+          2,
+          2.5
+        ]
       },
-      "tierValues": [
-        1.1,
-        1.2,
-        1.3,
-        1.5,
-        1.8
-      ]
-    },
-    "Thorns": {
+      "Thorns": {
         "name": "Thorns",
         "icon": "🜲",
         "color": "#cdd6a0",
@@ -782,6 +809,20 @@ window.CANTORI_DATA = {
       "noDrop": true,
       "glyph": "?",
       "color": "#f0c14b"
+    },
+    "scroll_invisibility": {
+      "cat": "scroll",
+      "name": "Scroll of Invisibility ",
+      "effect": "invisibility",
+      "glyph": "!",
+      "color": "#cccccc"
+    },
+    "scroll_thunderclap": {
+      "cat": "scroll",
+      "name": "Scroll of Thunderclap",
+      "effect": "Thunderclap",
+      "glyph": "!",
+      "color": "#cccccc"
     }
   },
   "traps": {
@@ -944,9 +985,9 @@ window.CANTORI_DATA = {
     },
     "cultist": {
       "name": "Cultist",
-      "hp": 20,
-      "atkMin": 4,
-      "atkMax": 6
+      "hp": 200,
+      "atkMin": 0,
+      "atkMax": 20
     },
     "mummy": {
       "name": "The Mummy",
@@ -973,8 +1014,7 @@ window.CANTORI_DATA = {
         "bee",
         "bear",
         "bat",
-        "snake",
-        "spider"
+        "snake"
       ],
       "spawnMix": {
         "rat": [
@@ -989,13 +1029,6 @@ window.CANTORI_DATA = {
           25,
           20,
           20,
-          0
-        ],
-        "spider": [
-          3,
-          3,
-          10,
-          15,
           0
         ],
         "bee": [
@@ -1037,8 +1070,26 @@ window.CANTORI_DATA = {
       "spawnEvery": 25,
       "spawnCap": 100,
       "terrain": {
-        "water": { "pools": [1, 2], "size": [4, 10] },
-        "grass": { "patches": [2, 4], "size": [3, 6] }
+        "water": {
+          "pools": [
+            1,
+            2
+          ],
+          "size": [
+            4,
+            10
+          ]
+        },
+        "grass": {
+          "patches": [
+            2,
+            4
+          ],
+          "size": [
+            3,
+            6
+          ]
+        }
       }
     },
     {
@@ -1047,16 +1098,25 @@ window.CANTORI_DATA = {
       "floor": "floor",
       "wall": "wall",
       "monsters": [
-        "rat",
-        "bat",
-        "snake",
         "spider",
-        "harpy"
+        "harpy",
+        "bear",
+        "Goblin",
+        "Goblin_archer"
       ],
       "boss": "golem",
       "door": "door",
       "terrain": {
-        "rubble": { "patches": [2, 4], "size": [3, 7] }
+        "rubble": {
+          "patches": [
+            2,
+            4
+          ],
+          "size": [
+            3,
+            7
+          ]
+        }
       }
     },
     {
@@ -1101,7 +1161,16 @@ window.CANTORI_DATA = {
       "final": true,
       "door": "door",
       "terrain": {
-        "water": { "pools": [1, 3], "size": [5, 14] }
+        "water": {
+          "pools": [
+            1,
+            3
+          ],
+          "size": [
+            5,
+            14
+          ]
+        }
       }
     }
   ],
@@ -1338,7 +1407,10 @@ window.CANTORI_DATA = {
             "A kill during the rage delays that decay by (character level) turns."
           ],
           "req": [
-            "smite"
+            [
+              "smite",
+              1
+            ]
           ]
         },
         {
@@ -1355,7 +1427,10 @@ window.CANTORI_DATA = {
             "Cooldown 70, and healing beyond your maximum becomes a shield."
           ],
           "req": [
-            "smite"
+            [
+              "smite",
+              1
+            ]
           ]
         },
         {

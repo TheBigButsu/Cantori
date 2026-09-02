@@ -523,11 +523,11 @@
     const h = document.createElement("h2"); h.textContent = "biomes — " + biomeRows.length + " in depth order"; bar.appendChild(h);
     wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors below a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
+    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear — that is the DEPTH it starts on, 1–25). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors shallower than a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
     wrap.appendChild(note);
     const bossKeys = rows.bosses.map((r) => r.key);
     const monKeys = rows.monsters.map((r) => r.key);
-    const minFloorOf = {};   // a monster can only spawn on biome-floors >= its minFloor (empty = disabled)
+    const minFloorOf = {};   // a monster can only spawn at DEPTHS >= its minFloor (empty = disabled)
     for (const r of rows.monsters) { const mf = r.obj.minFloor; minFloorOf[r.key] = (mf === "" || mf == null) ? null : Number(mf); }
     biomeRows.forEach((b, i) => {
       const card = document.createElement("div"); card.className = "bcard";
@@ -592,10 +592,12 @@
           const name = document.createElement("span"); name.className = "bmixname"; name.textContent = k; row.appendChild(name);
           const mf = minFloorOf[k];
           for (let f = 0; f < 5; f++) {
-            const eligible = (mf != null && (f + 1) >= mf);
+            // minFloor is an absolute DEPTH, so compare it against this column's
+            // real floor number, not its 1–5 position inside the biome.
+            const eligible = (mf != null && (depthBase + f + 1) >= mf);
             if (!eligible) {                                  // locked: can't spawn on this floor
               const sp = document.createElement("span"); sp.className = "bmixw locked"; sp.textContent = "—";
-              sp.title = mf == null ? (k + " is disabled — set a minFloor on the Monsters tab") : (k + " can't spawn before floor " + (depthBase + mf) + " (biome-floor " + mf + ")");
+              sp.title = mf == null ? (k + " is disabled — set a minFloor on the Monsters tab") : (k + " can't spawn before depth " + mf);
               row.appendChild(sp); continue;
             }
             const inp = document.createElement("input"); inp.type = "number"; inp.className = "bmixw"; inp.min = "0"; inp.max = "100"; inp.placeholder = "0";
@@ -1068,6 +1070,7 @@
         { name: "Attack cost", formula: "1 / (weapon speed × (1 + attack haste) [+1 if a Metrognome is tuned to attack speed])", note: "Attack haste = worn `haste` enchants + Ourn's boons. Lower cost = more actions per monster turn." },
         { name: "Walk cost", formula: "1 / (1 + walk haste [+1 if a Metrognome is tuned to walk speed])", note: "Walk haste = worn `walkHaste` enchants + Ourn's boons. Weapon speed is deliberately NOT in here: a heavy axe slows your swing, not your feet." },
         { name: "Every other action", formula: "1, flat", note: "A potion, a scroll, equipping, a skill, waiting. Neither haste shortens these, so consumables always cost real tempo." },
+        { name: "Monster eligibility", formula: "spawns when its biome is active AND minFloor <= current depth", note: "minFloor is an absolute depth (the floor number in the HUD), not a 1–5 position within the biome. Blank disables the monster entirely." },
         { name: "Monster actions", formula: "banks your action's cost each turn, acts while it holds ≥ 1, and each action costs 1 / (walk speed) if it stepped or 1 / (attack speed) otherwise — capped at 2 actions", note: "walk/attack speed each fall back to the row's `speed` when blank, so setting only `speed` gives one figure for everything. 1.2 on an axis means a double-action every 5th turn on that axis; 0.8 means skipping one in 5. Halving your own cost halves what every monster banks — that IS haste." },
       ],
     },
@@ -1275,6 +1278,15 @@
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return new TextDecoder().decode(bytes);
   }
+  // Name what actually moved on the branch, so the stop message is a diagnosis
+  // rather than a wall. Top-level sections are enough to tell "someone retuned
+  // monsters" from "someone rewrote the skill trees".
+  function whatMoved(mine, theirs) {
+    const keys = Array.from(new Set(Object.keys(mine || {}).concat(Object.keys(theirs || {}))));
+    const moved = keys.filter((k) => JSON.stringify(mine[k]) !== JSON.stringify(theirs[k]));
+    if (!moved.length) return "formatting only";
+    return "theirs differs in: " + moved.slice(0, 6).join(", ") + (moved.length > 6 ? ", …" : "");
+  }
   // data.js is a JS file wrapping one JSON literal — pull the literal back out.
   function parseDataFile(text) {
     try { return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)); }
@@ -1344,7 +1356,9 @@
       const liveData = live.text == null ? null : parseDataFile(live.text);
       if (liveData && JSON.stringify(liveData) !== ghBaseline && !ghOverwriteArmed) {
         ghOverwriteArmed = true;
-        ghMsg("Stopped: data.js on “" + c.branch + "” is NOT what this page loaded, so saving now would revert whatever changed since. Reload the editor (hard-refresh) to pick those changes up first. Press Commit again to overwrite anyway.", "err");
+        ghMsg("Stopped: data.js on “" + c.branch + "” is NOT what this page loaded, so saving now would revert whatever changed since (" +
+              whatMoved(JSON.parse(ghBaseline), liveData) + "). Reload the editor (hard-refresh) to pick those changes up first, " +
+              "or press Commit again to overwrite them deliberately.", "err");
         return;
       }
       let putRes = await put(live.sha);
@@ -1425,7 +1439,7 @@
   }
   function tableHint(coll) {
     return ({
-      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
       gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range) plus its own evasion stat; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype ALSO nudges evasion on top of the item's own value: light +3, medium 0, heavy −3. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
