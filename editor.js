@@ -36,7 +36,7 @@
       { f: "speed", type: "num", step: "0.1" },
       { f: "acc", type: "num" }, { f: "eva", type: "num" },
       { f: "range", type: "num" }, { f: "minFloor", type: "num" },
-      { f: "charge", type: "bool" }, { f: "ranged", type: "bool" },
+      { f: "charge", type: "bool" }, { f: "ranged", type: "bool" }, { f: "flying", type: "bool" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     gear: [

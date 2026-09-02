@@ -42,9 +42,12 @@
     [STAIRS]: {},
     [DOOR]:   {},                                    // sight handled by doorOpen()
     [THORN]:  { hurts: [5, 10], shun: true, noTravel: true, opaque: true },   // brambles are dense — you cannot see through them, nor they you
-    [WATER]:  { costMult: 2, blocksConnect: false },
+    // Deep water: ground movement stops at the shore, only fliers cross. Deliberately
+    // NOT `solid` — it isn't a wall. You see across it, arrows fly over it, and the
+    // generator may carve through it; it only stops feet.
+    [WATER]:  { deep: true, blocksConnect: false },
     [CHASM]:  { falls: true, shun: true, noTravel: true, blocksConnect: true },
-    [RUBBLE]: { costMult: 2 },
+    [RUBBLE]: {},                                    // decorative for now — C3 gives it meaning
     [GRASS]:  { conceals: true },
   };
   // Out of bounds is WALL, not "no properties" — otherwise the map edge stops
@@ -190,7 +193,14 @@
   const isDoor = (x, y) => inBounds(x, y) && map[y][x] === DOOR;
   const isThorn = (x, y) => inBounds(x, y) && map[y][x] === THORN;
   const shuns = (x, y) => !!tileProp(x, y, "shun");     // monsters (and drops/teleports) avoid these tiles
-  const passable = (x, y) => inBounds(x, y) && !tileProp(x, y, "solid");
+  // Walkable on foot. Deep water counts as blocked here, which is what makes every
+  // spawn, drop, knockback and auto-travel route dodge it without a special case.
+  // Anything that flies asks canStep/passableFor instead.
+  const passable = (x, y) => inBounds(x, y) && !tileProp(x, y, "solid") && !tileProp(x, y, "deep");
+  // Same question, asked on behalf of a specific mover: fliers cross deep water.
+  // (Chasms stay off-limits to everything — they're `shun` + `falls`, not `deep`.)
+  const passableFor = (mover, x, y) =>
+    inBounds(x, y) && !tileProp(x, y, "solid") && (!tileProp(x, y, "deep") || !!(mover && mover.flying));
   // A door is open only while you stand on it, then swings/grows shut behind you —
   // an open/close mechanism (the forest bushes "come back"). EXCEPT: a door a
   // monster died on is propped open for good (you already fought there, no more
@@ -1020,7 +1030,9 @@
   function floodReach(sx, sy, blockThorns) {
     const seen = new Set([sy * MAP_W + sx]);
     const q = [[sx, sy]];
-    const blocked = (x, y) => !inBounds(x, y) || tileProp(x, y, "solid") || tileProp(x, y, "blocksConnect") || (blockThorns && tileProp(x, y, "hurts"));
+    // `passable` already rejects walls and deep water; blocksConnect is for tiles that
+    // are technically enterable but must never count as a route (a chasm you fall into).
+    const blocked = (x, y) => !passable(x, y) || tileProp(x, y, "blocksConnect") || (blockThorns && tileProp(x, y, "hurts"));
     while (q.length) {
       const [x, y] = q.shift();
       for (const [dx, dy] of DIRS8) {
@@ -1041,7 +1053,18 @@
   // "can I see it" and "can I walk to it" consistent everywhere.
   function allRoomsReachable(rooms, sx, sy) {
     const reach = floodReach(sx, sy, false);
-    return rooms.every((r) => { const c = roomCenter(r); return reach.has(c.y * MAP_W + c.x); });
+    return rooms.every((r) => {
+      const c = roomCenter(r);
+      if (reach.has(c.y * MAP_W + c.x)) return true;
+      // The centre tile itself may be one you can't stand on — a pond in the middle of
+      // the room. The room is still perfectly reachable; ask whether ANY of it is
+      // before condemning the floor. (Only runs when the centre misses, so the common
+      // case stays a single Set lookup.)
+      for (let y = r.y; y < r.y + r.h; y++)
+        for (let x = r.x; x < r.x + r.w; x++)
+          if (reach.has(y * MAP_W + x)) return true;
+      return false;
+    });
   }
   function fixOpenCorners(rooms) {
     if (!rooms.length) return;
@@ -1176,11 +1199,11 @@
   function paintTerrainBlob(tile, x0, y0, size, skip) {
     const seen = new Set([y0 * MAP_W + x0]);
     const frontier = [[x0, y0]];
-    let painted = 0;
-    while (painted < size && frontier.length) {
+    const cells = [];
+    while (cells.length < size && frontier.length) {
       const [x, y] = frontier.splice(randInt(0, frontier.length - 1), 1)[0];
       if (map[y][x] !== FLOOR || skip(x, y)) continue;
-      map[y][x] = tile; painted++;
+      map[y][x] = tile; cells.push([x, y]);
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, ny = y + dy, k = ny * MAP_W + nx;
         if (!inBounds(nx, ny) || seen.has(k)) continue;
@@ -1188,39 +1211,82 @@
         if (map[ny][nx] === FLOOR && !skip(nx, ny)) frontier.push([nx, ny]);
       }
     }
+    return cells;
   }
   // Scatter `cfg[countKey]` blobs of `tile` (a [min,max] roll each), each sized from
   // `cfg.size` (default a small patch), seeded on random floor tiles across the level.
-  function paintTerrainFeature(tile, cfg, countKey, skip) {
-    if (!cfg || !cfg[countKey]) return;
+  // `keep` vets a finished blob (see paintTerrain's connectivity check) and, when it
+  // says no, that blob alone is undone — the rest of the level keeps its terrain.
+  function paintTerrainFeature(tile, cfg, countKey, skip, keep) {
+    if (!cfg || !cfg[countKey]) return [];
     const n = randInt(cfg[countKey][0], cfg[countKey][1]);
     const size = cfg.size || [3, 6];
     const seeds = [];
+    const painted = [];
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) if (map[y][x] === FLOOR && !skip(x, y)) seeds.push([x, y]);
     for (let i = 0; i < n && seeds.length; i++) {
       const [x, y] = seeds[randInt(0, seeds.length - 1)];
-      paintTerrainBlob(tile, x, y, randInt(size[0], size[1]), skip);
+      const cells = paintTerrainBlob(tile, x, y, randInt(size[0], size[1]), skip);
+      if (keep && !keep()) { for (const [cx, cy] of cells) map[cy][cx] = FLOOR; continue; }
+      for (const c of cells) painted.push(c);
     }
+    return painted;
+  }
+  // Every cell this level's painters coloured in, so a late failure can undo exactly
+  // those and nothing else — see unpaintTerrain.
+  let paintedCells = [];
+  // Undo the terrain paint, cell by cell. Deliberately NOT a whole-grid snapshot
+  // restore: doors, stairs, thorn vaults and trees are written to the map *after*
+  // painting, and rolling the grid back would erase them. A cell that has since
+  // become something else is left alone. Turning water back into floor only ever
+  // adds passability, so this is safe to call at any point in generation.
+  function unpaintTerrain(tiles) {
+    for (const [x, y, t] of paintedCells) if (map[y][x] === t && (!tiles || tiles.indexOf(t) >= 0)) map[y][x] = FLOOR;
+    paintedCells = tiles ? paintedCells.filter(([, , t]) => tiles.indexOf(t) < 0) : [];
   }
   // Paint the current biome's water/grass/rubble onto the room+corridor graph,
   // driven from data.js → biomes[].terrain. A biome with no `terrain` block is a
   // no-op, so it generates exactly as it did before this painter existed. Runs after
   // thinCorridors/sealDeadEndStubs (the graph is settled) and before placeDoors (so
-  // there's nothing walkable placed yet to dodge). fixOpenCorners never touches a
-  // painted cell (its solid/floor checks only ever wall over plain FLOOR), so it's
-  // safe to re-sweep here; if painting somehow left a room unreachable, revert the
-  // whole map and ship the floor unpainted rather than an unwinnable one.
+  // there's nothing walkable placed yet to dodge).
+  //
+  // Deep water blocks movement, so a pool can sever a floor the way a wall would.
+  // Guard it twice: each blob is vetted the moment it lands, and any that costs the
+  // level a tile it could previously walk to is undone on the spot (a pool that
+  // reaches a corridor wall, or rings an alcove). Then the whole paint is re-checked
+  // room by room. Grass and rubble can't sever anything, but they go through the
+  // same path — one code path is cheaper to keep honest than two.
   function paintTerrain(rooms) {
+    paintedCells = [];
     const terrain = biome && biome.terrain;
     if (!terrain || !rooms.length) return;
     const anchor = roomCenter(rooms[0]);          // becomes the player's start tile right after this runs
     const skip = (x, y) => x === anchor.x && y === anchor.y;
-    const saved = map.map((row) => row.slice());
-    if (terrain.water) paintTerrainFeature(WATER, terrain.water, "pools", skip);
-    if (terrain.grass) paintTerrainFeature(GRASS, terrain.grass, "patches", skip);
-    if (terrain.rubble) paintTerrainFeature(RUBBLE, terrain.rubble, "patches", skip);
+    const before = floodReach(anchor.x, anchor.y, false);
+    // Every tile walkable before painting must still be walkable, or still be
+    // reachable — a tile that became water is fine, a tile stranded behind it is not.
+    const keep = () => {
+      const after = floodReach(anchor.x, anchor.y, false);
+      for (const k of before) {
+        if (after.has(k)) continue;
+        if (!passable(k % MAP_W, Math.floor(k / MAP_W))) continue;   // it IS the water now
+        return false;
+      }
+      return true;
+    };
+    const record = (tile, cells) => { for (const [x, y] of cells) paintedCells.push([x, y, tile]); };
+    // Water keeps clear of walls entirely: a pool that touches one can plug a corridor
+    // or seal a doorway, and `keep` would then throw the whole blob away — which is why
+    // an unrestricted painter left most floors dry. Confined to open ground it grows
+    // into a pond with a walkable shore all the way round, which cannot sever anything
+    // and reads as deliberate. At this point in generation the map is only FLOOR and
+    // WALL, so "not next to a wall" is the whole test.
+    const nearWall = (x, y) => DIRS8.some(([dx, dy]) => !inBounds(x + dx, y + dy) || map[y + dy][x + dx] === WALL);
+    if (terrain.water) record(WATER, paintTerrainFeature(WATER, terrain.water, "pools", (x, y) => skip(x, y) || nearWall(x, y), keep));
+    if (terrain.grass) record(GRASS, paintTerrainFeature(GRASS, terrain.grass, "patches", skip, keep));
+    if (terrain.rubble) record(RUBBLE, paintTerrainFeature(RUBBLE, terrain.rubble, "patches", skip, keep));
     fixOpenCorners(rooms);
-    if (!allRoomsReachable(rooms, anchor.x, anchor.y)) map = saved;   // never ship a severed floor
+    if (!allRoomsReachable(rooms, anchor.x, anchor.y)) unpaintTerrain();   // never ship a severed floor
   }
 
   function generateLevel() {
@@ -1315,6 +1381,17 @@
     spawnItems(rooms);
     placeTrees(rooms, restricted);                     // obstacle trees in the larger rooms
     fixOpenCorners(rooms);   // trees are wall tiles too — re-sweep for any new diagonal touches
+    // Last line of defence (CLAUDE.md rule 5). Deep water blocks movement, and doors,
+    // thorn vaults and trees all land AFTER the terrain paint — so a pool that was
+    // harmless when painted can still end up sealing the way onward once a tree drops
+    // beside it. If the way onward isn't walkable from the start tile, take the terrain
+    // back out: turning water into floor only ever opens routes, and a plain floor
+    // beats an unfinishable one.
+    if (paintedCells.length) {
+      const goal = bossActive ? (monsters.find((m) => DATA.bosses[m.type]) || monsters[0]) : findStairs();
+      const reach = floodReach(player.x, player.y, false);
+      if (!goal || !reach.has(goal.y * MAP_W + goal.x)) unpaintTerrain();
+    }
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -1490,6 +1567,7 @@
   // no such spot at all (its whole perimeter shared via doors/attachments),
   // tries every other room, closest-generated-to-`room` first, before ever
   // falling back to just standing it in the room's open center.
+  const findStairs = () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; };
   function placeExit(rooms, room) {
     const flankedSpots = (r) => {
       const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
@@ -1502,13 +1580,17 @@
       });
     };
     const pick = (arr) => arr[randInt(0, arr.length - 1)];
+    // A spot is only usable if you can actually stand next to it. Since terrain is
+    // painted before this runs, a ring tile whose whole inward side is deep water
+    // would open onto a pond — carve the stairs somewhere you can walk to instead.
+    const standable = ([x, y]) => DIRS8.some(([dx, dy]) => passable(x + dx, y + dy));
     const order = [room].concat(rooms.filter((r) => r !== room).slice().reverse());
     for (const r of order) {
-      const flanked = flankedSpots(r);
+      const flanked = flankedSpots(r).filter(standable);
       if (flanked.length) { const [x, y] = pick(flanked); map[y][x] = STAIRS; return; }
     }
     for (const r of order) {
-      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
+      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL).filter(standable);
       if (ring.length) { const [x, y] = pick(ring); map[y][x] = STAIRS; return; }
     }
     // Absolute last resort — every room's whole perimeter is shared (doors/attachments).
@@ -2111,14 +2193,18 @@
   }
 
   // ---- Movement / a player action -----------------------------------------
-  function canStep(x, y, dx, dy) {
+  // `mover` is optional and means "on whose behalf" — omit it for the player and for
+  // anything walking on foot; pass the monster so a flier may cross deep water.
+  function canStep(x, y, dx, dy, mover) {
     const nx = x + dx, ny = y + dy;
-    if (!passable(nx, ny)) return false;
+    if (!passableFor(mover, nx, ny)) return false;
     // no diagonal squeeze past a corner flanked by walls OR thorns — so a wall of
-    // brambles can't be slipped around diagonally without stepping through it
+    // brambles can't be slipped around diagonally without stepping through it. Water
+    // flanks the same way for whoever can't enter it: a walker can't cut the corner
+    // between two ponds, a flier doesn't notice them.
     if (dx !== 0 && dy !== 0) {
-      const blockA = tileProp(x + dx, y, "solid") || shuns(x + dx, y);
-      const blockB = tileProp(x, y + dy, "solid") || shuns(x, y + dy);
+      const blockA = !passableFor(mover, x + dx, y) || shuns(x + dx, y);
+      const blockB = !passableFor(mover, x, y + dy) || shuns(x, y + dy);
       if (blockA && blockB) return false;
     }
     return true;
@@ -2174,7 +2260,7 @@
       const tr = trapAt(player.x, player.y);
       if (tr && !tr.sprung) { triggerTrap(tr); if (dead) return true; }
       if (map[player.y][player.x] === STAIRS) { descend(); return true; }  // fresh level, no world turn
-      worldTurn(walkCost() * (tileProp(nx, ny, "costMult") || 1));     // Metrognome (walk) → you cover ground faster than your foes; water/rubble cost double
+      worldTurn(walkCost());     // Metrognome (walk) → you cover ground faster than your foes. Terrain never costs extra time: it shapes the route instead of taxing it, and a costlier step used to hand every monster in earshot a free second action.
       return true;
     }
     return false;
@@ -2368,7 +2454,7 @@
   // could stall or oscillate against an inner diagonal corner (the neighbor
   // that would cut distance is corner-blocked, and every other neighbor ties),
   // which read as monsters getting "stuck" chasing around a bend.
-  function monsterPathStep(sx, sy, tx, ty) {
+  function monsterPathStep(sx, sy, tx, ty, mover) {
     if (sx === tx && sy === ty) return null;
     const key = (x, y) => y * MAP_W + x;
     const prev = new Map();
@@ -2381,7 +2467,7 @@
       if (cx === tx && cy === ty) break;
       for (const [dx, dy] of DIRS8) {
         const nx = cx + dx, ny = cy + dy;
-        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy) || shuns(nx, ny)) continue;
+        if (!inBounds(nx, ny) || !canStep(cx, cy, dx, dy, mover) || shuns(nx, ny)) continue;
         // occupied tiles block passage, unless a tile IS the goal (so the search
         // can still route a monster up next to the player or another monster)
         if ((nx !== tx || ny !== ty) && (monsterAt(nx, ny) || (nx === player.x && ny === player.y))) continue;
@@ -2404,14 +2490,14 @@
     // monsters on one tile. Every monster must have its own tile, so re-check
     // occupancy here before actually moving; fall through to the greedy
     // heuristic below (which already excludes occupied tiles) if it's blocked.
-    const step = monsterPathStep(m.x, m.y, tx, ty);
+    const step = monsterPathStep(m.x, m.y, tx, ty, m);
     if (step && !monsterAt(step[0], step[1]) && !(step[0] === player.x && step[1] === player.y)) { m.x = step[0]; m.y = step[1]; return; }
     // No path found (e.g. fully boxed in this turn) — fall back to the old
     // greedy "closest open neighbor" so the monster doesn't just freeze.
     let best = null, bestD = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || shuns(nx, ny)) continue;   // monsters won't brave hazards they shun
+      if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny)) continue;   // monsters won't brave hazards they shun
       if (nx === player.x && ny === player.y) continue;
       if (monsterAt(nx, ny)) continue;
       const d = cheb(nx, ny, tx, ty);
@@ -2482,7 +2568,7 @@
     while (cheb(m.x, m.y, player.x, player.y) > 1) {
       const nx = m.x + dir[0], ny = m.y + dir[1];
       if (nx === player.x && ny === player.y) break;
-      if (!canStep(m.x, m.y, dir[0], dir[1]) || shuns(nx, ny) || monsterAt(nx, ny)) break;
+      if (!canStep(m.x, m.y, dir[0], dir[1], m) || shuns(nx, ny) || monsterAt(nx, ny)) break;
       m.x = nx; m.y = ny; moved++;
     }
     if (moved > 0) {                                         // make the dash READ: streak + a slower slide + a roar
@@ -2503,7 +2589,7 @@
     let best = null, bestScore = -Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
-      if (!canStep(m.x, m.y, dx, dy) || shuns(nx, ny) || monsterAt(nx, ny)) continue;
+      if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny) || monsterAt(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       const ddx = player.x - nx, ddy = player.y - ny;
       const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
@@ -2866,7 +2952,7 @@
       const dx = Math.sign(m.x - player.x) || (Math.random() < 0.5 ? 1 : -1);
       const dy = Math.sign(m.y - player.y) || (Math.random() < 0.5 ? 1 : -1);
       const nx = m.x + dx, ny = m.y + dy;
-      if (inBounds(nx, ny) && passable(nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
+      if (inBounds(nx, ny) && passableFor(m, nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
       return;
     }
     // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just the player.
@@ -3383,7 +3469,13 @@
   }
   // Placeholder draws for the C1 hazard tiles — nothing places them yet (that's
   // C2/C3), but a tile with no draw case would render as an invisible hole.
-  function drawWater(px, py, b) { ctx.fillStyle = shade("#2f6a9e", b); ctx.fillRect(px, py, tile, tile); }
+  // Deeper and darker than the puddle this used to be — water is a barrier now, and
+  // it has to read as one at a glance, not as floor with a blue tint.
+  function drawWater(px, py, b) {
+    ctx.fillStyle = shade("#123a5e", b); ctx.fillRect(px, py, tile, tile);
+    ctx.fillStyle = shade("#1d5480", b * 0.9); ctx.fillRect(px, py + tile * 0.18, tile, tile * 0.16);
+    ctx.fillStyle = shade("#1d5480", b * 0.7); ctx.fillRect(px, py + tile * 0.62, tile, tile * 0.12);
+  }
   function drawChasm(px, py, b) { ctx.fillStyle = shade("#0c0c10", b); ctx.fillRect(px, py, tile, tile); }
   function drawRubble(px, py, b) { ctx.fillStyle = shade("#6f6a5e", b); ctx.fillRect(px, py, tile, tile); }
   function drawGrass(px, py, b) { ctx.fillStyle = shade("#3a6b2e", b); ctx.fillRect(px, py, tile, tile); }
@@ -4785,7 +4877,7 @@
       if (m) {
         const pdx = Math.sign(x - player.x) || (horiz ? 0 : 1), pdy = Math.sign(y - player.y) || (horiz ? 1 : 0);
         const nx = x + pdx, ny = y + pdy;
-        if (inBounds(nx, ny) && passable(nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
+        if (inBounds(nx, ny) && passableFor(m, nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; floatText(nx, ny, "knock!", "#b491d6"); }
         else continue;
       }
       activeWalls.push({ x, y, turns: 21 });   // +1: this cast's own worldTurn() below ticks it once already
@@ -5006,9 +5098,9 @@
     log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
         t === THORN ? "A wall of thorns — you can force through, but it'll draw blood. Something waits beyond." :
-        t === WATER ? "Shallow water — slow going, but wadeable." :
+        t === WATER ? "Deep water — too deep to wade. You'll have to go around; winged things won't." :
         t === CHASM ? "A chasm — step in and you'll fall straight through to the floor below." :
-        t === RUBBLE ? "Loose rubble — treacherous underfoot, slow going." :
+        t === RUBBLE ? "Loose rubble — broken stone underfoot." :
         t === GRASS ? "Tall grass — thick enough to hide in." :
         "Open ground.");
   }
@@ -5454,6 +5546,8 @@
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    passableAt: (x, y) => passable(x, y),                          // on foot — deep water says no
+    passableFlying: (x, y) => passableFor({ flying: true }, x, y),
     tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),
     tileDeclared: (t) => Object.prototype.hasOwnProperty.call(TILE, t),
     pan: (dxPx, dyPx) => panBy(dxPx, dyPx),
@@ -5482,7 +5576,7 @@
     placeMonster: (i, x, y) => { const m = monsters[i]; if (m) { m.x = x; m.y = y; } },
     bossRoomRect: () => (bossRoom ? { x: bossRoom.x, y: bossRoom.y, w: bossRoom.w, h: bossRoom.h } : null),
     nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
-    stairsAt: () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; },
+    stairsAt: () => findStairs(),
     // Can the player physically walk to (tx, ty)? Terrain-only flood fill, the same
     // one the generator uses to guarantee connectivity — so tests/smoke.js can prove
     // a floor is completable without depending on monster positions or explored state.

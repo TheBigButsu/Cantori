@@ -16,6 +16,7 @@ window.CANTORI_DATA = {
     },
     "bat": {
       "name": "Bat",
+      "flying": true,
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
@@ -66,6 +67,7 @@ window.CANTORI_DATA = {
     },
     "bee": {
       "name": "Bee",
+      "flying": true,
       "hp": 10,
       "atkMin": 2,
       "atkMax": 6,
@@ -93,6 +95,7 @@ window.CANTORI_DATA = {
     },
     "harpy": {
       "name": "Harpy",
+      "flying": true,
       "atkMax": 12,
       "acc": 12,
       "eva": 14,
@@ -115,6 +118,7 @@ window.CANTORI_DATA = {
     },
     "hornet": {
       "name": "Hornet",
+      "flying": true,
       "hp": 2,
       "atkMin": 2,
       "atkMax": 3,

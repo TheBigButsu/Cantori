@@ -57,17 +57,23 @@ public domain, and credited in `ART-CREDITS.md`.
 means the user tests stale code and reports phantom bugs.
 
 **5. New terrain must be added to every map predicate.**
-Tiles today are `WALL / FLOOR / STAIRS / DOOR / THORN`. Note `passable()` is written as
-"anything that isn't `WALL`", so a new tile is walkable by default. Any new tile must be considered in:
+Tiles are `WALL / FLOOR / STAIRS / DOOR / THORN / WATER / CHASM / RUBBLE / GRASS`, each a row in the
+`TILE` property table. A tile with no properties is walkable, sighted-through and harmless by
+default, so declare what it *is* rather than special-casing the constant. Any new tile must be
+considered in:
 
-- `passable()` and `isWall()` — movement
+- `passable()` (on foot) and `passableFor(mover, …)` (per-creature — a flier crosses deep water) — movement
+- `isWall()` — projectiles and ranged weapons, which is a different question from "can I walk there"
 - `blocksSight()` — FOV
 - `floodReach()` and `allRoomsReachable()` — the generator's connectivity guarantee
 - `fixOpenCorners()` — no diagonal-only wall/floor touches
 - auto-travel pathing, and the renderer
 
-Miss one and levels become unwinnable in ways that only surface on rare seeds. This is the single
-most common way to break the game.
+**A tile that blocks movement can sever a floor.** Deep water is the live example: `paintTerrain`
+vets each blob as it lands and undoes any that strands a tile, and `generateLevel` re-checks the way
+onward once doors, thorns and trees are down, calling `unpaintTerrain()` if it's cut off. Anything
+new that blocks movement needs the same treatment. Miss one and levels become unwinnable in ways
+that only surface on rare seeds. This is the single most common way to break the game.
 
 **6. Run the smoke test before committing:** `node tests/smoke.js`.
 
