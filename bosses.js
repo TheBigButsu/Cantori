@@ -4,12 +4,17 @@
    Everything a boss does on its own turn, plus the registry that dispatches to
    it. Adding a boss is a data.js row (name/hp/atk + whatever a playbook wants
    to read — the whole row survives makeBoss in game.js) and one entry here.
-   game.js contains no per-boss `if (m.type === …)` branch; it calls the four
+   game.js contains no per-boss `if (m.type === …)` branch; it calls the
    generic hooks below and lets PLAYBOOKS decide who, if anyone, answers.
 
-   Usage (from game.js, constructed after everything in `deps` is defined —
-   `flash`/`floatText` are declared late in the Animation section, so this
-   module is wired up after them, not up near _loot):
+   Everything this module touches (the map, the monster list, whether the run
+   is over) is handed in as deps rather than closed over directly —
+   map/monsters/dead are reassigned wholesale on every level generation, so a
+   value captured at construction would go stale the moment floor 2 loads.
+   Pass accessors for those three; everything else (functions, and player/gear
+   which are only mutated) is a plain reference.
+
+   Usage (from game.js):
      const _boss = window.CantoriBosses({ getMap: () => map, ... });
      if (m.type === "healing_node") return;                 // still special: never acts
      const pb = _boss.playbookFor(m.type);
@@ -26,16 +31,15 @@
    ========================================================================== */
 window.CantoriBosses = function (deps) {
   "use strict";
-  const getMap = deps.getMap, getMonsters = deps.getMonsters, isDead = deps.isDead;
-  const player = deps.player, WALL = deps.WALL;
-  const attack = deps.attack, canSee = deps.canSee, chaseLastSeen = deps.chaseLastSeen, cheb = deps.cheb,
-    computeFOV = deps.computeFOV, die = deps.die, flash = deps.flash, flashScreen = deps.flashScreen,
-    floatText = deps.floatText, inBounds = deps.inBounds, lineOfSight = deps.lineOfSight, log = deps.log,
-    monsterAt = deps.monsterAt, patrolStep = deps.patrolStep, randInt = deps.randInt, sayMonster = deps.sayMonster,
-    shuns = deps.shuns, snapEntity = deps.snapEntity, snapPlayer = deps.snapPlayer, spawnBurst = deps.spawnBurst,
-    spawnNear = deps.spawnNear, spawnProjectile = deps.spawnProjectile, spawnStreak = deps.spawnStreak,
-    stepMonsterTo = deps.stepMonsterTo, tileProp = deps.tileProp, updateHUD = deps.updateHUD,
-    normalAct = deps.normalAct;
+  const WALL = deps.WALL, attack = deps.attack, canSee = deps.canSee, chaseLastSeen = deps.chaseLastSeen,
+    cheb = deps.cheb, computeFOV = deps.computeFOV, isDead = deps.isDead, die = deps.die,
+    flash = deps.flash, flashScreen = deps.flashScreen, floatText = deps.floatText, inBounds = deps.inBounds,
+    lineOfSight = deps.lineOfSight, log = deps.log, getMap = deps.getMap, monsterAt = deps.monsterAt,
+    getMonsters = deps.getMonsters, patrolStep = deps.patrolStep, player = deps.player, randInt = deps.randInt,
+    sayMonster = deps.sayMonster, shuns = deps.shuns, snapEntity = deps.snapEntity, snapPlayer = deps.snapPlayer,
+    spawnBurst = deps.spawnBurst, spawnNear = deps.spawnNear, spawnProjectile = deps.spawnProjectile,
+    spawnStreak = deps.spawnStreak, stepMonsterTo = deps.stepMonsterTo, tileProp = deps.tileProp,
+    updateHUD = deps.updateHUD, normalAct = deps.normalAct;
 
   // ---- The Pied Piper (forest boss) ---------------------------------------
   function piperAct(m) {
@@ -94,7 +98,8 @@ window.CantoriBosses = function (deps) {
     else if (adx >= 2 * ady) dir = [Math.sign(dx), 0];
     else if (ady >= 2 * adx) dir = [0, Math.sign(dy)];
     else dir = [Math.sign(dx) || 1, Math.sign(dy) || 1];
-    const pass = (x, y) => inBounds(x, y) && getMap()[y][x] !== WALL;
+    const map = getMap();
+    const pass = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
     let sx = player.x, sy = player.y;                 // back up to the piper-side wall
     while (pass(sx - dir[0], sy - dir[1])) { sx -= dir[0]; sy -= dir[1]; }
     const tiles = [];
@@ -177,7 +182,8 @@ window.CantoriBosses = function (deps) {
     log("The Golem hefts a boulder overhead!", "hurt");
   }
   function golemFireBoulder(m, w) {
-    const pass = (x, y) => inBounds(x, y) && getMap()[y][x] !== WALL;
+    const map = getMap();
+    const pass = (x, y) => inBounds(x, y) && map[y][x] !== WALL;
     let x = m.x, y = m.y;
     for (let i = 0; i < 24; i++) {
       const nx = x + w.dx, ny = y + w.dy;
@@ -246,11 +252,12 @@ window.CantoriBosses = function (deps) {
   // Phase shift at 50% HP: knock the player back (up to 5 tiles, stopping at a
   // wall — a wall stop stuns 1–3 turns), then call two Healing Nodes to its side.
   function golemPhaseShift(m) {
+    const map = getMap();
     const dx = Math.sign(player.x - m.x) || 1, dy = Math.sign(player.y - m.y) || 0;
     let x = player.x, y = player.y, moved = 0, hitWall = false;
     for (let i = 0; i < 5; i++) {
       const nx = x + dx, ny = y + dy;
-      if (!inBounds(nx, ny) || getMap()[ny][nx] === WALL) { hitWall = true; break; }
+      if (!inBounds(nx, ny) || map[ny][nx] === WALL) { hitWall = true; break; }
       x = nx; y = ny; moved++;
     }
     if (moved > 0) { player.x = x; player.y = y; computeFOV(); snapPlayer(); }
