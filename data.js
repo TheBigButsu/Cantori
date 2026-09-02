@@ -40,6 +40,7 @@ window.CANTORI_DATA = {
       "atkMax": 6
     },
     "spider": {
+      "walkSpeed": 0.8,
       "name": "Spider",
       "atkMax": 5,
       "minFloor": 3,
@@ -81,6 +82,8 @@ window.CANTORI_DATA = {
       "eva": 25
     },
     "bear": {
+      "walkSpeed": 0.8,
+      "attackSpeed": 0.8,
       "name": "Bear",
       "hp": 35,
       "atkMin": 2,
@@ -109,6 +112,8 @@ window.CANTORI_DATA = {
       "atkMin": 2
     },
     "jackal": {
+      "walkSpeed": 1.2,
+      "speed": 1,
       "name": "Jackal",
       "hp": 3,
       "atkMin": 1,
@@ -117,6 +122,9 @@ window.CANTORI_DATA = {
       "color": "#b79a6b"
     },
     "hornet": {
+      "walkSpeed": 1.2,
+      "attackSpeed": 1.2,
+      "speed": 1,
       "name": "Hornet",
       "flying": true,
       "hp": 2,
@@ -126,6 +134,9 @@ window.CANTORI_DATA = {
       "color": "#e0a13c"
     },
     "ghoul": {
+      "walkSpeed": 0.8,
+      "attackSpeed": 0.8,
+      "speed": 1,
       "name": "Ghoul",
       "hp": 35,
       "atkMin": 3,
@@ -136,6 +147,8 @@ window.CANTORI_DATA = {
       "charge": true
     },
     "wraith": {
+      "walkSpeed": 1.2,
+      "speed": 1,
       "name": "Wraith",
       "hp": 6,
       "atkMin": 3,
@@ -145,6 +158,8 @@ window.CANTORI_DATA = {
       "minFloor": 1
     },
     "phantom": {
+      "walkSpeed": 1.2,
+      "speed": 1,
       "name": "Phantom",
       "hp": 5,
       "atkMin": 2,
@@ -154,6 +169,8 @@ window.CANTORI_DATA = {
       "minFloor": 1
     },
     "imp": {
+      "walkSpeed": 1.2,
+      "speed": 1,
       "name": "Imp",
       "hp": 5,
       "atkMin": 3,
@@ -163,6 +180,8 @@ window.CANTORI_DATA = {
       "minFloor": 1
     },
     "keener": {
+      "walkSpeed": 1.2,
+      "speed": 1,
       "name": "Keener",
       "hp": 4,
       "atkMin": 2,
@@ -588,7 +607,30 @@ window.CANTORI_DATA = {
           1.8
         ]
       },
-      "Thorns": {
+      "Swiftness": {
+      "name": "Swiftness",
+      "icon": "\ud83d\udc5f",
+      "color": "#bfe0ff",
+      "proc": 1,
+      "slots": [
+        "armor",
+        "trinket",
+        "necklace"
+      ],
+      "desc": "While worn, your steps cost less time \u2014 you cover ground faster than your foes. Scales with the item's tier.",
+      "effect": {
+        "type": "walkHaste",
+        "mult": 0.25
+      },
+      "tierValues": [
+        1.1,
+        1.2,
+        1.3,
+        1.5,
+        1.8
+      ]
+    },
+    "Thorns": {
         "name": "Thorns",
         "icon": "🜲",
         "color": "#cdd6a0",
