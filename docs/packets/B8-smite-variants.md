@@ -9,13 +9,14 @@ the existing Smite resolves.
 
 ## Goal
 
-Chadwick's Smite becomes a **choice of three**. Raging, Healing and Spinning Smite replace the
-base Smite node outright and are **mutually exclusive**: spend a point in one and the other two
-lock for the rest of the run.
+Chadwick's Smite **upgrades into one of three**. Smite stays a real four-rank skill you learn and
+use; once it is maxed you commit to Raging, Healing or Spinning Smite, and that variant takes
+Smite's place on the skill bar. The three are **mutually exclusive**: spend a point in one and the
+other two lock for the rest of the run.
 
-Two pieces: a new exclusivity rule the engine does not have, and modifier fields on the smite
-handler so the three are one behaviour with variations rather than three near-identical
-functions.
+Three pieces: a new exclusivity rule the engine does not have, a way for a variant to stand in for
+the skill it upgrades, and modifier fields on the smite handler so all four are one behaviour with
+variations rather than four near-identical functions.
 
 ## 1. Mutual exclusivity
 
@@ -49,7 +50,24 @@ function exclusiveBlocker(d) {
 
 Exclusivity is per run — `player.skills` resets in `applyClass`, so nothing to unwind.
 
-## 2. Smite variants
+## 2. The variant replaces Smite on the bar
+
+Add **`supersedes: "smite"`**. While a node carrying it has rank ≥ 1:
+
+- the superseded skill drops off the hotbar — one skip clause in `updateHotbar`, which already
+  walks `player.skills` and filters passives — and `useSkill` refuses it, so it can't be fired by
+  a stale binding;
+- the variant takes its slot. The player keeps the ranks they spent on Smite; they are not
+  refunded and not wasted, because —
+- **a variant is a modifier on Smite, not a second damage table.** Base damage and attack cost
+  come from the player's *Smite* rank; the variant's own rank fields layer on top and win on
+  conflict. That is exactly what the authored text means by "dmg = Smite damage, heals for the
+  same". A variant that sets no modifier fields behaves as plain Smite.
+
+`treeSkills` builds each skill from an explicit field list — add `supersedes` there or it is
+dropped silently between `data.js` and the engine.
+
+## 3. Smite variants
 
 Keep one `smite` kind. Add optional rank fields, each absent by default so the base behaviour is
 unchanged:
@@ -67,33 +85,27 @@ unchanged:
 Reuse what exists: the `dots` system, `m.berserk`, `stoneSkin`'s pattern for a decaying timed
 buff, and `executeSpin`'s adjacency sweep for `radius`. Do not write a second spin.
 
-## 3. The data restructure — do it in THIS packet
+## 4. The data
 
-The three variants currently sit below Smite and require it. After this packet they replace it:
+**The tree layout and the prerequisites are already correct in `data.js` — do not move nodes.**
+Smite sits at x0 y1 with four ranks; the three variants sit below it at y2. Each variant already
+requires Smite at max rank (`req: [["smite", "max"]]`), and Spinning Smite additionally requires
+Spin at max. The engine understands rank thresholds on `req` and resolves `"max"` to that skill's
+own top rank, so there is nothing to build for that part.
 
-| Node | was | becomes |
-|---|---|---|
-| `smite` | x0 y1, the only tier-2 skill | **deleted** |
-| `raging_smite` | x0 y2, req `smite` | x0 y1, `reqAny` the tier-1 trio at rank 4, `exclusiveGroup: "smite"` |
-| `healing_smite` | x1 y2, req `smite` | x1 y1, same gate and group |
-| `spinning_smite` | x2 y2, req `smite`+`spin` | x2 y1, same gate and group |
-| `lay_on_hands` | y3, req `healing_smite` | y2, unchanged requirement |
-| `ketharas_will` | y3, `reqPoints` 12 | y2, unchanged |
+What you add per variant: `exclusiveGroup: "smite"`, `supersedes: "smite"`, and the `ranks` array
+built from the rank table already written into each node's `levels` text — cooldowns accumulate
+(Healing Smite 100 → 90 → 80 → 70), and "level" in those formulas means the player's character
+level.
 
-Give all three the `ranks` arrays from the rank tables in their `levels` text — cooldowns
-accumulate (Healing Smite 100 → 90 → 80 → 70), and "level" in those formulas means the player's
-character level.
+**Do the handler work and the data in one commit**, or the variants draw in the tree and do
+nothing, which is the state they are in today.
 
-**Do the deletion and the handler work in one commit.** Removing `smite` before its replacements
-are live would leave the warrior with no tier-2 skill at all.
+## One consequence worth surfacing, not silently resolving
 
-## Two consequences worth surfacing, not silently resolving
-
-- **Lay on Hands requires Healing Smite**, so two of the three choices lock it out entirely. That
-  may be exactly the intent — branch identity — but it is a large consequence of a small change.
-  Implement as written and flag it in the commit.
-- **Spinning Smite no longer requires Spin.** All three share Smite's old gate so the choice is
-  symmetric. If it should additionally need Spin, that is a one-line `req` addition.
+Committing to a variant is permanent for the run, and the three are not equally good against every
+biome. That is the intent — it is the warrior's one real build decision — but it means a player who
+picks wrong lives with it for 25 floors. Say so in the skill descriptions, not just in the commit.
 
 ## Done when
 
@@ -109,8 +121,10 @@ node tests/smoke.js
 ```
 ```js
 cantori.pickClass('warrior'); cantori.grant(30);
-for (let i=0;i<4;i++) cantori.learn('rush');       // open the gate
+for (let i=0;i<4;i++) cantori.learn('rush');       // open Smite's gate
+for (let i=0;i<4;i++) cantori.learn('smite');      // max it — the variants need that
 cantori.learn('raging_smite');
+cantori.hotbar()                                    // Smite is gone, Raging Smite stands in its place
 cantori.learn('healing_smite');                     // refused — already committed
 cantori.skills()                                    // healing_smite still rank 0
 cantori.restart(); cantori.pickClass('warrior');

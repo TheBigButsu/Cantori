@@ -16,6 +16,7 @@ window.CANTORI_DATA = {
     },
     "bat": {
       "name": "Bat",
+      "flying": true,
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
@@ -66,6 +67,7 @@ window.CANTORI_DATA = {
     },
     "bee": {
       "name": "Bee",
+      "flying": true,
       "hp": 10,
       "atkMin": 2,
       "atkMax": 6,
@@ -93,6 +95,7 @@ window.CANTORI_DATA = {
     },
     "harpy": {
       "name": "Harpy",
+      "flying": true,
       "atkMax": 12,
       "acc": 12,
       "eva": 14,
@@ -115,6 +118,7 @@ window.CANTORI_DATA = {
     },
     "hornet": {
       "name": "Hornet",
+      "flying": true,
       "hp": 2,
       "atkMin": 2,
       "atkMax": 3,
@@ -1326,8 +1330,14 @@ window.CANTORI_DATA = {
             "Reaches 4 tiles, cooldown 90, and every kill takes a further 10 turns off the cooldown."
           ],
           "req": [
-            "smite",
-            "spin"
+            [
+              "smite",
+              "max"
+            ],
+            [
+              "spin",
+              "max"
+            ]
           ]
         },
         {
@@ -1360,9 +1370,8 @@ window.CANTORI_DATA = {
             "Heals for VIT + STR + your character level.",
             "Heals for (VIT + STR) + twice your character level."
           ],
-          "req": [
-            "healing_smite"
-          ]
+          "req": [],
+          "minLevel": 15
         }
       ]
     },

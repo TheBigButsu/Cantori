@@ -41,6 +41,10 @@ for an empty set.
 
 Self-cast, no target. Add `"heal"` to the `useSkill` dispatch (grep `d.kind === "rush"`).
 
+**Its prerequisite is already settled and needs no work from you:** it is gated on character
+level 15 (`minLevel: 15` on the node), not on Healing Smite. The engine reads node-level
+`minLevel` in `prereqsMet` and the editor can author it — leave `req` empty.
+
 - Heals `rank.formula` — rank 1 `VIT`, rank 2 `VIT + STR`, rank 3 `VIT + STR + playerLevel`,
   rank 4 `(VIT + STR) + playerLevel × 2`. Read stats through `eff()`, not `player.stats`, so
   gear and boons count.
@@ -77,7 +81,9 @@ node tests/smoke.js
 ```js
 cantori.pickClass('warrior'); cantori.grant(30);
 for (let i=0;i<4;i++) cantori.learn('rush');
-cantori.learn('healing_smite'); cantori.learn('lay_on_hands');
+cantori.learn('lay_on_hands');         // refused below character level 15
+for (let i=0;i<40 && cantori.peek().level<15;i++) cantori.addXp(3000);
+cantori.learn('lay_on_hands');
 cantori.setMp(100); cantori.hurt(15); cantori.doSkill('lay_on_hands');
 cantori.peek().hp                      // healed
 cantori.skills().lay_on_hands.cd       // < 200 if it overhealed

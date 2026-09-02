@@ -147,15 +147,24 @@ async function main() {
         const s = window.cantori.peek();
         const stairs = window.cantori.stairsAt();
         const boss = s.mlist.find((m) => bosses.indexOf(m.type) >= 0) || null;
+        const data = window.CANTORI_DATA.monsters;
         return {
           depth: s.depth, bossActive: s.bossActive, monsters: s.monsters, biome: s.biome,
           stairs, boss,
           stairsReachable: stairs ? window.cantori.reach(stairs.x, stairs.y) : false,
           bossReachable: boss ? window.cantori.reach(boss.x, boss.y) : false,
+          // Deep water blocks ground movement, so nothing that walks may be standing
+          // in it, and the start tile must not have been painted over.
+          startStuck: !window.cantori.passableAt(s.x, s.y),
+          drowning: s.mlist.filter((m) => !(data[m.type] && data[m.type].flying) && !window.cantori.passableAt(m.x, m.y))
+            .map((m) => `${m.type} at ${m.x},${m.y}`),
         };
       }, bossKeys);
 
       const at = `depth ${r.depth} (${r.biome}) iter ${i + 1}`;
+
+      check(!r.startStuck, `${at}: the player starts on a tile they can't stand on`);
+      check(r.drowning.length === 0, `${at}: ground monster spawned in deep water — ${r.drowning.join(", ")}`);
 
       if (r.bossActive) {
         check(!!r.boss, `${at}: boss floor spawned no boss`);
