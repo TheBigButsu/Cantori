@@ -1,18 +1,33 @@
 /* ============================================================================
    Cantori — BOSS PLAYBOOKS (module 2 of the game.js split)
    ----------------------------------------------------------------------------
-   The Pied Piper and the Stone Golem: their full turn logic, phase-shift set
-   pieces, and the Golem's delayed node-blast fuse. Everything it touches
-   (the map, the monster list, whether the run is over) is handed in as deps
-   rather than closed over directly — map/monsters/dead are reassigned
-   wholesale on every level generation, so a value captured at construction
-   would go stale the moment floor 2 loads. Pass accessors for those three;
-   everything else (functions, and player/gear which are only mutated) is a
-   plain reference.
+   Everything a boss does on its own turn, plus the registry that dispatches to
+   it. Adding a boss is a data.js row (name/hp/atk + whatever a playbook wants
+   to read — the whole row survives makeBoss in game.js) and one entry here.
+   game.js contains no per-boss `if (m.type === …)` branch; it calls the
+   generic hooks below and lets PLAYBOOKS decide who, if anyone, answers.
+
+   Everything this module touches (the map, the monster list, whether the run
+   is over) is handed in as deps rather than closed over directly —
+   map/monsters/dead are reassigned wholesale on every level generation, so a
+   value captured at construction would go stale the moment floor 2 loads.
+   Pass accessors for those three; everything else (functions, and player/gear
+   which are only mutated) is a plain reference.
 
    Usage (from game.js):
      const _boss = window.CantoriBosses({ getMap: () => map, ... });
-     const piperAct = _boss.piperAct, golemAct = _boss.golemAct, ...
+     if (m.type === "healing_node") return;                 // still special: never acts
+     const pb = _boss.playbookFor(m.type);
+     if (pb && pb.act) { pb.act(m); return; }
+     defaultAct(m);                                          // no playbook → ordinary monster AI
+     ...
+     dmg = _boss.damageIn(target, dmg);                      // attack(): shields etc.
+     _boss.onKill(target);                                   // killMonster(): adds dying, etc.
+     _boss.onSpawn(bossMonster);                              // spawnBoss(): phase state, arena setup
+     _boss.tick();                                            // worldTurn(): delayed effects
+     _boss.reset();                                           // generateLevel()/generateShopLevel()
+
+   See docs/BOSSES.md for the playbook interface and a worked example.
    ========================================================================== */
 window.CantoriBosses = function (deps) {
   "use strict";
@@ -24,7 +39,7 @@ window.CantoriBosses = function (deps) {
     sayMonster = deps.sayMonster, shuns = deps.shuns, snapEntity = deps.snapEntity, snapPlayer = deps.snapPlayer,
     spawnBurst = deps.spawnBurst, spawnNear = deps.spawnNear, spawnProjectile = deps.spawnProjectile,
     spawnStreak = deps.spawnStreak, stepMonsterTo = deps.stepMonsterTo, tileProp = deps.tileProp,
-    updateHUD = deps.updateHUD;
+    updateHUD = deps.updateHUD, normalAct = deps.normalAct;
 
   // ---- The Pied Piper (forest boss) ---------------------------------------
   function piperAct(m) {
@@ -116,10 +131,13 @@ window.CantoriBosses = function (deps) {
   }
 
   // ---- The Stone Golem (boss) ------------------------------------------------
-  // Live Healing Nodes shield the golem: -10 incoming damage per node (see the
-  // golem branch in attack()). Killing a node arms a delayed 5x5 blast at its
-  // spot — pendingNodeBlasts, ticked in worldTurn like the bomb trap's fuse.
+  // Live Healing Nodes shield the golem: -10 incoming damage per node (wrapped
+  // as golemDamageIn below for the registry; golemShield itself keeps this bare
+  // signature because the dev hook calls it directly — grep `golemShield:`).
+  // Killing a node arms a delayed 5x5 blast at its spot — pendingNodeBlasts,
+  // ticked in worldTurn like the bomb trap's fuse.
   const golemShield = (g) => 10 * getMonsters().filter((x) => x.type === "healing_node" && x.hp > 0).length;
+  function golemDamageIn(target, dmg) { return Math.max(1, dmg - golemShield(target)); }
   let pendingNodeBlasts = [];
   function golemAct(m) {
     if (m.windup) { golemResolveWindup(m); return; }
@@ -294,10 +312,65 @@ window.CantoriBosses = function (deps) {
       if (isDead()) return;
     }
   }
+
+  // ---- Placeholder bosses: no bespoke behaviour yet, just proving the wiring —
+  // a data.js row + this one line is all a new boss needs. See docs/BOSSES.md.
+  function mummyAct(m) { normalAct(m); }
+
+  // ---- The registry --------------------------------------------------------
+  // Keyed by the data.js boss key. Every field is optional; game.js calls the
+  // four generic hooks below (playbookFor/damageIn/onKill/tick, plus onSpawn)
+  // and never checks m.type itself. See docs/BOSSES.md for the full interface.
+  const PLAYBOOKS = {
+    piper: { act: piperAct },
+    golem: { act: golemAct, onKill: golemNodeDeath, damageIn: golemDamageIn, tick: tickNodeBlasts },
+    mummy: { act: mummyAct },
+  };
+  function playbookFor(type) { return PLAYBOOKS[type] || null; }
+  // attack(): returns dmg unchanged when the target's boss (if any) has no shield.
+  function damageIn(target, dmg) {
+    const pb = playbookFor(target.type);
+    return (pb && pb.damageIn) ? pb.damageIn(target, dmg) : dmg;
+  }
+  // killMonster(): called for every death, not just a boss's own. Dispatches to
+  // whichever live boss on the floor wants to react (e.g. the Golem to a node).
+  function onKill(target) {
+    for (const m of getMonsters()) {
+      if (!m.boss) continue;
+      const pb = playbookFor(m.type);
+      if (pb && pb.onKill) pb.onKill(target);
+    }
+  }
+  // spawnBoss(): fires once, right after a boss is placed on its floor.
+  function onSpawn(m) {
+    const pb = playbookFor(m.type);
+    if (pb && pb.onSpawn) pb.onSpawn(m);
+  }
+  // worldTurn(): every registered tick runs every turn — cheap no-ops (like
+  // tickNodeBlasts on a floor with no nodes) are fine to call unconditionally.
+  function tick() {
+    for (const key in PLAYBOOKS) { const pb = PLAYBOOKS[key]; if (pb.tick) pb.tick(); }
+  }
+  // Place a monster near (x, y) as a boss's add, flagged `summoned` for
+  // peek().mlist and anything else that cares. Reuses spawnNear's placement —
+  // it doesn't set the flag itself, so mark whatever it actually placed.
+  function summon(type, x, y, opts) {
+    opts = opts || {};
+    const radius = opts.radius != null ? opts.radius : 3;
+    const count = opts.count != null ? opts.count : 1;
+    const before = getMonsters().length;
+    const placed = spawnNear(type, x, y, radius, count);
+    if (placed > 0) {
+      const list = getMonsters();
+      for (let i = before; i < list.length; i++) list[i].summoned = true;
+    }
+    return placed;
+  }
   function reset() { pendingNodeBlasts = []; }
+  function nodeBlasts() { return pendingNodeBlasts.map((b) => Object.assign({}, b)); }
 
   return {
-    piperAct, golemAct, golemShield, golemNodeDeath, tickNodeBlasts, reset,
-    nodeBlasts: () => pendingNodeBlasts.map((b) => Object.assign({}, b)),
+    playbookFor, damageIn, onKill, onSpawn, tick, summon, reset, nodeBlasts,
+    golemShield, golemNodeDeath, piperAct, golemAct, tickNodeBlasts,
   };
 };

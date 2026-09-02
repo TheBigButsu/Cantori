@@ -1465,11 +1465,12 @@
     });
   }
   function makeBoss(key, x, y) {
+    // spread the whole row so authored fields (speed, acc, eva, ranged, range,
+    // anything a playbook wants) survive — the way makeMonster copies VERMIN
     const b = DATA.bosses[key];
-    return {
-      x, y, type: key, boss: true, name: b.name, glyph: "@", color: "#f0a838", level: depth,
-      hp: b.hp, maxHp: b.hp, atkMin: b.atkMin, atkMax: b.atkMax,
-    };
+    return Object.assign({}, b, {
+      x, y, type: key, boss: true, glyph: "@", color: "#f0a838", level: depth, hp: b.hp, maxHp: b.hp,
+    });
   }
   function monName(m) {
     return m.boss ? m.name : (VERMIN[m.type] ? VERMIN[m.type].name : m.type);
@@ -1484,11 +1485,13 @@
     for (const [x, y] of spots) {
       if (placed >= n) break;
       if (map[y] && map[y][x] === FLOOR && !monsterAt(x, y) && !(x === player.x && y === player.y)) {
-        monsters.push(makeBoss(key, x, y));
+        const b = makeBoss(key, x, y);
+        monsters.push(b);
+        _boss.onSpawn(b);
         placed++;
       }
     }
-    if (placed === 0) monsters.push(makeBoss(key, cx, cy));
+    if (placed === 0) { const b = makeBoss(key, cx, cy); monsters.push(b); _boss.onSpawn(b); }
   }
 
   function freeFloorSpot(rooms) {
@@ -1731,7 +1734,7 @@
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
     gainXP(xp);
     tickBoonKillCounters();
-    if (target.type === "healing_node") _boss.golemNodeDeath(target);
+    _boss.onKill(target);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
@@ -1858,7 +1861,7 @@
       let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
       const crit = Math.random() < critChance();       // 5%+ chance for 200%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
-      if (target.type === "golem") dmg = Math.max(1, dmg - _boss.golemShield(target));  // healing nodes shield the golem
+      dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
@@ -2678,8 +2681,13 @@
     }
     if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
     if (m.type === "healing_node") return;                       // passive — never acts, just shields the golem
-    if (m.type === "piper") { _boss.piperAct(m); return; }       // the Pied Piper has its own playbook
-    if (m.type === "golem") { _boss.golemAct(m); return; }       // the Stone Golem has its own playbook
+    // A boss with a registered playbook (bosses.js) runs its own turn instead
+    // of the default AI below — see docs/BOSSES.md.
+    const pb = _boss.playbookFor(m.type);
+    if (pb && pb.act) { pb.act(m); return; }
+    defaultAct(m);
+  }
+  function defaultAct(m) {
     // Maelon's Endless Dread: a terrified monster runs directly away from the player.
     if (m.fleeing > 0) {
       m.fleeing--;
@@ -2779,7 +2787,7 @@
       activeWalls = stillUp;
     }
     tickBombs(); if (dead) return;              // armed bomb traps count down and detonate
-    _boss.tickNodeBlasts(); if (dead) return;   // a killed Healing Node's telegraphed blast counts down
+    _boss.tick(); if (dead) return;             // a boss's delayed effects (e.g. the Golem's node blasts)
     panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
@@ -3505,16 +3513,6 @@
     player.tx = player.x; player.ty = player.y; player.wp = null;
     player.ax = player.x; player.ay = player.y; player.at = 0;
   }
-  // Boss playbooks live in bosses.js (a self-contained module) — wire it up here.
-  // Constructed only now because it needs flash/floatText/flashScreen/spawn* etc,
-  // all defined above; map/monsters/dead are reassigned on every level generation,
-  // so they're passed as accessors rather than captured by value.
-  const _boss = window.CantoriBosses({
-    WALL, attack, canSee, chaseLastSeen, cheb, computeFOV, isDead: () => dead, die,
-    flash, flashScreen, floatText, inBounds, lineOfSight, log, getMap: () => map, monsterAt,
-    getMonsters: () => monsters, patrolStep, player, randInt, sayMonster, shuns, snapEntity, snapPlayer,
-    spawnBurst, spawnNear, spawnProjectile, spawnStreak, stepMonsterTo, tileProp, updateHUD,
-  });
   function updateAnims(now) {
     animEntity(player, now);
     for (const m of monsters) animEntity(m, now);
@@ -3526,6 +3524,18 @@
     spirals = spirals.filter((s) => now - s.at < s.dur);
     if (screenFlash && now - screenFlash.at >= screenFlash.dur) screenFlash = null;
   }
+
+  // Boss playbooks live in bosses.js (a self-contained module) — wire it up
+  // here, after flash/floatText/etc. above so every dep it needs already
+  // exists (map/monsters/dead are reassigned wholesale elsewhere in this file,
+  // so those three go in as accessors rather than snapshot values).
+  const _boss = window.CantoriBosses({
+    getMap: () => map, getMonsters: () => monsters, isDead: () => dead,
+    player, WALL, attack, canSee, chaseLastSeen, cheb, computeFOV, die, flash, flashScreen,
+    floatText, inBounds, lineOfSight, log, monsterAt, patrolStep, randInt, sayMonster, shuns,
+    snapEntity, snapPlayer, spawnBurst, spawnNear, spawnProjectile, spawnStreak, stepMonsterTo,
+    tileProp, updateHUD, normalAct: defaultAct,
+  });
 
   // ---- Draw: dungeon view --------------------------------------------------
   function hitFlash(e, px, py, now) {
