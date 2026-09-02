@@ -11,37 +11,37 @@ window.CANTORI_DATA = {
       "speed": 1,
       "eva": 12,
       "atkMin": 1,
-      "atkMax": 4,
-      "acc": 15
+      "acc": 15,
+      "atkMax": 3
     },
     "bat": {
       "name": "Bat",
+      "flying": true,
       "minFloor": 1,
       "glyph": "b",
       "color": "#b491d6",
       "hp": 5,
-      "speed": 1.1,
-      "atkMin": 1,
-      "atkMax": 4,
+      "speed": 1,
       "eva": 20,
-      "acc": 30
+      "acc": 30,
+      "atkMax": 5,
+      "atkMin": 0
     },
     "snake": {
       "name": "Snake",
-      "hp": 8,
       "glyph": "s",
       "color": "#7ec98a",
-      "minFloor": 2,
       "speed": 1,
       "acc": 10,
-      "atkMin": 1,
+      "atkMin": 2,
       "eva": 30,
-      "atkMax": 6
+      "atkMax": 10,
+      "minFloor": 6,
+      "hp": 20
     },
     "spider": {
       "name": "Spider",
       "atkMax": 5,
-      "minFloor": 3,
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
@@ -50,7 +50,8 @@ window.CANTORI_DATA = {
       "range": 4,
       "ranged": true,
       "atkMin": 1,
-      "hp": 12
+      "hp": 12,
+      "minFloor": 6
     },
     "wolf": {
       "name": "Wolf",
@@ -61,26 +62,27 @@ window.CANTORI_DATA = {
       "atkMax": 6,
       "speed": 1,
       "minFloor": 2,
-      "atkMin": 2,
+      "atkMin": 1,
       "eva": 15
     },
     "bee": {
       "name": "Bee",
+      "flying": true,
       "hp": 10,
       "atkMin": 2,
       "atkMax": 6,
       "acc": 9,
       "glyph": "e",
       "color": "#e6c34a",
-      "minFloor": 3,
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "eva": 25
+      "eva": 25,
+      "minFloor": 3
     },
     "bear": {
       "name": "Bear",
-      "hp": 35,
+      "hp": 30,
       "atkMin": 2,
       "atkMax": 4,
       "acc": 15,
@@ -93,6 +95,7 @@ window.CANTORI_DATA = {
     },
     "harpy": {
       "name": "Harpy",
+      "flying": true,
       "atkMax": 12,
       "acc": 12,
       "eva": 14,
@@ -100,10 +103,10 @@ window.CANTORI_DATA = {
       "range": 4,
       "glyph": "H",
       "color": "#6b6f7a",
-      "minFloor": 6,
       "hp": 35,
       "speed": 1,
-      "atkMin": 2
+      "atkMin": 2,
+      "minFloor": 7
     },
     "jackal": {
       "name": "Jackal",
@@ -115,6 +118,7 @@ window.CANTORI_DATA = {
     },
     "hornet": {
       "name": "Hornet",
+      "flying": true,
       "hp": 2,
       "atkMin": 2,
       "atkMax": 3,
@@ -128,8 +132,8 @@ window.CANTORI_DATA = {
       "atkMax": 9,
       "glyph": "G",
       "color": "#9fb07a",
-      "minFloor": 6,
-      "charge": true
+      "charge": true,
+      "minFloor": 11
     },
     "wraith": {
       "name": "Wraith",
@@ -138,7 +142,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "W",
       "color": "#8fa0c0",
-      "minFloor": 6
+      "minFloor": 12
     },
     "phantom": {
       "name": "Phantom",
@@ -147,7 +151,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "P",
       "color": "#7ee0d0",
-      "minFloor": 6
+      "minFloor": 13
     },
     "imp": {
       "name": "Imp",
@@ -156,25 +160,25 @@ window.CANTORI_DATA = {
       "atkMax": 5,
       "glyph": "i",
       "color": "#c0c0e0",
-      "minFloor": 6
+      "minFloor": 14
     },
-    "ufetubus": {
-      "name": "Ufetubus",
+    "keener": {
+      "name": "Keener",
       "hp": 4,
       "atkMin": 2,
       "atkMax": 4,
-      "minFloor": 6,
+      "minFloor": 16,
       "glyph": "u",
       "color": "#6fb0d0"
     },
-    "orange_demon": {
-      "name": "Orange Demon",
+    "emberfiend": {
+      "name": "Ember Fiend",
       "hp": 10,
       "atkMin": 4,
       "atkMax": 7,
       "glyph": "d",
       "color": "#e07030",
-      "minFloor": 6
+      "minFloor": 17
     },
     "healing_node": {
       "name": "Healing Node",
@@ -183,6 +187,31 @@ window.CANTORI_DATA = {
       "atkMax": 0,
       "glyph": "◈",
       "color": "#8ed69a"
+    },
+    "Goblin": {
+      "name": "Goblin",
+      "hp": 25,
+      "atkMin": 4,
+      "atkMax": 12,
+      "glyph": "?",
+      "color": "#c0c0c0",
+      "speed": 1,
+      "acc": 20,
+      "eva": 20,
+      "minFloor": 8
+    },
+    "Goblin_archer": {
+      "name": "Goblin Archer",
+      "hp": 20,
+      "atkMin": 0,
+      "atkMax": 15,
+      "glyph": "?",
+      "color": "#c0c0c0",
+      "acc": 25,
+      "eva": 10,
+      "range": 4,
+      "minFloor": 9,
+      "ranged": true
     }
   },
   "gear": {
@@ -246,7 +275,7 @@ window.CANTORI_DATA = {
       "color": "#b98a5a",
       "defMin": 1,
       "defMax": 4,
-      "evasion": 1
+      "evasion": 0
     },
     "chain": {
       "cat": "armor",
@@ -407,7 +436,7 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "defMin": 0,
       "defMax": 2,
-      "evasion": 1,
+      "evasion": 10,
       "sub": "light"
     }
   },
@@ -736,6 +765,20 @@ window.CANTORI_DATA = {
       "noDrop": true,
       "glyph": "?",
       "color": "#f0c14b"
+    },
+    "Invisibility": {
+      "cat": "scroll",
+      "name": "Scroll of Invisibility",
+      "effect": "invisible",
+      "glyph": "!",
+      "color": "#cccccc"
+    },
+    "fireball": {
+      "cat": "scroll",
+      "name": "Scroll of Fireball",
+      "effect": "fireball",
+      "glyph": "!",
+      "color": "#cccccc"
     }
   },
   "traps": {
@@ -989,7 +1032,29 @@ window.CANTORI_DATA = {
       "exitSprite": "exit_forest",
       "door": "bush",
       "spawnEvery": 25,
-      "spawnCap": 100
+      "spawnCap": 100,
+      "terrain": {
+        "water": {
+          "pools": [
+            1,
+            2
+          ],
+          "size": [
+            4,
+            10
+          ]
+        },
+        "grass": {
+          "patches": [
+            2,
+            4
+          ],
+          "size": [
+            3,
+            6
+          ]
+        }
+      }
     },
     {
       "key": "cave",
@@ -997,14 +1062,22 @@ window.CANTORI_DATA = {
       "floor": "floor",
       "wall": "wall",
       "monsters": [
-        "rat",
-        "bat",
-        "snake",
-        "spider",
-        "harpy"
+        "spider"
       ],
       "boss": "golem",
-      "door": "door"
+      "door": "door",
+      "terrain": {
+        "rubble": {
+          "patches": [
+            2,
+            4
+          ],
+          "size": [
+            3,
+            7
+          ]
+        }
+      }
     },
     {
       "key": "crypt",
@@ -1040,13 +1113,25 @@ window.CANTORI_DATA = {
       "floor": "space_floor",
       "wall": "space_wall",
       "monsters": [
-        "ufetubus",
+        "keener",
         "imp",
-        "orange_demon"
+        "emberfiend"
       ],
       "boss": "demigod",
       "final": true,
-      "door": "door"
+      "door": "door",
+      "terrain": {
+        "water": {
+          "pools": [
+            1,
+            3
+          ],
+          "size": [
+            5,
+            14
+          ]
+        }
+      }
     }
   ],
   "stats": {
@@ -1116,184 +1201,255 @@ window.CANTORI_DATA = {
       },
       "blurb": "Front-line brawler. All around weapons master.",
       "skillTree": [
-        [
-          {
-            "name": "Rush",
-            "key": "rush",
-            "icon": "➤",
-            "kind": "rush",
-            "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
-            "levels": [
-              "+0 damage, 100 turn cooldown",
-              "+3 damage",
-              "+5 damage, 50 turn cooldown",
-              "can stun enemies 50% of the time"
+        {
+          "id": "rush",
+          "x": 0,
+          "y": 0,
+          "name": "Rush",
+          "icon": "➤",
+          "kind": "rush",
+          "desc": "Move directly until collision. Deals damage to whatever you hit — the enemy, or yourself against a wall.",
+          "levels": [
+            "+0 damage, 100 turn cooldown",
+            "+3 damage",
+            "+5 damage, 50 turn cooldown",
+            "can stun enemies 50% of the time"
+          ],
+          "ranks": [
+            {
+              "dmg": 0,
+              "cd": 100
+            },
+            {
+              "dmg": 3,
+              "cd": 100
+            },
+            {
+              "dmg": 5,
+              "cd": 50
+            },
+            {
+              "dmg": 5,
+              "cd": 50,
+              "stun": 0.5
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "spin",
+          "x": 1,
+          "y": 0,
+          "name": "Spin",
+          "icon": "↻",
+          "kind": "spin",
+          "desc": "Become a blender — strike every monster around you.",
+          "levels": [
+            "hit all adjacent foes, 80 turn cooldown",
+            "+1 damage",
+            "+1 damage, range 2 (hits within 2 tiles)",
+            "free action — doesn't advance the turn clock"
+          ],
+          "ranks": [
+            {
+              "dmg": 0,
+              "cd": 80,
+              "range": 1
+            },
+            {
+              "dmg": 1,
+              "cd": 80,
+              "range": 1
+            },
+            {
+              "dmg": 1,
+              "cd": 80,
+              "range": 2
+            },
+            {
+              "dmg": 1,
+              "cd": 80,
+              "range": 2,
+              "freeAction": true
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "sword_master",
+          "x": 2,
+          "y": 0,
+          "name": "Sword Master",
+          "icon": "⚔",
+          "kind": "passive",
+          "when": "sword",
+          "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
+          "levels": [
+            "+1 damage for swords",
+            "+2 damage for swords",
+            "+4 damage for swords",
+            "+6 damage and +15 accuracy for swords"
+          ],
+          "ranks": [
+            {
+              "dmg": 1
+            },
+            {
+              "dmg": 2
+            },
+            {
+              "dmg": 4
+            },
+            {
+              "dmg": 6,
+              "acc": 15
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "smite",
+          "x": 0,
+          "y": 1,
+          "name": "Smite",
+          "icon": "💥",
+          "kind": "smite",
+          "when": null,
+          "desc": "A single devastating blow, empowered by your Strength. Tap a foe within range. Cooldown 100 turns, 5 MP.",
+          "levels": [
+            "Weapon damage + STR damage.",
+            "Weapon damage + STR×1.5 damage.",
+            "Weapon damage + STR×2 damage.",
+            "Weapon damage + STR×2 damage, +1 range."
+          ],
+          "ranks": [
+            {
+              "strMult": 1
+            },
+            {
+              "strMult": 1.5
+            },
+            {
+              "strMult": 2
+            },
+            {
+              "strMult": 2,
+              "range": 2
+            }
+          ],
+          "req": [],
+          "reqAny": [
+            [
+              "rush",
+              4
             ],
-            "ranks": [
-              {
-                "dmg": 0,
-                "cd": 100
-              },
-              {
-                "dmg": 3,
-                "cd": 100
-              },
-              {
-                "dmg": 5,
-                "cd": 50
-              },
-              {
-                "dmg": 5,
-                "cd": 50,
-                "stun": 0.5
-              }
+            [
+              "spin",
+              4
             ],
-            "req": []
-          },
-          {
-            "name": "Spin",
-            "key": "spin",
-            "icon": "↻",
-            "kind": "spin",
-            "desc": "Become a blender — strike every monster around you.",
-            "levels": [
-              "hit all adjacent foes, 80 turn cooldown",
-              "+1 damage",
-              "+1 damage, range 2 (hits within 2 tiles)",
-              "free action — doesn't advance the turn clock"
-            ],
-            "ranks": [
-              {
-                "dmg": 0,
-                "cd": 80,
-                "range": 1
-              },
-              {
-                "dmg": 1,
-                "cd": 80,
-                "range": 1
-              },
-              {
-                "dmg": 1,
-                "cd": 80,
-                "range": 2
-              },
-              {
-                "dmg": 1,
-                "cd": 80,
-                "range": 2,
-                "freeAction": true
-              }
-            ],
-            "req": []
-          },
-          {
-            "name": "Sword Master",
-            "key": "sword_master",
-            "icon": "⚔",
-            "kind": "passive",
-            "when": "sword",
-            "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
-            "levels": [
-              "+1 damage for swords",
-              "+2 damage for swords",
-              "+4 damage for swords",
-              "+6 damage and +15 accuracy for swords"
-            ],
-            "ranks": [
-              {
-                "dmg": 1
-              },
-              {
-                "dmg": 2
-              },
-              {
-                "dmg": 4
-              },
-              {
-                "dmg": 6,
-                "acc": 15
-              }
-            ],
-            "req": []
-          },
-          null,
-          null
-        ],
-        [
-          {
-            "name": "Smite",
-            "key": "smite",
-            "icon": "💥",
-            "kind": "smite",
-            "when": null,
-            "desc": "A single devastating blow, empowered by your Strength. Tap a foe within range. Cooldown 100 turns, 5 MP.",
-            "levels": [
-              "Weapon damage + STR damage.",
-              "Weapon damage + STR×1.5 damage.",
-              "Weapon damage + STR×2 damage.",
-              "Weapon damage + STR×2 damage, +1 range."
-            ],
-            "ranks": [
-              {
-                "strMult": 1
-              },
-              {
-                "strMult": 1.5
-              },
-              {
-                "strMult": 2
-              },
-              {
-                "strMult": 2,
-                "range": 2
-              }
-            ],
-            "req": [],
-            "reqAny": [
-              [
-                0,
-                0,
-                4
-              ],
-              [
-                0,
-                1,
-                4
-              ],
-              [
-                0,
-                2,
-                4
-              ]
+            [
+              "sword_master",
+              4
             ]
-          },
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
+          ]
+        },
+        {
+          "id": "raging_smite",
+          "x": 0,
+          "y": 2,
+          "name": "Raging Smite",
+          "icon": "🔥",
+          "desc": "A Smite that drives the target into a berserk rage. 100 turn cooldown, 5 MP.",
+          "levels": [
+            "Deals Smite damage plus half your character level, and sends the target berserk.",
+            "Cooldown 90.",
+            "Also grants temporary STR and VIT equal to your character level, decaying by 1 every (character level) turns until the bonus is spent.",
+            "A kill during the rage delays that decay by (character level) turns."
+          ],
+          "req": [
+            [
+              "smite",
+              1
+            ]
+          ]
+        },
+        {
+          "id": "healing_smite",
+          "x": 1,
+          "y": 2,
+          "name": "Healing Smite",
+          "icon": "✚",
+          "desc": "A Smite that returns what it deals. 100 turn cooldown, 5 MP.",
+          "levels": [
+            "Deals Smite damage and heals you for the same amount.",
+            "Cooldown 90.",
+            "Cooldown 80.",
+            "Cooldown 70, and healing beyond your maximum becomes a shield."
+          ],
+          "req": [
+            [
+              "smite",
+              1
+            ]
+          ]
+        },
+        {
+          "id": "spinning_smite",
+          "x": 2,
+          "y": 2,
+          "name": "Spinning Smite",
+          "icon": "🌀",
+          "desc": "Spin and Smite as one blow. 100 turn cooldown, 5 MP.",
+          "levels": [
+            "Strikes everything within 2 tiles for Smite damage.",
+            "Reaches 3 tiles.",
+            "Reaches 3 tiles, cooldown 90.",
+            "Reaches 4 tiles, cooldown 90, and every kill takes a further 10 turns off the cooldown."
+          ],
+          "req": [
+            [
+              "smite",
+              "max"
+            ],
+            [
+              "spin",
+              "max"
+            ]
+          ]
+        },
+        {
+          "id": "ketharas_will",
+          "x": 0,
+          "y": 3,
+          "name": "Kethara's Will",
+          "icon": "🛡",
+          "kind": "passive",
+          "desc": "An aura of Kethara's protection, covering you and anything fighting alongside you.",
+          "levels": [
+            "Allies and summons within 1 tile take 5% less damage.",
+            "Within 2 tiles, 10% less.",
+            "Within 3 tiles, 15% less.",
+            "Within 4 tiles, 20% less."
+          ],
+          "req": [],
+          "reqPoints": 12
+        },
+        {
+          "id": "lay_on_hands",
+          "x": 1,
+          "y": 3,
+          "name": "Lay on Hands",
+          "icon": "🙌",
+          "desc": "Mend yourself. Overhealing is not wasted — it shortens the wait. 200 turn cooldown, 15 MP.",
+          "levels": [
+            "Heals you for your VIT. Every point of healing beyond your maximum cuts 1 turn off the cooldown.",
+            "Heals for VIT + STR.",
+            "Heals for VIT + STR + your character level.",
+            "Heals for (VIT + STR) + twice your character level."
+          ],
+          "req": [],
+          "minLevel": 15
+        }
       ]
     },
     "monk": {
@@ -1329,112 +1485,83 @@ window.CANTORI_DATA = {
       },
       "blurb": "Fights best barehanded — hurls foes aside and lands harder the longer she goes unarmed.",
       "skillTree": [
-        [
-          {
-            "name": "Throw",
-            "key": "throw",
-            "icon": "↩",
-            "kind": "throwmon",
-            "when": null,
-            "desc": "Grab an adjacent foe and hurl it away from you in a straight line until it collides with something. Cooldown 100 turns.",
-            "levels": [
-              "Throws the target backward until it collides with a wall or another monster. No damage.",
-              "Same, and the thrown target takes weapon + DEX damage.",
-              "Same, and also damages whatever else it collides with.",
-              "Same, and reduces this skill's cooldown by however much total damage it dealt."
-            ],
-            "ranks": [
-              {
-                "dealDmg": false
-              },
-              {
-                "dealDmg": true
-              },
-              {
-                "dealDmg": true,
-                "chain": true
-              },
-              {
-                "dealDmg": true,
-                "chain": true,
-                "cdRefund": true
-              }
-            ],
-            "req": []
-          },
-          {
-            "name": "Unarmed Master",
-            "key": "unarmed_master",
-            "icon": "👊",
-            "kind": "passive",
-            "when": "unarmed",
-            "desc": "Mastery of empty-handed combat — bonuses apply only while no weapon is equipped.",
-            "levels": [
-              "+1 min / +2 max unarmed damage. Unarmed attack speed 1.5.",
-              "+2 min / +4 max unarmed damage. (requires character level 3)",
-              "+4 min / +12 max unarmed damage. (requires character level 6)",
-              "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
-            ],
-            "ranks": [
-              {
-                "dmgMin": 1,
-                "dmgMax": 2,
-                "speed": 1.5
-              },
-              {
-                "dmgMin": 2,
-                "dmgMax": 4,
-                "speed": 1.5,
-                "minLevel": 3
-              },
-              {
-                "dmgMin": 4,
-                "dmgMax": 12,
-                "speed": 1.5,
-                "minLevel": 6
-              },
-              {
-                "dmgMin": 4,
-                "dmgMax": 12,
-                "speed": 1.5,
-                "minLevel": 9,
-                "statScale": true
-              }
-            ],
-            "req": []
-          },
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
+        {
+          "id": "throw",
+          "x": 0,
+          "y": 0,
+          "name": "Throw",
+          "icon": "↩",
+          "kind": "throwmon",
+          "when": null,
+          "desc": "Grab an adjacent foe and hurl it away from you in a straight line until it collides with something. Cooldown 100 turns.",
+          "levels": [
+            "Throws the target backward until it collides with a wall or another monster. No damage.",
+            "Same, and the thrown target takes weapon + DEX damage.",
+            "Same, and also damages whatever else it collides with.",
+            "Same, and reduces this skill's cooldown by however much total damage it dealt."
+          ],
+          "ranks": [
+            {
+              "dealDmg": false
+            },
+            {
+              "dealDmg": true
+            },
+            {
+              "dealDmg": true,
+              "chain": true
+            },
+            {
+              "dealDmg": true,
+              "chain": true,
+              "cdRefund": true
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "unarmed_master",
+          "x": 1,
+          "y": 0,
+          "name": "Unarmed Master",
+          "icon": "👊",
+          "kind": "passive",
+          "when": "unarmed",
+          "desc": "Mastery of empty-handed combat — bonuses apply only while no weapon is equipped.",
+          "levels": [
+            "+1 min / +2 max unarmed damage. Unarmed attack speed 1.5.",
+            "+2 min / +4 max unarmed damage. (requires character level 3)",
+            "+4 min / +12 max unarmed damage. (requires character level 6)",
+            "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
+          ],
+          "ranks": [
+            {
+              "dmgMin": 1,
+              "dmgMax": 2,
+              "speed": 1.5
+            },
+            {
+              "dmgMin": 2,
+              "dmgMax": 4,
+              "speed": 1.5,
+              "minLevel": 3
+            },
+            {
+              "dmgMin": 4,
+              "dmgMax": 12,
+              "speed": 1.5,
+              "minLevel": 6
+            },
+            {
+              "dmgMin": 4,
+              "dmgMax": 12,
+              "speed": 1.5,
+              "minLevel": 9,
+              "statScale": true
+            }
+          ],
+          "req": []
+        }
       ]
     },
     "adept": {
@@ -1456,44 +1583,8 @@ window.CANTORI_DATA = {
         "LCK": 5
       },
       "levelUp": {},
-      "skillTree": [
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
-          null
-        ]
-      ]
-    },
+      "skillTree": []
+    }
   },
   "gods": {
     "kethara": {
