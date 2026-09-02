@@ -11,8 +11,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "eva": 12,
       "atkMin": 1,
-      "acc": 15,
-      "atkMax": 3
+      "atkMax": 4,
+      "acc": 15
     },
     "bat": {
       "name": "Bat",
@@ -22,26 +22,27 @@ window.CANTORI_DATA = {
       "color": "#b491d6",
       "hp": 5,
       "speed": 1,
+      "atkMin": 1,
+      "atkMax": 4,
       "eva": 20,
-      "acc": 30,
-      "atkMax": 5,
-      "atkMin": 0
+      "acc": 30
     },
     "snake": {
       "name": "Snake",
+      "hp": 8,
       "glyph": "s",
       "color": "#7ec98a",
+      "minFloor": 2,
       "speed": 1,
       "acc": 10,
-      "atkMin": 2,
+      "atkMin": 1,
       "eva": 30,
-      "atkMax": 10,
-      "minFloor": 6,
-      "hp": 20
+      "atkMax": 6
     },
     "spider": {
       "name": "Spider",
       "atkMax": 5,
+      "minFloor": 3,
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
@@ -50,8 +51,7 @@ window.CANTORI_DATA = {
       "range": 4,
       "ranged": true,
       "atkMin": 1,
-      "hp": 12,
-      "minFloor": 6
+      "hp": 12
     },
     "wolf": {
       "name": "Wolf",
@@ -62,7 +62,7 @@ window.CANTORI_DATA = {
       "atkMax": 6,
       "speed": 1,
       "minFloor": 2,
-      "atkMin": 1,
+      "atkMin": 2,
       "eva": 15
     },
     "bee": {
@@ -74,15 +74,15 @@ window.CANTORI_DATA = {
       "acc": 9,
       "glyph": "e",
       "color": "#e6c34a",
+      "minFloor": 3,
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "eva": 25,
-      "minFloor": 3
+      "eva": 25
     },
     "bear": {
       "name": "Bear",
-      "hp": 30,
+      "hp": 35,
       "atkMin": 2,
       "atkMax": 4,
       "acc": 15,
@@ -103,10 +103,10 @@ window.CANTORI_DATA = {
       "range": 4,
       "glyph": "H",
       "color": "#6b6f7a",
+      "minFloor": 1,
       "hp": 35,
       "speed": 1,
-      "atkMin": 2,
-      "minFloor": 7
+      "atkMin": 2
     },
     "jackal": {
       "name": "Jackal",
@@ -132,8 +132,8 @@ window.CANTORI_DATA = {
       "atkMax": 9,
       "glyph": "G",
       "color": "#9fb07a",
-      "charge": true,
-      "minFloor": 11
+      "minFloor": 1,
+      "charge": true
     },
     "wraith": {
       "name": "Wraith",
@@ -142,7 +142,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "W",
       "color": "#8fa0c0",
-      "minFloor": 12
+      "minFloor": 1
     },
     "phantom": {
       "name": "Phantom",
@@ -151,7 +151,7 @@ window.CANTORI_DATA = {
       "atkMax": 4,
       "glyph": "P",
       "color": "#7ee0d0",
-      "minFloor": 13
+      "minFloor": 1
     },
     "imp": {
       "name": "Imp",
@@ -160,14 +160,14 @@ window.CANTORI_DATA = {
       "atkMax": 5,
       "glyph": "i",
       "color": "#c0c0e0",
-      "minFloor": 14
+      "minFloor": 1
     },
     "keener": {
       "name": "Keener",
       "hp": 4,
       "atkMin": 2,
       "atkMax": 4,
-      "minFloor": 16,
+      "minFloor": 1,
       "glyph": "u",
       "color": "#6fb0d0"
     },
@@ -178,7 +178,7 @@ window.CANTORI_DATA = {
       "atkMax": 7,
       "glyph": "d",
       "color": "#e07030",
-      "minFloor": 17
+      "minFloor": 1
     },
     "healing_node": {
       "name": "Healing Node",
@@ -187,31 +187,6 @@ window.CANTORI_DATA = {
       "atkMax": 0,
       "glyph": "◈",
       "color": "#8ed69a"
-    },
-    "Goblin": {
-      "name": "Goblin",
-      "hp": 25,
-      "atkMin": 4,
-      "atkMax": 12,
-      "glyph": "?",
-      "color": "#c0c0c0",
-      "speed": 1,
-      "acc": 20,
-      "eva": 20,
-      "minFloor": 8
-    },
-    "Goblin_archer": {
-      "name": "Goblin Archer",
-      "hp": 20,
-      "atkMin": 0,
-      "atkMax": 15,
-      "glyph": "?",
-      "color": "#c0c0c0",
-      "acc": 25,
-      "eva": 10,
-      "range": 4,
-      "minFloor": 9,
-      "ranged": true
     }
   },
   "gear": {
@@ -275,7 +250,7 @@ window.CANTORI_DATA = {
       "color": "#b98a5a",
       "defMin": 1,
       "defMax": 4,
-      "evasion": 0
+      "evasion": 1
     },
     "chain": {
       "cat": "armor",
@@ -436,7 +411,7 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "defMin": 0,
       "defMax": 2,
-      "evasion": 10,
+      "evasion": 1,
       "sub": "light"
     }
   },
@@ -765,20 +740,6 @@ window.CANTORI_DATA = {
       "noDrop": true,
       "glyph": "?",
       "color": "#f0c14b"
-    },
-    "Invisibility": {
-      "cat": "scroll",
-      "name": "Scroll of Invisibility",
-      "effect": "invisible",
-      "glyph": "!",
-      "color": "#cccccc"
-    },
-    "fireball": {
-      "cat": "scroll",
-      "name": "Scroll of Fireball",
-      "effect": "fireball",
-      "glyph": "!",
-      "color": "#cccccc"
     }
   },
   "traps": {
@@ -1062,7 +1023,11 @@ window.CANTORI_DATA = {
       "floor": "floor",
       "wall": "wall",
       "monsters": [
-        "spider"
+        "rat",
+        "bat",
+        "snake",
+        "spider",
+        "harpy"
       ],
       "boss": "golem",
       "door": "door",
