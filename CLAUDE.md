@@ -52,9 +52,11 @@ needs editor support or it will be lost.
 `assets/tiles/<key>.png`. A data row without a matching PNG renders blank. Sprites must be CC0 or
 public domain, and credited in `ART-CREDITS.md`.
 
-**4. Bump the `?v=` cache-buster in `index.html`** whenever `game.js`, `data.js`, `loot.js` or
-`styles.css` changes. All four query strings move together. Phones aggressively cache; skipping this
-means the user tests stale code and reports phantom bugs.
+**4. Bump the `?v=` cache-buster in `index.html` AND `editor.html`** whenever `game.js`, `data.js`,
+`loot.js`, `styles.css` or `editor.js` changes. Every query string across both pages moves together,
+to the same number. Browsers cache these hard; skipping it means the user tests stale code and
+reports phantom bugs — `editor.html` sat on `v=75` for ten bumps of `index.html`, so a field added to
+the editor was invisible to anyone who had opened it before.
 
 **5. New terrain must be added to every map predicate.**
 Tiles are `WALL / FLOOR / STAIRS / DOOR / THORN / WATER / CHASM / RUBBLE / GRASS`, each a row in the
