@@ -2489,6 +2489,23 @@
     path.reverse();
     return path.length > 1 ? path[1] : null;   // path[0] is the monster's own tile
   }
+  // EVERY ordinary monster step goes through here. A world turn hands the acting
+  // monster a leg buffer (see worldTurn) and this records the tile it actually
+  // landed on, so the renderer walks the real path. Diffing a monster's position
+  // before and after its whole action instead — which is what this replaced —
+  // loses every tile in between, and the tween then draws one straight line from
+  // start to finish: a monster that legally stepped around a bush was drawn
+  // sliding clean through the bush, and one that stepped past you was drawn
+  // sliding through you. That is the "teleport" players were seeing.
+  //
+  // A charge is the deliberate exception: it really does cross several tiles in
+  // one straight dash, so it moves without recording legs and keeps the longer
+  // `moveMs` slide it sets for itself.
+  let legLog = null;   // { m, legs } while a monster is taking its action
+  function moveMonster(m, nx, ny) {
+    m.x = nx; m.y = ny;
+    if (legLog && legLog.m === m) legLog.legs.push([nx, ny]);
+  }
   function stepMonsterTo(m, tx, ty) {
     // monsterPathStep lets the GOAL tile itself be occupied (so a path can still
     // route up to it) — but if that goal happens to be the very next step (the
@@ -2497,10 +2514,15 @@
     // occupancy here before actually moving; fall through to the greedy
     // heuristic below (which already excludes occupied tiles) if it's blocked.
     const step = monsterPathStep(m.x, m.y, tx, ty, m);
-    if (step && !monsterAt(step[0], step[1]) && !(step[0] === player.x && step[1] === player.y)) { m.x = step[0]; m.y = step[1]; return; }
+    if (step && !monsterAt(step[0], step[1]) && !(step[0] === player.x && step[1] === player.y)) { moveMonster(m, step[0], step[1]); return; }
     // No path found (e.g. fully boxed in this turn) — fall back to the old
     // greedy "closest open neighbor" so the monster doesn't just freeze.
-    let best = null, bestD = Infinity;
+    // Seeded with the CURRENT distance, so the fallback can only ever take a step
+    // that gets strictly closer. Seeding it with Infinity meant any legal
+    // neighbour beat "stay put": a monster already standing on its target was
+    // shoved straight back off it (every neighbour ties at distance 1), which is
+    // how a search could turn into a two-tile-per-action shuffle.
+    let best = null, bestD = cheb(m.x, m.y, tx, ty);
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
       if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny)) continue;   // monsters won't brave hazards they shun
@@ -2509,7 +2531,7 @@
       const d = cheb(nx, ny, tx, ty);
       if (d < bestD) { bestD = d; best = [nx, ny]; }
     }
-    if (best) { m.x = best[0]; m.y = best[1]; }
+    if (best) moveMonster(m, best[0], best[1]);
   }
   // Wandering used to be a greedy step toward a random tile with no memory of where
   // it came from. When the target sits behind something the monster won't cross —
@@ -2553,19 +2575,31 @@
     }
     return null;
   }
+  // ONE step per call, always. The two phases used to run back to back: the same
+  // action walked the monster onto the last-seen tile and then straight off it
+  // toward a search spot, so a search was two tiles of movement per action (four
+  // for anything that acted twice), and it ping-ponged — having stepped away it
+  // was no longer on lastSeen, so the next action walked it back and off again.
+  // An `m.searching` latch splits the phases so arriving IS that action's move.
   function chaseLastSeen(m) {
-    stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
-    if (m.x !== m.lastSeen.x || m.y !== m.lastSeen.y) return;   // still travelling there
-    if (m.searchTurns == null) m.searchTurns = SEARCH_TURNS;
+    // Phase 1 — travel to the tile we last saw the player on.
+    if (!m.searching) {
+      stepMonsterTo(m, m.lastSeen.x, m.lastSeen.y);
+      if (m.x === m.lastSeen.x && m.y === m.lastSeen.y) {   // arrived; start poking around next action
+        m.searching = true; m.searchTurns = SEARCH_TURNS; m.searchSpot = null;
+      }
+      return;
+    }
+    // Phase 2 — an empty tile isn't proof you vanished; check a few spots nearby.
     if (m.searchTurns > 0) {
       m.searchTurns--;
       if (!m.searchSpot || (m.x === m.searchSpot.x && m.y === m.searchSpot.y)) {
         m.searchSpot = nearbySearchSpot(m.lastSeen.x, m.lastSeen.y);
       }
       if (m.searchSpot) stepMonsterTo(m, m.searchSpot.x, m.searchSpot.y);
-    } else {
-      m.lastSeen = null; m.aware = false; m.searchTurns = null; m.searchSpot = null;
+      return;
     }
+    m.lastSeen = null; m.aware = false; m.searching = false; m.searchTurns = null; m.searchSpot = null;
   }
   function doCharge(m) {
     const dir = straightDir(m);
@@ -2604,7 +2638,7 @@
       if (aligned && dist >= 2 && dist <= CHARGE_MAX && lineOfSight(nx, ny, player.x, player.y)) score += 100;  // a charge lane = great
       if (score > bestScore) { bestScore = score; best = [nx, ny]; }
     }
-    if (best) { m.x = best[0]; m.y = best[1]; }
+    if (best) moveMonster(m, best[0], best[1]);
     else stepMonsterTo(m, player.x, player.y);
   }
 
@@ -2668,7 +2702,12 @@
     }
     return placed;
   }
-  function snapEntity(m) { m.rx = m.x; m.ry = m.y; m.tx = m.x; m.ty = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; m.wp = null; }
+  // Teleported, not walked: drop any walk path, including legs banked earlier in
+  // this same turn — a blink must never be drawn as a stroll across the floor.
+  function snapEntity(m) {
+    m.rx = m.x; m.ry = m.y; m.tx = m.x; m.ty = m.y; m.ax = m.x; m.ay = m.y; m.at = 0; m.wp = null;
+    if (legLog && legLog.m === m) legLog.legs.length = 0;
+  }
 
   function monsterAct(m) {
     if (m.hp <= 0) return;
@@ -2697,7 +2736,11 @@
       const dx = Math.sign(m.x - player.x) || (Math.random() < 0.5 ? 1 : -1);
       const dy = Math.sign(m.y - player.y) || (Math.random() < 0.5 ? 1 : -1);
       const nx = m.x + dx, ny = m.y + dy;
-      if (inBounds(nx, ny) && passableFor(m, nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny)) { m.x = nx; m.y = ny; }
+      // canStep, not a bare passableFor: a panicking monster still can't squeeze
+      // diagonally past a corner. And the player occupies a tile like anything
+      // else — without this check a monster fleeing along your axis would flee
+      // straight *through* you.
+      if (canStep(m.x, m.y, dx, dy, m) && !shuns(nx, ny) && !monsterAt(nx, ny) && !(nx === player.x && ny === player.y)) moveMonster(m, nx, ny);
       return;
     }
     // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just the player.
@@ -2717,7 +2760,7 @@
       }
       // no other target closer than the player → fall through to normal player-seeking behavior
     }
-    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
+    if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -2795,22 +2838,34 @@
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
       m.energy = (m.energy || 0) + (m.speed || 1) * cost;
-      // Record each tile a multi-action turn actually steps onto, so the renderer
-      // can walk the real path instead of interpolating straight through whatever
-      // the monster stepped around (see animEntity).
+      // Record each tile this turn actually steps onto, so the renderer can walk
+      // the real path instead of interpolating straight through whatever the
+      // monster stepped around (see animEntity). moveMonster does the recording
+      // at the point of the move — reading m.x/m.y before and after each action
+      // instead only ever yields the tile the action ENDED on, so any action that
+      // moved more than once was drawn as a straight glide through the tiles in
+      // between.
       const legs = [];
-      // Hard cap on actions per world turn. Difficult terrain costs the player 2,
-      // which hands every monster 2 actions — that is the intended rule, but a
-      // third would be unreadable however it is drawn, so banked energy beyond
-      // two acts is simply dropped rather than spent.
+      legLog = { m, legs };
+      // Hard cap on actions per world turn. A slow weapon costs the player more
+      // than 1, which hands every monster 2 actions — that is the intended rule,
+      // but a third would be unreadable however it is drawn, so banked energy
+      // beyond two acts is simply dropped rather than spent.
       let acts = 0;
       while (m.energy >= 1 && acts < MAX_ACTS_PER_TURN && m.hp > 0 && !dead) {
         m.energy -= 1; acts++;
-        const bx = m.x, by = m.y;
         monsterAct(m);
-        if (m.x !== bx || m.y !== by) legs.push([m.x, m.y]);
       }
-      if (m.energy > 1) m.energy = 1;     // don't let unspent energy pile into a burst next turn
+      legLog = null;
+      m.acts = acts;   // actions taken this world turn — a monster may move at most
+                       // one tile per action, which tests/smoke.js asserts
+      if (m.energy >= 1) m.energy = 0;    // dropped, per the cap above — banking a whole
+                                          // action here just moved the burst to next turn
+      // No legs this turn means nothing to walk (it charged, blinked, or stood
+      // still), so clear the path rather than leaving last turn's behind — a
+      // stale wp outranks moveMs in animEntity, which turned a bear's long
+      // charge slide back into a single 120ms hop to a tile it already left.
+      m.wp = null;
       if (legs.length) {
         m.wp = legs;                       // ALWAYS walk the real tiles, one at a time
         // Split one move's worth of time across the legs, so a two-step turn reads
@@ -2824,6 +2879,11 @@
     searchForTraps();
     maybeReinforce();
     updateHotbar();
+    // Doors/bushes count as open while something stands in them, so the monsters
+    // that just moved have changed what you can see through. Recompute before the
+    // frame is drawn, otherwise a monster stepping into a doorway stays hidden
+    // until your NEXT action and then pops into view somewhere else entirely.
+    computeFOV();
     updateHUD();      // refresh vitals + enemy-in-sight counter every turn
   }
 
@@ -3426,6 +3486,14 @@
   // ---- Animation: smooth movement, attack lunges, hit flashes, floaters ----
   const MOVE_MS = 120, BUMP_MS = 130, HIT_MS = 170, FLOAT_MS = 850;
   const easeOut = (p) => 1 - (1 - p) * (1 - p);
+  // How far through an effect we are, clamped to 0..1. requestAnimationFrame hands
+  // the frame's START timestamp, which can be EARLIER than the performance.now()
+  // an effect stamped itself with inside the input handler that spawned it — so a
+  // brand-new effect gets a NEGATIVE age on its first frame. Unclamped that runs
+  // radii and tweens backwards past their start, and canvas throws outright on a
+  // negative arc radius ("The radius provided (-0.23) is negative"), which kills
+  // the whole frame.
+  const anim01 = (now, at, dur) => Math.min(1, Math.max(0, (now - at) / dur));
   let floaters = [];
   // Anything faster than speed 1 banks enough energy to act twice in a single
   // worldTurn — a bat (speed 1.1) does it about every tenth turn — and both acts
@@ -3457,14 +3525,14 @@
       // fast play stays responsive rather than queueing up lag.
       e.ax = e.rx; e.ay = e.ry; e.tx = e.x; e.ty = e.y; e.at = now;
     }
-    const k = easeOut(Math.min(1, (now - e.at) / dur));
+    const k = easeOut(anim01(now, e.at, dur));
     e.rx = e.ax + (e.tx - e.ax) * k;
     e.ry = e.ay + (e.ty - e.ay) * k;
     if (k >= 1 && e.moveMs && !(e.wp && e.wp.length)) e.moveMs = 0;   // one-off slow slide done
   }
   function bumpOffset(e, now) {
     if (reduceMotion || !e.bumpAt) return [0, 0];
-    const p = (now - e.bumpAt) / BUMP_MS;
+    const p = anim01(now, e.bumpAt, BUMP_MS);
     if (p >= 1) return [0, 0];
     const a = Math.sin(Math.PI * p) * 0.35;
     return [(e.bumpDx || 0) * a, (e.bumpDy || 0) * a];
@@ -3543,7 +3611,7 @@
   // ---- Draw: dungeon view --------------------------------------------------
   function hitFlash(e, px, py, now) {
     if (!e.hitAt) return;
-    const p = (now - e.hitAt) / HIT_MS;
+    const p = anim01(now, e.hitAt, HIT_MS);
     if (p >= 1) return;
     ctx.fillStyle = "rgba(255,255,255," + ((1 - p) * 0.5).toFixed(3) + ")";
     ctx.fillRect(px, py, tile, tile);
@@ -3718,7 +3786,7 @@
 
     // ranged projectiles (a small glowing bolt travelling tile-to-tile)
     for (const pr of projectiles) {
-      const p = Math.min(1, (now - pr.at) / pr.dur);
+      const p = anim01(now, pr.at, pr.dur);
       const x = pr.x0 + (pr.x1 - pr.x0) * p, y = pr.y0 + (pr.y1 - pr.y0) * p;
       const cx = SX(x) + tile / 2, cy = SY(y) + tile / 2;
       ctx.fillStyle = pr.color;
@@ -3730,7 +3798,7 @@
 
     // bursts: an expanding ring plus sparks flung outward (teleports etc.)
     for (const bt of bursts) {
-      const p = Math.min(1, (now - bt.at) / bt.dur);
+      const p = anim01(now, bt.at, bt.dur);
       const cx = SX(bt.x) + tile / 2, cy = SY(bt.y) + tile / 2;
       ctx.strokeStyle = bt.color; ctx.lineWidth = Math.max(1.5, tile * 0.08);
       ctx.globalAlpha = Math.max(0, 1 - p);
@@ -3746,7 +3814,7 @@
 
     // motion streaks: a fat tapering dash from start tile to end tile (charge / arrow)
     for (const s of streaks) {
-      const p = Math.min(1, (now - s.at) / s.dur);
+      const p = anim01(now, s.at, s.dur);
       const x0 = SX(s.x0) + tile / 2, y0 = SY(s.y0) + tile / 2;
       const x1 = SX(s.x1) + tile / 2, y1 = SY(s.y1) + tile / 2;
       ctx.globalAlpha = Math.max(0, 1 - p);
@@ -3761,7 +3829,7 @@
 
     // spirals: an unfurling twist (the teleport trap's signature)
     for (const s of spirals) {
-      const p = Math.min(1, (now - s.at) / s.dur);
+      const p = anim01(now, s.at, s.dur);
       const cx = SX(s.x) + tile / 2, cy = SY(s.y) + tile / 2;
       ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(1.5, tile * 0.09);
       ctx.globalAlpha = Math.max(0, 1 - p);
@@ -3781,7 +3849,7 @@
     ctx.textBaseline = "middle";
     ctx.font = `700 ${Math.max(11, Math.floor(tile * 0.5))}px ${bodyFont()}`;
     for (const f of floaters) {
-      const p = (now - f.at) / FLOAT_MS;
+      const p = anim01(now, f.at, FLOAT_MS);
       const fx = SX(f.x) + tile / 2, fy = SY(f.y) + tile / 2 - p * tile * 0.9;
       ctx.globalAlpha = Math.max(0, 1 - p);
       ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillText(f.text, fx + 1, fy + 1);
@@ -3792,7 +3860,7 @@
     // monster speech: a taunt in a small dark bubble above the speaker
     for (const s of speeches) {
       const m = s.m; if (!m || m.hp <= 0) continue;
-      const p = (now - s.at) / SPEECH_MS;
+      const p = anim01(now, s.at, SPEECH_MS);
       const rise = Math.min(1, p * 4);                       // pop up quickly, then hold
       const bx = SX(m.rx != null ? m.rx : m.x) + tile / 2;
       const by = SY(m.ry != null ? m.ry : m.y) - tile * (0.35 + rise * 0.15);
@@ -3817,7 +3885,7 @@
 
     // teleport whoosh: a brief full-view colour wash
     if (screenFlash) {
-      const p = Math.min(1, (now - screenFlash.at) / screenFlash.dur);
+      const p = anim01(now, screenFlash.at, screenFlash.dur);
       ctx.globalAlpha = Math.max(0, 0.55 * (1 - p));
       ctx.fillStyle = screenFlash.color;
       ctx.fillRect(0, 0, viewCols * tile, viewRows * tile);
@@ -4697,7 +4765,7 @@
     pendingSkill = null;
     const m = monsterAt(tx, ty);
     if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
-    m.berserk = ANGER_TURNS; m.aware = true; m.lastSeen = { x: player.x, y: player.y };
+    m.berserk = ANGER_TURNS; m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false;
     floatText(m.x, m.y, "😡", "#e0685a");
     log("Kethara's Anger consumes the " + monName(m) + " — it turns on everything nearby.", "hit");
     player.skills[key].cd = Math.max(0, 100 - eff("RES"));
@@ -5344,7 +5412,7 @@
     confirmUpgradeOn: (slotKey) => { const it = player[slotKey]; if (pendingUpgrade && it && GEAR[it.key].cat !== "trinket") confirmUpgrade(it); },
     cancelUpgrade: () => { pendingUpgrade = false; },
     pathStep: (sx, sy, tx, ty) => monsterPathStep(sx, sy, tx, ty),
-    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; } },
+    forceAware: (i, tx, ty) => { const m = monsters[i]; if (m) { m.aware = true; m.lastSeen = { x: tx, y: ty }; m.searching = false; m.searchTurns = null; m.searchSpot = null; } },
     golemShield: () => { const g = monsters.find((m) => m.type === "golem"); return g ? _boss.golemShield(g) : 0; },
     forceSlam: (i) => { const m = monsters[i]; if (m) { m.slamCd = 0; m.aware = true; } },
     nodeBlasts: () => _boss.nodeBlasts(),
@@ -5362,6 +5430,22 @@
     tap: (x, y) => walkTo(x, y),
     walking: () => walkPath.length,
     tick: (cost) => { if (!dead) worldTurn(cost); },   // pass a cost to exercise difficult terrain
+    // Take one world turn and report the exact tiles each monster walked. A
+    // movement bug shows up here as a chain with a gap in it — two tiles that
+    // aren't neighbours — which is precisely what the renderer would then have
+    // to draw as a glide straight through the wall, bush or player in between.
+    // Charges and teleports deliberately record no legs (they set their own
+    // animation), so the caller skips those.
+    tickPaths: (cost) => {
+      if (dead) return [];
+      const before = monsters.filter((m) => m.hp > 0).map((m) => ({ m, x: m.x, y: m.y }));
+      worldTurn(cost);
+      return before.filter((b) => b.m.hp > 0).map((b) => ({
+        type: b.m.type, boss: !!b.m.boss, charge: !!b.m.charge, acts: b.m.acts | 0,
+        from: [b.x, b.y], to: [b.m.x, b.m.y],
+        legs: (b.m.wp || []).map((t) => t.slice()),
+      }));
+    },
     turns: () => turns,
     // ---- Boon-system test hooks ----
     setKillCount: (n) => { player.killCount = n; },
