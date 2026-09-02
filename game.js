@@ -136,6 +136,7 @@
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
     boonAcc: 0, boonEva: 0, boonHaste: 0,               // permanent flat bonuses from kill-counter boons
     hasteBuff: 0,                                       // temporary % Haste from Speed of Light, decays 1/turn
+    invisible: 0,                                       // turns left unseen (Scroll of Invisibility)
   };
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   // Equipment slots: cat -> which player field(s) it fills.
@@ -162,6 +163,7 @@
     player.boons = new Set();                  // boons are earned fresh each run
     player.killCount = 0; player.secondChanceUsed = false;
     player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
+    player.invisible = 0;                      // timed buffs don't carry across a new run
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
@@ -1746,8 +1748,10 @@
     monsters = monsters.filter((m) => m !== target);
     propDoorOpenAt(target.x, target.y);   // died on a door/bush? it's propped open now
     log("The " + monName(target) + " " + (verb || "dies") + ".", "hit");
-    // Regular monsters award XP by their tier: ceil(minFloor / 2) — floor 1–2 = 1,
-    // floor 3–4 = 2, floor 5 = 3. Bosses give a larger scaled reward.
+    // Regular monsters award XP by how deep they start appearing: ceil(minFloor / 2),
+    // and minFloor is a DEPTH (see eligiblePool), so a depth-17 fiend is worth more
+    // than a depth-1 rat instead of both landing in the same 1–3 band.
+    // Bosses give a larger scaled reward.
     let xp;
     if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
@@ -1872,6 +1876,13 @@
       bump(player, target.x, target.y);
       const surprise = !target.aware;                 // ambush: it never saw you coming
       target.aware = true;
+      // Striking from invisibility spends it — you land the ambush, then you're
+      // visible again. Without this the scroll is simply "win the floor".
+      if (player.invisible) {
+        player.invisible = 0;
+        floatText(player.x, player.y, "seen!", "#e0d0a0");
+        log("You strike, and the shimmer falls away — they can see you again.", "hurt");
+      }
       if (!surprise && !rollHit(playerAcc(), target.eva != null ? target.eva : MON_EVA)) {
         floatText(target.x, target.y, "miss", "#cfe6b0");
         log("The " + monName(target) + " evades your blow.");
@@ -2472,7 +2483,11 @@
     if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) return [Math.sign(dx), Math.sign(dy)];
     return null;
   }
-  const canSee = (m) => cheb(m.x, m.y, player.x, player.y) <= SENSE && lineOfSight(m.x, m.y, player.x, player.y);
+  // Invisibility is the whole of "monsters forget you're there": nothing can SPOT
+  // you (so nothing re-acquires you or refreshes a lastSeen trail), and the scroll
+  // wipes what everything already knew when it's read. Together that drops every
+  // hunter back to idle patrol rather than letting them beeline to your last tile.
+  const canSee = (m) => !player.invisible && cheb(m.x, m.y, player.x, player.y) <= SENSE && lineOfSight(m.x, m.y, player.x, player.y);
   function randomFloor() {
     for (let t = 0; t < 30; t++) {
       const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
@@ -2670,10 +2685,17 @@
   }
 
   function eligiblePool() {
-    const f = floorInBiome(depth);
     // minFloor doubles as the on/off switch: no minFloor = disabled; a number =
-    // enabled, and the earliest biome-floor (1..5) it may appear on.
-    return biome.monsters.filter((k) => VERMIN[k].minFloor != null && VERMIN[k].minFloor <= f);
+    // enabled, and the earliest DEPTH it may appear on — the 1..25 floor number in
+    // the HUD, not the 1..5 position within its biome.
+    //
+    // It used to be read as the position within the biome, which silently disabled
+    // every row numbered above 5: authoring a crypt monster as "appears from depth
+    // 12" put it permanently out of the pool, because no biome has a 12th floor.
+    // Fifteen depths across four biomes were spawning nothing at all. A depth is
+    // also what anyone reaches for when they type a number into that column, so
+    // the field now means what it looks like it means.
+    return biome.monsters.filter((k) => VERMIN[k].minFloor != null && VERMIN[k].minFloor <= depth);
   }
   // Weighted pick among the eligible monsters for the current biome-floor. Weights
   // come from biome.spawnMix[key][floor-1] (default 1 when unset); a 0 bars that
@@ -2789,6 +2811,11 @@
     }
     if (canSee(m)) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false; m.searchTurns = null; m.searchSpot = null; }  // spotted: remember where, fresh search budget for next time it loses you
     const d = cheb(m.x, m.y, player.x, player.y);
+    // Adjacency alone used to be enough to swing — which would have let a monster
+    // keep mauling an invisible player it had no idea was standing there. While
+    // you're unseen, only something that already knows about you (you hit it, and
+    // gave yourself away) throws a punch.
+    if (player.invisible && !m.aware) { patrolStep(m); return; }
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
     if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
@@ -2848,6 +2875,7 @@
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }
     if (player.hasteBuff > 0) player.hasteBuff = Math.max(0, player.hasteBuff - 1);   // Speed of Light: decays 1%/turn
+    if (player.invisible > 0 && --player.invisible <= 0) log("The air around you settles — you're visible again.");
     if (pullZone) { pullZone.turns--; if (pullZone.turns <= 0) pullZone = null; }      // Faith's Pull: expires after 5 turns
     if (activeWalls.length) {                                                          // Wall of Faith: reverts after its life
       const stillUp = [];
@@ -3814,6 +3842,10 @@
     glow.addColorStop(1, "rgba(246,184,69,0)");
     ctx.fillStyle = glow;
     ctx.fillRect(cx - tile * 3, cy - tile * 3, tile * 6, tile * 6);
+    // Unseen: draw yourself as a faint shimmer so the buff is visible at a glance
+    // (it pulses rather than sitting at a flat alpha, so it never reads as a bug).
+    const invis = player.invisible > 0;
+    if (invis) ctx.globalAlpha = 0.3 + 0.12 * Math.abs(Math.sin(now / 300));
     if (!drawImg(SPRITES.player, px, py)) {
       ctx.fillStyle = "#f6b845";
       ctx.font = `700 ${Math.floor(tile * 0.8)}px ${bodyFont()}`;
@@ -3821,6 +3853,7 @@
       ctx.textBaseline = "middle";
       ctx.fillText("@", cx, cy);
     }
+    if (invis) ctx.globalAlpha = 1;
     hitFlash(player, px, py, now);
 
     // ranged projectiles (a small glowing bolt travelling tile-to-tile)
@@ -4417,6 +4450,8 @@
     log(cells.length === 1 ? "The torch sets the thorns ablaze — they burn away."
                            : "Fire races through the brambles — " + cells.length + " thorns burn away.", "hit");
   }
+  const INVIS_TURNS = 20;    // Scroll of Invisibility: turns unseen (striking ends it early)
+  const THUNDER_R = 3;       // Scroll of Thunderclap: blast radius, as a true circle
   function applyEffect(effect) {
     const fx = String(effect || "").toLowerCase();
     if (fx === "heal") {
@@ -4463,6 +4498,39 @@
         log("It was poison! (-" + amt + ")", "hurt");
         if (player.hp <= 0) die();
       }
+    } else if (fx === "invisibility") {
+      player.invisible = INVIS_TURNS;
+      // Forgetting is the point: wipe what every monster currently knows, so the
+      // ones already hunting you drop the trail instead of walking to your last
+      // known tile and searching around it.
+      for (const m of monsters) {
+        m.aware = false; m.lastSeen = null;
+        m.searching = false; m.searchTurns = null; m.searchSpot = null;
+      }
+      floatText(player.x, player.y, "\u25cc", "#bfe0ff");
+      log("You fade out of sight — every eye in the dungeon loses you. (" + INVIS_TURNS + " turns, and striking ends it)", "hit");
+    } else if (fx === "thunderclap") {
+      // A circle, not the usual Chebyshev square — a blast front spreads evenly, so
+      // the corners of a 3-tile box are out of it. Walls stop it too.
+      const maxDmg = Math.max(1, player.level * depth);
+      let hit = 0;
+      for (const m of monsters.slice()) {
+        if (m.hp <= 0 || (m.x === player.x && m.y === player.y)) continue;
+        const dx = m.x - player.x, dy = m.y - player.y;
+        if (dx * dx + dy * dy > THUNDER_R * THUNDER_R) continue;
+        if (!lineOfSight(player.x, player.y, m.x, m.y)) continue;
+        const dmg = randInt(0, maxDmg);           // 0 at the low end, by design: some of them ride it out
+        m.aware = true;
+        if (dmg <= 0) { floatText(m.x, m.y, "0", "#cfe6b0"); continue; }
+        m.hp -= dmg; hit++;
+        flash(m); floatText(m.x, m.y, "-" + dmg, "#9ad0ff");
+        if (m.hp <= 0) killMonster(m, "is blasted apart");
+      }
+      spawnBurst(player.x, player.y, "#9ad0ff");
+      flashScreen("#2a4a70", 260);
+      log(hit ? "THUNDERCLAP — the air detonates around you, catching " + hit + (hit === 1 ? " foe." : " foes.")
+              : "THUNDERCLAP — the air detonates around you, and nothing is close enough to care.",
+          hit ? "hit" : "");
     } else if (fx === "map") {
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
       log("The layout of this level floods into your mind.");
@@ -5408,7 +5476,7 @@
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
         acc: playerAcc(), eva: playerEva(), lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
-        boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, critChance: critChance(),
+        boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
         skillsAll: Object.keys(player.skills || {}),
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         boons: player.boons ? [...player.boons] : [], boonPending, classPending,
@@ -5495,6 +5563,8 @@
     setKillCount: (n) => { player.killCount = n; },
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },
     setHasteBuff: (n) => { player.hasteBuff = n; },
+    setInvisible: (n) => { player.invisible = n; },
+    useEffect: (fx) => applyEffect(fx),          // fire a consumable's effect straight off, no item needed
     setFleeing: (i, n) => { const m = monsters[i]; if (m) m.fleeing = n; },
     setBerserk: (i, n) => { const m = monsters[i]; if (m) m.berserk = n; },
     boonSkillCd: (k) => (player.skills[k] ? player.skills[k].cd : null),
