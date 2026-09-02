@@ -395,26 +395,32 @@
   const armorSubMit = () => { const a = armorSub(); return a ? (a.mit || 0) : 0; };
   // A worn armor piece's own evasion stat (on top of the flat subtype bonus above).
   const armorEvasion = () => (player.armor ? (GEAR[player.armor.key].evasion || 0) : 0);
-  // Passive "haste" from worn Speed enchants — makes your attacks cost less time,
-  // tiered by the item bearing the enchant.
-  function wornHaste() {
+  // Passive haste from worn enchants, tiered by the item bearing it. There are two
+  // independent kinds and an enchant carries exactly one: `haste` quickens the
+  // weapon, `walkHaste` quickens the feet. Kit that speeds your swing does nothing
+  // for your legs and vice versa, so the two are a real build choice.
+  function enchantHaste(kind) {
     let h = 0;
     for (const it of wornItems()) {
       if (!it || !it.enchants) continue;
       for (const e of it.enchants) {
         const def = LOOT.enchants[e];
-        // Speed's tierValues are the item's own total speed multiplier (e.g. 1.1 =
-        // ×1.1, tier5's 1.8 = ×1.8 alone) — converted to the additive fraction this
-        // formula stacks, so a single tier-N item lands on exactly that multiplier
-        // while still combining normally with other worn items and haste buffs.
-        if (def && def.effect && def.effect.type === "haste") h += enchantTierValue(def, it, 1 + (def.effect.mult || 0)) - 1;
+        // A Speed enchant's tierValues are the item's own total speed multiplier
+        // (e.g. 1.1 = ×1.1, tier5's 1.8 = ×1.8 alone) — converted to the additive
+        // fraction this formula stacks, so a single tier-N item lands on exactly
+        // that multiplier while still combining normally with other worn items.
+        if (def && def.effect && def.effect.type === kind) h += enchantTierValue(def, it, 1 + (def.effect.mult || 0)) - 1;
       }
     }
-    h += (player.boonHaste || 0) / 100;    // Ourn's Dilating Pupils: permanent +1%/5 kills
-    h += (player.hasteBuff || 0) / 100;    // Ourn's Speed of Light: temporary, decaying buff
     return h;
   }
-  const playerActSpeed = () => weaponSpeed() * (1 + wornHaste());
+  // Ourn's blessings are speed itself rather than a weapon trick, so they are the
+  // one source that hastens hand AND foot together — which is what makes his tree
+  // the speed tree instead of a second attack-speed tree.
+  const ourrnHaste = () => ((player.boonHaste || 0) + (player.hasteBuff || 0)) / 100;   // Dilating Pupils (permanent) + Speed of Light (decaying)
+  const atkHaste = () => enchantHaste("haste") + ourrnHaste();
+  const walkHaste = () => enchantHaste("walkHaste") + ourrnHaste();
+  const playerActSpeed = () => weaponSpeed() * (1 + atkHaste());
   // The Metrognome trinket: a worn one grants +1 to EITHER walk speed or attack
   // speed (its rolled variant), never both. Lower action-cost = you act more often
   // relative to monsters.
@@ -429,7 +435,7 @@
   // variants, and the two now stack the same additive way on both sides.
   // Everything else — a potion, a scroll, equipping, a skill — remains a flat turn, so
   // consumables still cost real tempo no matter how fast you are.
-  const walkCost = () => 1 / (1 + wornHaste() + (metroMode() === "walk" ? 1 : 0));
+  const walkCost = () => 1 / (1 + walkHaste() + (metroMode() === "walk" ? 1 : 0));
   const attackCost = () => 1 / (playerActSpeed() + (metroMode() === "attack" ? 1 : 0));
   // The "power" an item's enchant procs at: weapon top-end damage, armor defense,
   // or (for jewelry) its tier + plus.
@@ -2392,6 +2398,17 @@
 
   // ---- Monster turns -------------------------------------------------------
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+  // A monster's two speeds. `speed` is the base both fall back to, so an existing
+  // row that only sets `speed` behaves exactly as it always did; `walkSpeed` and
+  // `attackSpeed` override it one axis at a time. That's how a bear can lumber
+  // between tiles and still swing at a normal clip, or a hornet dart in and sting
+  // faster than you can answer.
+  const monSpeed = (m, axis) => {
+    const v = m[axis] != null ? m[axis] : m.speed;
+    return v > 0 ? v : 1;
+  };
+  const monWalkSpeed = (m) => monSpeed(m, "walkSpeed");
+  const monAtkSpeed = (m) => monSpeed(m, "attackSpeed");
   const SENSE = 8;          // how far a monster notices the player (needs line of sight)
   const CHARGE_MAX = 7;
   let turns = 0;
@@ -2847,7 +2864,12 @@
     panX = 0; panY = 0; enemyFocusIdx = -1; pendingThrow = null;   // any action recenters the camera on you
     for (const m of monsters.slice()) {
       if (m.hp <= 0) continue;
-      m.energy = (m.energy || 0) + (m.speed || 1) * cost;
+      // Energy banks at the world's rate; what the monster DOES sets the price.
+      // (It used to bank speed × cost and pay a flat 1 per action, which gave a
+      // monster exactly one speed for everything it did. Same throughput when the
+      // two speeds match — a monster at walk 1.2 still acts 1.2× as often — but a
+      // step and a swing can now cost differently.)
+      m.energy = (m.energy || 0) + cost;
       // Record each tile this turn actually steps onto, so the renderer can walk
       // the real path instead of interpolating straight through whatever the
       // monster stepped around (see animEntity). moveMonster does the recording
@@ -2863,8 +2885,15 @@
       // beyond two acts is simply dropped rather than spent.
       let acts = 0;
       while (m.energy >= 1 && acts < MAX_ACTS_PER_TURN && m.hp > 0 && !dead) {
-        m.energy -= 1; acts++;
+        acts++;
+        const before = legs.length;
         monsterAct(m);
+        // Charge back what it actually did: a step is billed at walk speed, an
+        // attack — or anything else, including a charge, which crosses its tiles
+        // in one dash and is really a way of hitting you — at attack speed.
+        // Paying after the fact is what lets one monster have two speeds; energy
+        // may dip below zero, and the next turn's income digs it back out.
+        m.energy -= 1 / (legs.length > before ? monWalkSpeed(m) : monAtkSpeed(m));
       }
       legLog = null;
       m.acts = acts;   // actions taken this world turn — a monster may move at most
@@ -4994,16 +5023,17 @@
     // baseline foe (monster defaults), plus the exact formula behind them.
     const accPct = Math.round(hitChance(playerAcc(), MON_EVA) * 100);
     const evaPct = Math.round((1 - hitChance(MON_ACC, playerEva())) * 100);
-    const hastePct = Math.round(wornHaste() * 100);
-    const hasteTxt = (hastePct >= 0 ? "+" : "") + hastePct + "%";
+    const sgn = (n) => (n >= 0 ? "+" : "") + n + "%";
+    const walkHasteTxt = sgn(Math.round(walkHaste() * 100));
+    const atkHasteTxt = sgn(Math.round(atkHaste() * 100));
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">crit% = 5 + DEX + LCK + skills · crit dmg% = 200 + LCK×2 + skills</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
       `<div class="cline cformula">hit% = 50% + (attacker acc − defender eva) × 3%, clamped 10–95%</div>` +
-      `<div class="cline">Haste <b>${hasteTxt}</b> · a step costs <b>${walkCost().toFixed(2)}</b> turns · a swing <b>${attackCost().toFixed(2)}</b></div>` +
-      `<div class="cline cformula">step = 1 ÷ (1 + Haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + Haste) + Metrognome-attack) · under 1.00 you act more often than your foes</div>` +
+      `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
+      `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
       `<div class="cline cformula">incoming dmg ×(1 − RES%), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;

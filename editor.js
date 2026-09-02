@@ -16,9 +16,16 @@
   const $ = (id) => document.getElementById(id);
 
   // Load working source: an in-progress draft if one exists, else the shipped data.
-  let source;
-  try { const d = localStorage.getItem(LSKEY); source = d ? JSON.parse(d) : clone(SHIPPED); }
-  catch (e) { source = clone(SHIPPED); }
+  // A leftover draft silently OUTRANKS the shipped data, so a draft from days ago
+  // reopens as if nothing had happened since — and "Commit data.js" would then
+  // write that old snapshot over everything. Note when that's the case so the
+  // toolbar can say so out loud instead of letting it pass unremarked.
+  let source, staleDraft = false;
+  try {
+    const d = localStorage.getItem(LSKEY);
+    if (d) { source = JSON.parse(d); staleDraft = JSON.stringify(source) !== JSON.stringify(SHIPPED); }
+    else source = clone(SHIPPED);
+  } catch (e) { source = clone(SHIPPED); }
 
   const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses", "boons"];
   const JSON_COLLS = ["loot", "stats", "gods"];
@@ -34,6 +41,8 @@
       { f: "name", type: "text", cls: "name" },
       { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
       { f: "speed", type: "num", step: "0.1" },
+      { f: "walkSpeed", label: "walk spd", type: "num", step: "0.1" },
+      { f: "attackSpeed", label: "atk spd", type: "num", step: "0.1" },
       { f: "acc", type: "num" }, { f: "eva", type: "num" },
       { f: "range", type: "num" }, { f: "minFloor", type: "num" },
       { f: "charge", type: "bool" }, { f: "ranged", type: "bool" }, { f: "flying", type: "bool" },
@@ -114,13 +123,14 @@
   const flippedSkill = new Set();   // skill nodes currently showing raw code, keyed "cls:id"
   // The effect kinds the engine understands, and the numbers each one reads.
   // Leaving a param blank makes the engine fall back to its built-in default.
-  const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste", "defense"];
+  const EFFECT_TYPES = ["", "burn", "poison", "shock", "thorns", "haste", "walkHaste", "defense"];
   const EFFECT_PARAMS = {
     burn:    [["burstMult", "burst × power", "0.05"], ["dotTurns", "burn turns", "1"]],
     poison:  [["initial", "initial hit", "1"], ["perTurn", "dmg / turn", "1"], ["turns", "turns per dose", "1"]],
     shock:   [["burstMult", "burst × power", "0.05"], ["stunPer", "stun / power", "0.01"]],
     thorns:  [["mult", "reflect × power", "0.05"]],
-    haste:   [["mult", "haste (0–1)", "0.05"]],
+    haste:   [["mult", "attack haste (0–1)", "0.05"]],
+    walkHaste: [["mult", "walk haste (0–1)", "0.05"]],
     defense: [["amount", "+block / hit", "1"]],
   };
   // A reusable "flip to raw JSON" editor: shows the object as text, parses live,
@@ -1046,7 +1056,7 @@
         { name: "Tiered value lookup", formula: "tierValues[clamp(1, 5, item's gear tier) − 1]", note: "Any enchant with a `tierValues` array (5 numbers) on the Enchants tab reads its number from the TIER of the item carrying it — an untiered item counts as tier 1. Falls back to the effect's flat legacy field if `tierValues` is absent." },
         { name: "Poison", formula: "dose = round(weapon power × tiered %); stack += dose; each turn: hp −= stack, then stack −= 1", note: "Doses from repeated procs pile onto ONE running stack rather than layering separate timers — a big early stack keeps hurting as it winds down." },
         { name: "Defense (enchant)", formula: "armor def min += tiered amount,  armor def max += tiered amount", note: "" },
-        { name: "Speed / haste", formula: "your speed multiplier includes (tiered value − 1) as an additive bonus", note: "So a tiered value of 1.8 alone means you swing AND walk ×1.8 as fast; multiple haste sources (other items, Ourn's boons) stack additively around that." },
+        { name: "Speed / haste", formula: "the matching speed multiplier includes (tiered value − 1) as an additive bonus", note: "Two separate kinds, and an enchant is one or the other: effect type `haste` quickens your ATTACKS, `walkHaste` quickens your WALK. A tiered value of 1.8 alone means ×1.8 on that axis only. Multiple sources stack additively; Ourn's boons are the one thing that counts toward both." },
         { name: "Burn", formula: "instant burst = power × burstMult (0.5 default); DOT = ceil(burst / 2) per turn for dotTurns (3 default)", note: "Refreshes to the newest proc rather than stacking — only one burn timer at a time." },
         { name: "Shock", formula: "instant burst = power × burstMult (1.0 default); stun chance = (burst × stunPer (0.1 default)) / monster level", note: "" },
         { name: "Thorns", formula: "reflect = round(incoming damage × mult (0.5 default))", note: "Fires back at whatever just hit you." },
@@ -1055,10 +1065,10 @@
     {
       title: "Action speed & turn cost",
       rows: [
-        { name: "Attack cost", formula: "1 / (weapon speed × (1 + total haste) [+1 if a Metrognome is tuned to attack speed])", note: "Lower cost = more actions per monster turn." },
-        { name: "Walk cost", formula: "1 / (1 + total haste [+1 if a Metrognome is tuned to walk speed])", note: "Haste moves your feet as well as your weapon — that is what makes Ourn's tree a speed build rather than an attack-speed one. Weapon speed is deliberately NOT in here: a heavy axe slows your swing, not your walk." },
-        { name: "Every other action", formula: "1, flat", note: "A potion, a scroll, equipping, a skill, waiting. Haste never shortens these, so consumables always cost real tempo." },
-        { name: "Monster actions", formula: "each monster banks (its speed × your action's cost) per turn and acts once per whole point, capped at 2", note: "So speed 1.2 double-moves every 5th turn and speed 0.8 skips one turn in 5. Halving your own cost halves what every monster banks — that IS the haste." },
+        { name: "Attack cost", formula: "1 / (weapon speed × (1 + attack haste) [+1 if a Metrognome is tuned to attack speed])", note: "Attack haste = worn `haste` enchants + Ourn's boons. Lower cost = more actions per monster turn." },
+        { name: "Walk cost", formula: "1 / (1 + walk haste [+1 if a Metrognome is tuned to walk speed])", note: "Walk haste = worn `walkHaste` enchants + Ourn's boons. Weapon speed is deliberately NOT in here: a heavy axe slows your swing, not your feet." },
+        { name: "Every other action", formula: "1, flat", note: "A potion, a scroll, equipping, a skill, waiting. Neither haste shortens these, so consumables always cost real tempo." },
+        { name: "Monster actions", formula: "banks your action's cost each turn, acts while it holds ≥ 1, and each action costs 1 / (walk speed) if it stepped or 1 / (attack speed) otherwise — capped at 2 actions", note: "walk/attack speed each fall back to the row's `speed` when blank, so setting only `speed` gives one figure for everything. 1.2 on an axis means a double-action every 5th turn on that axis; 0.8 means skipping one in 5. Halving your own cost halves what every monster banks — that IS haste." },
       ],
     },
     {
@@ -1259,6 +1269,23 @@
     for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
     return btoa(bin);
   }
+  function base64ToUtf8(b64) {
+    const bin = atob(String(b64).replace(/\s+/g, ""));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  // data.js is a JS file wrapping one JSON literal — pull the literal back out.
+  function parseDataFile(text) {
+    try { return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)); }
+    catch (e) { return null; }
+  }
+  // What this page started from. Committing REPLACES data.js wholesale, so if the
+  // file on the branch has moved on from this, the commit is a silent revert of
+  // everything in between. Kept as a value (not a reference) and re-based after a
+  // successful commit, so a second save in the same session doesn't false-alarm.
+  let ghBaseline = JSON.stringify(SHIPPED);
+  let ghOverwriteArmed = false;   // one deliberate confirmation, then it disarms again
   function ghMsg(m, k) { const e = $("ghMsg"); e.textContent = m; e.className = k || ""; }
   function reflectGhButton() { $("btnGh").classList.toggle("on", !!ghToken()); }
   function openGh() {
@@ -1296,25 +1323,37 @@
     const api = "https://api.github.com/repos/" + c.owner + "/" + c.repo + "/contents/" + c.path;
     const headers = { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
     const content = utf8ToBase64(dataFileText(data));
-    // Fetch the file's current blob SHA WITHOUT the HTTP cache — a cached GET
-    // returns a stale SHA and GitHub then rejects the PUT with a 409.
-    async function currentSha() {
+    // Fetch the file's current SHA *and content* WITHOUT the HTTP cache — a cached
+    // GET returns a stale SHA and GitHub then rejects the PUT with a 409.
+    async function currentFile() {
       const getRes = await fetch(api + "?ref=" + encodeURIComponent(c.branch) + "&_=" + Date.now(), { headers, cache: "no-store" });
-      if (getRes.ok) return (await getRes.json()).sha;
-      if (getRes.status === 404) return null;
-      throw new Error("read " + getRes.status + " — " + (await getRes.text()).slice(0, 140));
+      if (getRes.status === 404) return { sha: null, text: null };
+      if (!getRes.ok) throw new Error("read " + getRes.status + " — " + (await getRes.text()).slice(0, 140));
+      const j = await getRes.json();
+      return { sha: j.sha, text: j.content ? base64ToUtf8(j.content) : null };
     }
+    async function currentSha() { return (await currentFile()).sha; }
     async function put(sha) {
       const body = { message: "Edit " + c.path + " via Cantori editor", content: content, branch: c.branch };
       if (sha) body.sha = sha;
       return fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
     }
     try {
-      let putRes = await put(await currentSha());
+      // The safety check that stops a stale page eating live work.
+      const live = await currentFile();
+      const liveData = live.text == null ? null : parseDataFile(live.text);
+      if (liveData && JSON.stringify(liveData) !== ghBaseline && !ghOverwriteArmed) {
+        ghOverwriteArmed = true;
+        ghMsg("Stopped: data.js on “" + c.branch + "” is NOT what this page loaded, so saving now would revert whatever changed since. Reload the editor (hard-refresh) to pick those changes up first. Press Commit again to overwrite anyway.", "err");
+        return;
+      }
+      let putRes = await put(live.sha);
       // 409 = the SHA moved under us (another commit, or a cached SHA). Re-read
       // the live SHA once and retry so a stale read doesn't block the save.
       if (putRes.status === 409) { ghMsg("Refreshing…", ""); putRes = await put(await currentSha()); }
       if (!putRes.ok) { throw new Error("commit " + putRes.status + " — " + (await putRes.text()).slice(0, 180)); }
+      ghBaseline = JSON.stringify(data);   // the branch now holds exactly this
+      ghOverwriteArmed = false;
       ghMsg("Committed! GitHub Pages redeploys in ~1 min.", "ok");
       setStatus("Committed " + c.path + " to " + c.owner + "/" + c.repo + " (" + c.branch + ").", "ok");
     } catch (e) {
@@ -1386,7 +1425,7 @@
   }
   function tableHint(coll) {
     return ({
-      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1). Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set 1–5 to enable it (and set the earliest biome-floor it appears on). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
       gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range) plus its own evasion stat; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype ALSO nudges evasion on top of the item's own value: light +3, medium 0, heavy −3. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
@@ -1424,6 +1463,9 @@
 
   render();
   refreshDraftButtons();
+  if (staleDraft) {
+    setStatus("Opened an unfinished draft from a previous session — it may predate what's live. “Stop draft” discards it and reloads the shipped data.", "err");
+  }
   reflectGhButton();
   setStatus(draftActive() ? "Editing a saved draft (Playtest active)." : "Loaded shipped content.", "ok");
 })();

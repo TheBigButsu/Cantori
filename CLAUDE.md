@@ -7,7 +7,7 @@ does today.
 ## Layout
 
 ```
-index.html          the page — also carries the ?v= cache-buster
+index.html          the page — also carries the ?v= cache-buster (so does editor.html)
 data.js             ALL editable content: monsters, gear, consumables, biomes, bosses,
                     boons, loot config, classes + skill trees, stats, gods
 loot.js             loot roll engine (rarity / tier / affix / identify)
@@ -52,9 +52,16 @@ needs editor support or it will be lost.
 `assets/tiles/<key>.png`. A data row without a matching PNG renders blank. Sprites must be CC0 or
 public domain, and credited in `ART-CREDITS.md`.
 
-**4. Bump the `?v=` cache-buster in `index.html`** whenever `game.js`, `data.js`, `loot.js` or
-`styles.css` changes. All four query strings move together. Phones aggressively cache; skipping this
-means the user tests stale code and reports phantom bugs.
+**4. Bump the `?v=` cache-buster in `index.html` AND `editor.html`** whenever `game.js`, `data.js`,
+`loot.js`, `bosses.js`, `styles.css` or `editor.js` changes. Every query string in both files moves
+together, to the same number. Phones aggressively cache; skipping this means the user tests stale
+code and reports phantom bugs.
+
+`editor.html` is the one that bites hardest, and it has already cost real work: it sat on `?v=75`
+for eight generations of `index.html`, so the editor kept loading a months-old `data.js` out of the
+browser cache — and "Commit data.js" replaces the file wholesale, so every save silently reverted
+everything that had landed since. The editor now refuses to commit over a `data.js` it didn't load,
+but that is the backstop, not the fix. Move both files.
 
 **5. New terrain must be added to every map predicate.**
 Tiles are `WALL / FLOOR / STAIRS / DOOR / THORN / WATER / CHASM / RUBBLE / GRASS`, each a row in the
@@ -75,7 +82,7 @@ onward once doors, thorns and trees are down, calling `unpaintTerrain()` if it's
 new that blocks movement needs the same treatment. Miss one and levels become unwinnable in ways
 that only surface on rare seeds. This is the single most common way to break the game.
 
-**6. Run the smoke test before committing:** `node tests/smoke.js`.
+**6. Run the tests before committing:** `node tests/smoke.js` and `node tests/editor.js`.
 
 **7. Keep the run deterministic-ish and permadeath real.** Death clears progress. Don't add anything
 that silently rescues the player.
@@ -85,6 +92,11 @@ that silently rescues the player.
 `node tests/smoke.js` boots the real page in headless Chromium and drives it through
 `window.cantori`, asserting no console errors and that every floor is completable. Run it after any
 change to `game.js`, `data.js` or `loot.js`.
+
+`node tests/editor.js` boots the real `editor.html`, runs the same `buildData()` the "Commit data.js"
+button uses, and diffs the result against `data.js` on disk. It fails if the editor would drop or
+alter a single field — which is rule 2 above, enforced. Run it after any `data.js` or `editor.js`
+change.
 
 Play it by hand with `python3 -m http.server 8000`, then open `http://localhost:8000`.
 
