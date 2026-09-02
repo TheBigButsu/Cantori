@@ -38,14 +38,14 @@ window.CantoriBosses = function (deps) {
     getMonsters = deps.getMonsters, patrolStep = deps.patrolStep, player = deps.player, randInt = deps.randInt,
     sayMonster = deps.sayMonster, shuns = deps.shuns, snapEntity = deps.snapEntity, snapPlayer = deps.snapPlayer,
     spawnBurst = deps.spawnBurst, spawnNear = deps.spawnNear, spawnProjectile = deps.spawnProjectile,
-    spawnStreak = deps.spawnStreak, stepMonsterTo = deps.stepMonsterTo, tileProp = deps.tileProp,
+    spawnStreak = deps.spawnStreak, startHunting = deps.startHunting, stepMonsterTo = deps.stepMonsterTo, tileProp = deps.tileProp,
     updateHUD = deps.updateHUD, normalAct = deps.normalAct;
 
   // ---- The Pied Piper (forest boss) ---------------------------------------
   function piperAct(m) {
     if (m.beam) { piperFireBeam(m); return; }        // fire the line telegraphed last turn
     const see = canSee(m);
-    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }
+    if (see) startHunting(m);
     // Entrance: the first time it sees you, it calls vermin to your side.
     if (see && !m.summoned) {
       m.summoned = true;
@@ -66,7 +66,7 @@ window.CantoriBosses = function (deps) {
     if (m.beamCd > 0) m.beamCd--;
     if (d === 1) { attack(m, player); return; }
     if (see) { stepMonsterTo(m, player.x, player.y); return; }
-    if (m.lastSeen) { chaseLastSeen(m); return; }
+    if (m.target) { chaseLastSeen(m); return; }
     patrolStep(m);
   }
   function piperPhaseShift(m) {
@@ -86,7 +86,7 @@ window.CantoriBosses = function (deps) {
     spawnBurst(m.x, m.y, "#c79bff"); flashScreen("#7a4fb0", 380);
     spawnNear("rat", ox, oy, 2, 3);
     spawnNear("snake", ox, oy, 2, 2);
-    m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false;
+    startHunting(m);
     log("The Piper vanishes in a swirl, leaving its brood behind!", "hurt");
   }
   // Build a straight line through the player's tile (wall to wall) and mark it red.
@@ -142,7 +142,7 @@ window.CantoriBosses = function (deps) {
   function golemAct(m) {
     if (m.windup) { golemResolveWindup(m); return; }
     const see = canSee(m);
-    if (see) { m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searchTurns = null; m.searchSpot = null; }
+    if (see) startHunting(m);
     if (m.slamCd > 0) m.slamCd--;
     // Healing-node respawn timer — only once the golem has phased below 50%.
     if (m.phased) {
@@ -162,7 +162,7 @@ window.CantoriBosses = function (deps) {
     if (see && d >= 3 && lineOfSight(m.x, m.y, player.x, player.y) && Math.random() < 0.5) { golemBeginBoulder(m); return; }
     if (d === 1) { attack(m, player); return; }
     if (see) { stepMonsterTo(m, player.x, player.y); return; }
-    if (m.lastSeen) { chaseLastSeen(m); return; }
+    if (m.target) { chaseLastSeen(m); return; }
     patrolStep(m);
   }
   function golemResolveWindup(m) {
