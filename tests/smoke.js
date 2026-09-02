@@ -178,12 +178,50 @@ async function main() {
 
     // Run the world forward: monster AI, boss playbooks, traps, damage over time.
     // Keep the player alive so a death doesn't cut the sweep short.
-    await page.evaluate((turns) => {
+    //
+    // Every turn also checks the path each monster actually walked. A monster
+    // may only ever step to a neighbouring tile, and the renderer draws whatever
+    // tiles it reports — so a chain with a gap in it is a monster teleporting
+    // through a wall, a bush or the player, whatever the animation does with it.
+    const teleports = await page.evaluate((turns) => {
+      const bad = [];
+      const adj = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])) === 1;
       for (let t = 0; t < turns; t++) {
         if (t % 5 === 0) window.cantori.hurt(-500);   // top up HP; negative damage heals
-        window.cantori.tick();
+        // Plant a trail a couple of tiles off every few turns. The player never
+        // moves here, so monsters would otherwise only ever chase or patrol —
+        // and the hunt→arrive→search handover is exactly where movement used to
+        // spill two tiles into one action.
+        if (t % 3 === 0) {
+          const ms = window.cantori.peek().mlist;
+          for (let i = 0; i < ms.length; i++) {
+            const dx = (i % 3) - 1, dy = ((i / 3) | 0) % 3 - 1;
+            window.cantori.forceAware(i, ms[i].x + dx * 2, ms[i].y + dy * 2);
+          }
+        }
+        for (const p of window.cantori.tickPaths()) {
+          if (p.charge || p.boss) continue;           // both move in ways that set their own animation
+          if (p.legs.length > p.acts) {
+            bad.push(`${p.type} moved ${p.legs.length} tiles in ${p.acts} action(s)`);
+            continue;
+          }
+          const chain = [p.from].concat(p.legs);
+          if (!p.legs.length) {
+            if (adj(p.from, p.to) || (p.from[0] === p.to[0] && p.from[1] === p.to[1])) continue;
+            bad.push(`${p.type} jumped ${p.from} → ${p.to} with no path recorded`);
+            continue;
+          }
+          for (let i = 1; i < chain.length; i++) {
+            if (!adj(chain[i - 1], chain[i])) { bad.push(`${p.type} skipped from ${chain[i - 1]} to ${chain[i]}`); break; }
+          }
+          const last = chain[chain.length - 1];
+          if (last[0] !== p.to[0] || last[1] !== p.to[1]) bad.push(`${p.type} ended at ${p.to} but its path ends at ${last}`);
+        }
+        if (bad.length > 4) break;
       }
+      return bad;
     }, TURNS);
+    for (const t of teleports) check(false, `depth ${d}: ${t}`);
 
     const after = await page.evaluate(() => window.cantori.peek());
     check(after.hp > 0, `depth ${d}: player died during the AI churn`);

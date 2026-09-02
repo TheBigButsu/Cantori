@@ -86,7 +86,7 @@ window.CantoriBosses = function (deps) {
     spawnBurst(m.x, m.y, "#c79bff"); flashScreen("#7a4fb0", 380);
     spawnNear("rat", ox, oy, 2, 3);
     spawnNear("snake", ox, oy, 2, 2);
-    m.aware = true; m.lastSeen = { x: player.x, y: player.y };
+    m.aware = true; m.lastSeen = { x: player.x, y: player.y }; m.searching = false;
     log("The Piper vanishes in a swirl, leaving its brood behind!", "hurt");
   }
   // Build a straight line through the player's tile (wall to wall) and mark it red.
