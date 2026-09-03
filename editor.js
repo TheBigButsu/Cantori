@@ -15,17 +15,28 @@
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const $ = (id) => document.getElementById(id);
 
+  const LSTIME = "cantori_data_override_at";   // when that draft was stashed
   // Load working source: an in-progress draft if one exists, else the shipped data.
-  // A leftover draft silently OUTRANKS the shipped data, so a draft from days ago
-  // reopens as if nothing had happened since — and "Commit data.js" would then
-  // write that old snapshot over everything. Note when that's the case so the
-  // toolbar can say so out loud instead of letting it pass unremarked.
-  let source, staleDraft = false;
+  //
+  // A leftover draft silently OUTRANKS the shipped data — and a draft is created by
+  // the Playtest button, so one click months ago is enough. Nothing clears it: not a
+  // reload, not a HARD reload, because localStorage is not the HTTP cache. That is
+  // the trap. This is the one thing that can make a freshly-reloaded editor show
+  // content from days ago while the game and the repo have both moved on.
+  //
+  // The draft still wins (losing someone's half-finished work would be worse), but
+  // never quietly: `dataSource` drives a permanent badge in the header and, when the
+  // draft disagrees with what shipped, a banner offering to drop it.
+  let source, dataSource = "shipped", draftAt = 0;
   try {
     const d = localStorage.getItem(LSKEY);
-    if (d) { source = JSON.parse(d); staleDraft = JSON.stringify(source) !== JSON.stringify(SHIPPED); }
-    else source = clone(SHIPPED);
+    if (d) {
+      source = JSON.parse(d);
+      dataSource = "draft";
+      draftAt = Number(localStorage.getItem(LSTIME)) || 0;
+    } else source = clone(SHIPPED);
   } catch (e) { source = clone(SHIPPED); }
+  const staleDraft = dataSource === "draft" && JSON.stringify(source) !== JSON.stringify(SHIPPED);
 
   const TABLE_COLLS = ["monsters", "gear", "consumables", "bosses", "boons"];
   const JSON_COLLS = ["loot", "stats", "gods"];
@@ -1285,7 +1296,7 @@
     const keys = Array.from(new Set(Object.keys(mine || {}).concat(Object.keys(theirs || {}))));
     const moved = keys.filter((k) => JSON.stringify(mine[k]) !== JSON.stringify(theirs[k]));
     if (!moved.length) return "formatting only";
-    return "theirs differs in: " + moved.slice(0, 6).join(", ") + (moved.length > 6 ? ", …" : "");
+    return moved.slice(0, 6).join(", ") + (moved.length > 6 ? ", …" : "");
   }
   // data.js is a JS file wrapping one JSON literal — pull the literal back out.
   function parseDataFile(text) {
@@ -1357,7 +1368,7 @@
       if (liveData && JSON.stringify(liveData) !== ghBaseline && !ghOverwriteArmed) {
         ghOverwriteArmed = true;
         ghMsg("Stopped: data.js on “" + c.branch + "” is NOT what this page loaded, so saving now would revert whatever changed since (" +
-              whatMoved(JSON.parse(ghBaseline), liveData) + "). Hit “Load latest from branch” to start from what's actually there, " +
+              "the branch differs in: " + whatMoved(JSON.parse(ghBaseline), liveData) + "). Hit “Load latest from branch” to start from what's actually there, " +
               "or press Commit again to overwrite them deliberately.", "err");
         // (a plain page reload often will NOT clear this — GitHub Pages can serve a
         // data.js behind the branch — which is what “Load latest from branch” is for)
@@ -1398,18 +1409,100 @@
       if (!res.ok) throw new Error("read " + res.status + " — " + (await res.text()).slice(0, 140));
       const parsed = parseDataFile(base64ToUtf8((await res.json()).content || ""));
       if (!parsed || !parsed.monsters) throw new Error("that file didn't parse as Cantori data");
-      try { localStorage.removeItem(LSKEY); } catch (e) {}   // a stale draft would just win again
+      try { localStorage.removeItem(LSKEY); localStorage.removeItem(LSTIME); } catch (e) {}   // a stale draft would just win again
       source = parsed;
       ghBaseline = JSON.stringify(parsed);
       ghOverwriteArmed = false;
-      staleDraft = false;
+      dataSource = "branch"; draftAt = 0;
       reseed();
+      renderSource();
       refreshDraftButtons();
+      hideFresh();
       ghMsg("Loaded " + c.path + " from " + c.branch + " — you're on the live version now.", "ok");
       setStatus("Loaded " + c.path + " from " + c.branch + ".", "ok");
     } catch (e) {
       ghMsg("Failed: " + e.message, "err");
     }
+  }
+
+  // ---- "Which data am I actually looking at?" --------------------------------
+  // Two entirely separate things can hand this page stale content, and neither is
+  // fixed by reloading:
+  //   1. a localStorage draft (written by Playtest) outranks the shipped data, and
+  //      a hard reload does not touch localStorage — it is not the HTTP cache;
+  //   2. the <script src="data.js?v=NN"> tag can be served from cache or from a
+  //      GitHub Pages deploy that is behind the branch.
+  // So the answer is stated permanently in the header, and anything suspicious
+  // raises a banner with the button that actually fixes it.
+  const ago = (ms) => {
+    if (!ms) return "unknown age";
+    const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (mins < 1) return "just now";
+    if (mins < 60) return mins + " min ago";
+    const hrs = Math.round(mins / 60);
+    return hrs < 48 ? hrs + "h ago" : Math.round(hrs / 24) + " days ago";
+  };
+  function renderSource() {
+    const el = $("srcTag"); if (!el) return;
+    if (dataSource === "draft") {
+      el.textContent = "⚙ local draft · " + ago(draftAt);
+      el.className = "src draft";
+      el.title = "This page is showing a Playtest draft saved in this browser, NOT data.js. Reloading will not clear it.";
+    } else {
+      el.textContent = dataSource === "branch" ? "live data.js (from branch)" : "live data.js";
+      el.className = "src";
+      el.title = "This page is showing the data.js it loaded.";
+    }
+  }
+  function showFresh(html, actions) {
+    const bar = $("freshBar"); if (!bar) return;
+    $("freshMsg").innerHTML = html;
+    const acts = $("freshActs"); acts.innerHTML = "";
+    for (const [label, fn, cls] of (actions || [])) {
+      const b = document.createElement("button");
+      b.className = "tool " + (cls || ""); b.textContent = label; b.onclick = fn;
+      acts.appendChild(b);
+    }
+    bar.classList.add("show");
+  }
+  function hideFresh() {
+    const b = $("freshBar"); if (!b) return;
+    b.classList.remove("show");
+    $("freshMsg").innerHTML = ""; $("freshActs").innerHTML = "";
+  }
+
+  // Drop the draft and fall back to the data.js this page loaded.
+  function useShipped() {
+    try { localStorage.removeItem(LSKEY); localStorage.removeItem(LSTIME); } catch (e) {}
+    source = clone(SHIPPED);
+    dataSource = "shipped"; draftAt = 0;
+    reseed(); renderSource(); refreshDraftButtons(); hideFresh();
+    setStatus("Draft discarded — showing the data.js this page loaded.", "ok");
+    verifyFresh();     // the draft was hiding it; make sure what's underneath is current
+  }
+
+  // Ask the server for data.js again, bypassing the HTTP cache, and compare it to
+  // what the <script> tag actually gave us. Catches a cached or behind-the-branch
+  // deploy, which a reload can easily fail to clear.
+  async function verifyFresh() {
+    let live;
+    try {
+      const res = await fetch("./data.js?fresh=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) return;
+      live = parseDataFile(await res.text());
+    } catch (e) { return; }
+    if (!live || !live.monsters) return;
+    if (JSON.stringify(live) === JSON.stringify(SHIPPED)) return;   // we are current
+    showFresh(
+      "The <b>data.js on the server is different</b> from the one this page loaded — this page is running on a cached copy. " +
+      "Differs in: <b>" + whatMoved(SHIPPED, live) + "</b>.",
+      [["Load the server's version", () => {
+        try { localStorage.removeItem(LSKEY); localStorage.removeItem(LSTIME); } catch (e) {}
+        source = live; dataSource = "shipped"; draftAt = 0;
+        reseed(); renderSource(); refreshDraftButtons(); hideFresh();
+        setStatus("Loaded the server's data.js.", "ok");
+      }, "primary"]]
+    );
   }
 
   // ---- Toolbar actions -------------------------------------------------------
@@ -1420,14 +1513,14 @@
   function doPlaytest() {
     const { data, problems } = buildData();
     if (problems.length) { setStatus("Fix: " + problems[0], "err"); return; }
-    try { localStorage.setItem(LSKEY, JSON.stringify(data)); }
+    try { localStorage.setItem(LSKEY, JSON.stringify(data)); localStorage.setItem(LSTIME, String(Date.now())); }
     catch (e) { setStatus("Could not save draft: " + e.message, "err"); return; }
     refreshDraftButtons();
     setStatus("Draft saved — opening game…", "ok");
     window.open("./index.html", "_blank");
   }
   function doStop() {
-    try { localStorage.removeItem(LSKEY); } catch (e) {}
+    try { localStorage.removeItem(LSKEY); localStorage.removeItem(LSTIME); } catch (e) {}
     refreshDraftButtons();
     setStatus("Playtest draft cleared — the game uses the shipped data again.", "ok");
   }
@@ -1520,8 +1613,17 @@
 
   render();
   refreshDraftButtons();
+  renderSource();
   if (staleDraft) {
-    setStatus("Opened an unfinished draft from a previous session — it may predate what's live. “Stop draft” discards it and reloads the shipped data.", "err");
+    showFresh(
+      "You are editing a <b>Playtest draft saved in this browser " + ago(draftAt) + "</b>, not data.js — which is why a reload " +
+      "(even a hard one) does not change what you see. It differs from the data.js this page loaded in: <b>" +
+      whatMoved(source, SHIPPED) + "</b>.",
+      [["Discard the draft, use data.js", useShipped, "primary"],
+       ["Keep editing the draft", hideFresh, ""]]
+    );
+  } else {
+    verifyFresh();      // no draft in the way — so check the copy we loaded is current
   }
   reflectGhButton();
   setStatus(draftActive() ? "Editing a saved draft (Playtest active)." : "Loaded shipped content.", "ok");
