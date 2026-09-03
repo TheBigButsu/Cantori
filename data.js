@@ -1234,10 +1234,8 @@ window.CANTORI_DATA = {
       "levelUp": {
         "hp": 5,
         "mp": 2,
-        "accuracy": 3,
-        "evasion": 2,
-        "crit": 1,
-        "critDmg": 5
+        "accuracy": 2,
+        "evasion": 1
       },
       "blurb": "Front-line brawler. All around weapons master.",
       "skillTree": [
@@ -1518,10 +1516,8 @@ window.CANTORI_DATA = {
       "levelUp": {
         "hp": 5,
         "mp": 2,
-        "accuracy": 2,
-        "evasion": 3,
-        "crit": 1,
-        "critDmg": 5
+        "accuracy": 1,
+        "evasion": 2
       },
       "blurb": "Fights best barehanded — hurls foes aside and lands harder the longer she goes unarmed.",
       "skillTree": [

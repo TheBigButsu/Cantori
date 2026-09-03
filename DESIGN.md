@@ -295,3 +295,68 @@ any visible tile. Banked points are spent on the skill tree.
   torch you picked up elsewhere to open it clean.
 
 _Also still open: selecting among multiple classes at run start._
+
+## Balance pass: curves that don't saturate — DONE
+
+The complaint this answers: *"once I get to L4 I'm basically a god."* Every curve
+that mattered was linear in a quantity that only ever went up, so each of them ran
+out of road at roughly the same point in a run.
+
+- **Hit chance no longer saturates.** It was `50% + (acc − eva) × 3%`, clamped at
+  95% — reached at a 15-point lead, which a Warrior clears around level 4. Now
+  `50% + 45% × tanh((acc − eva) / 20)`: the first points of accuracy are worth the
+  most, the fiftieth is worth almost nothing, and neither 100% nor 0% is ever
+  reached. Accuracy, evasion and every affix touching them stay live for the whole
+  run, in both directions.
+- **RES can no longer reach immunity.** It was a flat `1 − RES/100`, so 100 RES was
+  literal invulnerability — and RES climbs on its own, from a class's secondary
+  stat, Kethara's Gift of the Faithful, and gear affixes. Now `RES / (RES + 100)`:
+  50 RES cuts a third, 100 RES cuts half, immunity is unreachable.
+- **Monsters scale with depth.** Each row in `data.js` is authored at its depth-1
+  strength and scaled by the floor it is actually met on: `+10%` max HP, `+8%`
+  attack, `+0.8` accuracy and `+0.5` evasion per depth past the first. Before this
+  the player's curve was the only curve in the game. Bosses are exempt — they sit
+  on fixed depths and are already authored for the floor they own.
+- **Per-level gains trimmed.** Warrior `accuracy 3 → 2`, `evasion 2 → 1`; Monk
+  `accuracy 2 → 1`, `evasion 3 → 2`. Class flavour comes from the main stat (a
+  Monk's `+2 DEX` a level is already `+2` to both) rather than from a flat gift.
+- **Crits are a good roll, not a second attack.** Base `200% → 125%`; LCK buys
+  `+0.5%` crit chance a point instead of `+1%`; and the per-level `crit` /
+  `critDmg` gains are gone entirely — levels give stats and flat HP/MP, they no
+  longer quietly multiply your damage. `levelUp.crit` / `levelUp.critDmg` have been
+  removed from `data.js` and from the editor.
+- **Early HP regen is propped up.** `×2.5` at character level 1, `×2` at 2, `×1.5`
+  at 3, `×1` from 4 on (character level, not depth). The opening floors are where
+  an unlucky fight is unrecoverable — no potions, empty pack — and a level-1
+  character healing at the level-20 rate spent the floor walking in circles.
+
+## Waking, bushes, tiers and boons — DONE
+
+- **Sleepers wake sooner.** The notice roll was a flat `1/distance`, so a sleeper
+  eight tiles off in plain sight took eight turns on average to look up and most
+  rooms were cleared before anything in them woke. It is now `3/distance` —
+  certain within three tiles, tailing off past that. Line of sight is still a hard
+  requirement: the ambush is built on broken sight, and a monster that woke to
+  footsteps through a wall would leave no opening to ambush into.
+- **A foe in a doorway cannot dodge.** A monster standing on a door — the forest's
+  **bushes** included — takes a **guaranteed hit**, alert or not, on top of the
+  existing ambush auto-hit. A doorway is a one-tile gap it has to shoulder through,
+  so there is nowhere to give ground to. This makes a bush worth fighting *at*
+  rather than only hiding behind, and it is the reliable answer to the genuinely
+  slippery foes (a Bee at eva 25) a fair roll almost never lands on.
+- **The skill tree is a level-gated 5×5 board again.** Five tiers of five slots, and
+  a row IS a tier: tier 1 from the start, tier 2 at character level 5, tier 3 at 10,
+  tier 4 at 15, tier 5 at 20. The gate is derived from where a node sits rather than
+  authored on it, so the grid means something — moving a skill down a row is how you
+  make it cost more levels, and no tree can be authored with a deep skill reachable
+  on the first floor. A node's own `minLevel` can raise the gate but never lower it.
+  Blank cells stay blank (drawn as empty sockets) instead of closing up, because
+  collapsing them would move a tier-4 skill into tier 2's row and misstate its cost.
+  Prerequisites are still real requirements, and they are now spelled out in words
+  on the skill's card whether or not they are met — what a skill costs is how you
+  plan a build.
+- **The boon choice lands on the kill.** It used to be three runes scattered on the
+  boss room floor that you walked onto; the god's blessing could be looted in the
+  wrong order, stepped over on the way to the stairs, or dropped somewhere a
+  knockback had made unreachable. Killing the boss now opens the same 1-of-3 modal
+  the run starts with, and play is blocked until you pick.

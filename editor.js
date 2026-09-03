@@ -43,7 +43,13 @@
   const TABS = TABLE_COLLS.concat(["biomes", "classes", "enchants"]).concat(JSON_COLLS).concat(["reference"]);
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   const GEAR_CATS = ["weapon", "armor", "ring", "trinket", "necklace"];
-  const TIERS = 5, SLOTS = 5;   // skill tree: the grid the layout editor shows by default
+  const TIERS = 5, SLOTS = 5;   // skill tree: the 5×5 grid — 5 tiers of 5 slots
+  // A row IS a tier, and a tier is gated on character level: tier 1 from the
+  // start, tier 2 at 5, tier 3 at 10, and so on. game.js derives the same gate
+  // from a node's y, so moving a skill down a row is how you make it cost more
+  // levels — there is no per-node field for it and nothing to keep in sync.
+  const TIER_LEVELS = 5;
+  const tierLevel = (y) => (y > 0 ? y * TIER_LEVELS : 0);
 
   // Column specs for the table editors. type: key|text|num|bool|color|select.
   const SPECS = {
@@ -747,11 +753,9 @@
     lg.appendChild(classField(o, "MP", "levelUp.mp", "num"));
     lg.appendChild(classField(o, "accuracy", "levelUp.accuracy", "num"));
     lg.appendChild(classField(o, "evasion", "levelUp.evasion", "num"));
-    lg.appendChild(classField(o, "crit % (added)", "levelUp.crit", "num"));
-    lg.appendChild(classField(o, "crit dmg % (added)", "levelUp.critDmg", "num"));
     wrap.appendChild(lg);
     const lnote = document.createElement("p"); lnote.className = "hint";
-    lnote.textContent = "Added each level. Base crit is 5% for 200% damage; crit % and crit dmg % add to those.";
+    lnote.textContent = "Added each level. Levels no longer grant crit — a crit is a flat 5% base for 125% damage, moved only by DEX, LCK and skills.";
     wrap.appendChild(lnote);
 
     const bh = document.createElement("h3"); bh.className = "csec"; bh.textContent = "Blurb"; wrap.appendChild(bh);
@@ -762,7 +766,7 @@
     // graph itself can branch and rejoin however it likes.
     const th = document.createElement("h3"); th.className = "csec"; th.textContent = "Skill tree"; wrap.appendChild(th);
     const tnote = document.createElement("p"); tnote.className = "hint";
-    tnote.textContent = "Leave squares blank to shape the tree — they are just layout. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first, referred to by id), and a wiring row: id (what prerequisites point at, and what the engine keys the skill by), icon, behavior (passive / rush / spin), and when (a weapon subtype a passive needs, e.g. axe). A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Sword Master are fully wired examples.";
+    tnote.textContent = "A 5×5 board: 5 tiers of 5 slots. A row is a TIER and a tier is gated on character level — tier 1 from the start, tier 2 at level 5, tier 3 at 10, tier 4 at 15, tier 5 at 20 — so which row you put a skill on is how much of the run it costs to reach. Blank squares stay blank in-game (they are drawn as empty sockets), so leaving gaps shapes the tree without lying about any node's tier. Each skill has a description, up to 4 level notes (the dots show how high it goes), prerequisites (other skills taken first, referred to by id — the game spells these out in words on the skill's card), and a wiring row: id (what prerequisites point at, and what the engine keys the skill by), icon, behavior (passive / rush / spin), when (a weapon subtype a passive needs, e.g. axe), req pts, and an optional extra min level that can only ask for MORE than the tier gate. A skill only works in-game once it has per-level mechanics — edit those (the ranks array) in the </> code view. Warrior's Rush, Spin and Sword Master are fully wired examples.";
     wrap.appendChild(tnote);
     const allSkills = [];   // gather named skills for the prereq picker
     for (const n of o.skillTree) if (n.name) allSkills.push({ id: n.id, name: n.name });
@@ -773,7 +777,13 @@
     const tree = document.createElement("div"); tree.className = "stree";
     for (let y = 0; y < rowsN; y++) {
       const rowEl = document.createElement("div"); rowEl.className = "strow";
-      const tl = document.createElement("div"); tl.className = "stier"; tl.textContent = "Row " + (y + 1); rowEl.appendChild(tl);
+      const tl = document.createElement("div"); tl.className = "stier";
+      const need = tierLevel(y);
+      tl.textContent = "Tier " + (y + 1);
+      tl.title = need ? "unlocked at character level " + need : "available from the start";
+      const tlv = document.createElement("small"); tlv.textContent = need ? "Lv " + need : "start";
+      tl.appendChild(tlv);
+      rowEl.appendChild(tl);
       for (let x = 0; x < colsN; x++) rowEl.appendChild(renderSkillCell(o, x, y, allSkills));
       tree.appendChild(rowEl);
     }
@@ -850,8 +860,8 @@
     rp.value = cell.reqPoints || "";
     rp.oninput = () => { const v = parseInt(rp.value, 10); if (v > 0) cell.reqPoints = v; else delete cell.reqPoints; };
     wire.appendChild(rp);
-    const ml = document.createElement("input"); ml.type = "number"; ml.min = "0"; ml.placeholder = "min level";
-    ml.title = "gate on CHARACTER level — for a skill you grow into rather than earn from another skill";
+    const ml = document.createElement("input"); ml.type = "number"; ml.min = "0"; ml.placeholder = "extra min lv";
+    ml.title = "an EXTRA character-level gate on top of this row's tier gate (tier " + (y + 1) + " already needs level " + (tierLevel(y) || 1) + "). It can only ask for more, never less — leave it blank unless one skill in the row should come later than its neighbours.";
     ml.value = cell.minLevel || "";
     ml.oninput = () => { const v = parseInt(ml.value, 10); if (v > 0) cell.minLevel = v; else delete cell.minLevel; };
     wire.appendChild(ml);
@@ -1010,8 +1020,8 @@
         { name: "VIT → HP", formula: "+1 max HP per point", note: "Via computeMaxHp() below." },
         { name: "DEX → acc/eva/crit", formula: "+1 accuracy, +1 evasion, +1% crit chance per point", note: "" },
         { name: "INT → MP", formula: "+1 max MP per point", note: "Via computeMaxMp() below." },
-        { name: "RES → damage taken", formula: "−1% incoming damage per point", note: "Applied before armor — see Defense & Mitigation." },
-        { name: "LCK → luck", formula: "+1% enchant proc chance, +1% crit chance, +2% crit damage per point", note: "" },
+        { name: "RES → damage taken", formula: "incoming damage cut by RES / (RES + 100)", note: "Applied before armor — see Defense & Mitigation. A curve, not a straight −1%/point: it approaches total immunity without ever arriving." },
+        { name: "LCK → luck", formula: "+1% enchant proc chance, +0.5% crit chance, +2% crit damage per point", note: "" },
       ],
     },
     {
@@ -1019,7 +1029,7 @@
       rows: [
         { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + eff(VIT) + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
         { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + eff(INT) + flat per-level MP gained", note: "" },
-        { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen); +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT." },
+        { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen) × early-level multiplier; +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT. The early-level multiplier is ×2.5 at character level 1, ×2 at 2, ×1.5 at 3 and ×1 from 4 on: the opening floors are where an unlucky fight is unrecoverable." },
         { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − eff(INT) × class.intRegen); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT." },
       ],
     },
@@ -1028,14 +1038,14 @@
       rows: [
         { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
         { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
-        { name: "Hit chance", formula: "hitChance = clamp(10%, 95%, 50% + (attacker's acc − defender's eva) × 3%)", note: "Every point of acc-vs-eva edge is worth 3 percentage points of hit chance, floored at 10% and capped at 95%." },
+        { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 20)", note: "50% at even acc/eva; a lead of 20 points is worth about 84%, 40 points about 93%. Diminishing, so it never saturates — the old flat 3%/point hit its 95% cap at a 15-point lead and made accuracy and evasion both stop mattering by mid-run." },
       ],
     },
     {
       title: "Critical hits",
       rows: [
-        { name: "Crit chance", formula: "critChance = (5% base + per-level crit + Ourn's Perfectly Timed Blow (+1%/character level) + eff(DEX) + eff(LCK)) / 100", note: "" },
-        { name: "Crit damage", formula: "critMult = (200% base + per-level crit dmg + eff(LCK) × 2) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
+        { name: "Crit chance", formula: "critChance = (5% base + Ourn's Perfectly Timed Blow (+1%/character level) + eff(DEX) + eff(LCK) × 0.5) / 100", note: "Levels give no crit of their own." },
+        { name: "Crit damage", formula: "critMult = (125% base + eff(LCK) × 2) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
       ],
     },
     {
@@ -1048,10 +1058,18 @@
       ],
     },
     {
+      title: "Monster scaling by depth",
+      rows: [
+        { name: "Max HP", formula: "authored hp × (1 + 0.10 × (depth − 1))", note: "Every monster row in the Monsters tab is authored at its depth-1 strength and scaled up by the floor it is actually met on. Bosses are exempt — they sit on fixed depths and are authored for the floor they own." },
+        { name: "Attack", formula: "atk min/max × (1 + 0.08 × (depth − 1))", note: "" },
+        { name: "Accuracy / evasion", formula: "acc + 0.8 × (depth − 1),  eva + 0.5 × (depth − 1)", note: "A blank acc/eva column starts from the defaults (12 / 4) before scaling." },
+      ],
+    },
+    {
       title: "Defense & mitigation — a monster hitting you",
       rows: [
         { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },
-        { name: "RES reduction", formula: "raw × max(0, 1 − eff(RES) / 100)", note: "Applied FIRST, as a % of the raw hit." },
+        { name: "RES reduction", formula: "raw × (1 − eff(RES) / (eff(RES) + 100))", note: "Applied FIRST, as a % of the raw hit. 50 RES cuts a third, 100 RES cuts half; immunity is unreachable." },
         { name: "Armor block", formula: "− random(armor's def min, def max) − armor subtype mitigation − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Armor subtype mitigation: light +0, medium +1, heavy +3, added on top of the item's own def range. Final damage is floored at 1 no matter how much is mitigated." },
       ],
     },
@@ -1097,10 +1115,19 @@
       ],
     },
     {
+      title: "Skill tree",
+      rows: [
+        { name: "Tier gate", formula: "a node on grid row y needs character level y × 5", note: "Tier 1 from the start, tier 2 at level 5, tier 3 at 10, tier 4 at 15, tier 5 at 20. Derived from where the node sits on the Classes tab's grid — there is nothing to author. A node's own `minLevel` can raise this but never lower it." },
+        { name: "Prerequisites", formula: "req = every listed skill at its listed rank (AND); reqAny = at least one of them (OR)", note: "A rank of \"max\" means that skill's own top rank. Both are spelled out in words on the skill's card in-game, met or not." },
+        { name: "Points gate", formula: "reqPoints = total ranks already bought anywhere in this class's tree", note: "For deep nodes that shouldn't depend on one particular branch." },
+        { name: "Cost", formula: "1 unspent point per rank", note: "Points come only from Potions of Insight — 1 guaranteed per floor, 3 more on a boss kill." },
+      ],
+    },
+    {
       title: "Experience & leveling",
       rows: [
         { name: "XP to next level", formula: "threshold = current level × 8", note: "" },
-        { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion/crit/critDmg)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
+        { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
         { name: "Monster XP", formula: "ceil(monster's minFloor / 2)", note: "1 XP for a floor 1–2 monster, 2 for floor 3–4, 3 for floor 5+." },
         { name: "Boss XP", formula: "15 + round(boss's max HP × 0.4)", note: "" },
       ],
