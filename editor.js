@@ -1058,14 +1058,6 @@
       ],
     },
     {
-      title: "Monster scaling by depth",
-      rows: [
-        { name: "Max HP", formula: "authored hp × (1 + 0.10 × (depth − 1))", note: "Every monster row in the Monsters tab is authored at its depth-1 strength and scaled up by the floor it is actually met on. Bosses are exempt — they sit on fixed depths and are authored for the floor they own." },
-        { name: "Attack", formula: "atk min/max × (1 + 0.08 × (depth − 1))", note: "" },
-        { name: "Accuracy / evasion", formula: "acc + 0.8 × (depth − 1),  eva + 0.5 × (depth − 1)", note: "A blank acc/eva column starts from the defaults (12 / 4) before scaling." },
-      ],
-    },
-    {
       title: "Defense & mitigation — a monster hitting you",
       rows: [
         { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },

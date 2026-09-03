@@ -312,11 +312,12 @@ out of road at roughly the same point in a run.
   literal invulnerability — and RES climbs on its own, from a class's secondary
   stat, Kethara's Gift of the Faithful, and gear affixes. Now `RES / (RES + 100)`:
   50 RES cuts a third, 100 RES cuts half, immunity is unreachable.
-- **Monsters scale with depth.** Each row in `data.js` is authored at its depth-1
-  strength and scaled by the floor it is actually met on: `+10%` max HP, `+8%`
-  attack, `+0.8` accuracy and `+0.5` evasion per depth past the first. Before this
-  the player's curve was the only curve in the game. Bosses are exempt — they sit
-  on fixed depths and are already authored for the floor they own.
+- **Monster difficulty stays authored, not multiplied.** A blanket "+x% per depth"
+  over every row was tried and deliberately backed out. It re-tunes every monster
+  from underneath whoever wrote it, and — worse — it hides a thin roster instead of
+  showing you that it is thin. Difficulty across the run is the monsters each biome
+  spawns, their `minFloor`, their `spawnMix`, and their own `acc` / `eva` / `hp`
+  columns. If a late biome plays too easy, that is where the fix goes.
 - **Per-level gains trimmed.** Warrior `accuracy 3 → 2`, `evasion 2 → 1`; Monk
   `accuracy 2 → 1`, `evasion 3 → 2`. Class flavour comes from the main stat (a
   Monk's `+2 DEX` a level is already `+2` to both) rather than from a flat gift.
@@ -360,3 +361,24 @@ out of road at roughly the same point in a run.
   wrong order, stepped over on the way to the stairs, or dropped somewhere a
   knockback had made unreachable. Killing the boss now opens the same 1-of-3 modal
   the run starts with, and play is blocked until you pick.
+
+## Biomes 3–5 — planned
+
+Content stops at biome 2 today. The next three are each meant to carry **one
+structural mechanic of their own**, not just a new monster list — the biome is the
+unit of variety, and the mobs get written after the level design so they can be
+built around the mechanic rather than retrofitted to it.
+
+- **Biome 3 — keys.** The way onward is locked: each floor's exit door needs a key
+  found on that floor. Turns a floor from "find the stairs" into "find the key,
+  then find the stairs", and gives the generator something real to hide.
+- **Biome 4 — defence points.** A node on the floor is under attack and has to be
+  kept alive. This is the hardest of the three by some distance — it inverts the
+  game from "clear at your own pace" to "hold a position on a clock", which touches
+  spawning, monster targeting (a second thing worth attacking) and the fail state.
+  Worth prototyping on its own before committing the biome to it.
+- **Biome 5 — auras.** A standing negative aura afflicts the player until they find
+  and clear the node projecting it. The floor is hostile by default and the player
+  buys their way out of it.
+
+Monsters and bosses for each land after that biome's level design is settled.

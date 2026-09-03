@@ -1501,43 +1501,24 @@
   }
 
   // ---- Monster & boss factories -------------------------------------------
-  // Monsters are authored once in data.js and then scaled by the DEPTH they are
-  // met on. Without this the only thing that moved across a run was the player —
-  // levels, stats, gear, upgrade scrolls, boons — while a depth-20 wolf stayed
-  // the animal from depth 2. That is the whole of "I'm a god by level 4": the
-  // character's curve was the only curve in the game.
+  // A monster is EXACTLY what data.js says it is, on every floor it appears on.
+  // There is deliberately no depth multiplier layered over the row: difficulty
+  // across the run is authored, per biome, as the monsters that biome spawns and
+  // the floors they are eligible for (minFloor + spawnMix). A blanket "+x% per
+  // depth" would silently re-tune every row from underneath whoever wrote it, and
+  // it papers over a thin roster instead of showing you that it is thin.
   //
-  // Bosses are deliberately left alone: they sit on fixed depths (5, 10, 15, 20,
-  // 25) and are already authored for the floor they own, so scaling them too
-  // would count the same depth twice.
-  const DEPTH_HP = 0.10;    // +10% max HP per depth past the first
-  const DEPTH_DMG = 0.08;   // +8% attack per depth past the first
-  const DEPTH_ACC = 0.8;    // +0.8 accuracy per depth past the first
-  const DEPTH_EVA = 0.5;    // +0.5 evasion per depth past the first
-  function scaleToDepth(m, d) {
-    const n = Math.max(0, (d || 1) - 1);
-    // acc/eva are read off the monster everywhere (rollHit, the boss playbooks),
-    // so fill in the defaults here rather than leaving them undefined — otherwise
-    // a row that never authored them would scale from nothing.
-    m.acc = (m.acc != null ? m.acc : MON_ACC) + DEPTH_ACC * n;
-    m.eva = (m.eva != null ? m.eva : MON_EVA) + DEPTH_EVA * n;
-    if (!n) return m;
-    m.maxHp = Math.max(1, Math.round(m.maxHp * (1 + DEPTH_HP * n)));
-    m.hp = m.maxHp;
-    const dmgMul = 1 + DEPTH_DMG * n;
-    m.atkMin = Math.round((m.atkMin || 0) * dmgMul);
-    m.atkMax = Math.round((m.atkMax || 0) * dmgMul);
-    return m;
-  }
+  // If a late biome plays too easy, the fix is its monster list and its acc / eva
+  // / hp columns — not a curve here.
   function makeMonster(type, x, y) {
     // copy the whole template so ability flags (evasion/charge/ranged/range) carry over
-    return scaleToDepth(Object.assign({}, VERMIN[type], {
+    return Object.assign({}, VERMIN[type], {
       x, y, type, boss: false, hp: VERMIN[type].hp, maxHp: VERMIN[type].hp, level: depth,
       // Asleep until something wakes it. This is the single biggest thing the state
       // machine buys: a floor is quiet until you make it loud, you can creep past a
       // room you don't fancy, and striking first actually means something.
       state: SLEEPING, aware: false, target: null,
-    }), depth);
+    });
   }
   function makeBoss(key, x, y) {
     // spread the whole row so authored fields (speed, acc, eva, ranged, range,
