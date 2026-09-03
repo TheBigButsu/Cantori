@@ -540,7 +540,7 @@
     const h = document.createElement("h2"); h.textContent = "biomes — " + biomeRows.length + " in depth order"; bar.appendChild(h);
     wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear — that is the DEPTH it starts on, 1–25). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors shallower than a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
+    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear — that is the DEPTH it starts on, 1–25). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors shallower than a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs. horror = which monster this biome sends after a player who overstays a floor (1000 turns); blank falls back to the biome's deepest-starting monster, and horror name is what it is called when it arrives.";
     wrap.appendChild(note);
     const bossKeys = rows.bosses.map((r) => r.key);
     const monKeys = rows.monsters.map((r) => r.key);
@@ -569,6 +569,10 @@
       grid.appendChild(biomeField(b, "spawnEvery", "spawnEvery", "num"));
       grid.appendChild(biomeField(b, "spawnCap", "spawnCap", "num"));
       grid.appendChild(biomeField(b, "spawnInitial", "spawnInitial", "spawn"));
+      // The Horror: which monster this biome's floor sends after a player who
+      // overstays (1000 turns). Blank = the biome's deepest-starting monster.
+      grid.appendChild(biomeField(b, "horror", "horror", "select", [""].concat(monKeys)));
+      grid.appendChild(biomeField(b, "horror name", "horrorName", "text"));
       grid.appendChild(biomeField(b, "final biome?", "final", "bool"));
       grid.appendChild(terrainField(b, "water", "pools"));
       grid.appendChild(terrainField(b, "grass", "patches"));
@@ -1038,7 +1042,7 @@
       rows: [
         { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
         { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
-        { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 20)", note: "50% at even acc/eva; a lead of 20 points is worth about 84%, 40 points about 93%. Diminishing, so it never saturates — the old flat 3%/point hit its 95% cap at a 15-point lead and made accuracy and evasion both stop mattering by mid-run." },
+        { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 45)", note: "50% at even acc/eva, then roughly 1 percentage point per point of lead — over normal leads the tanh is within a point of a straight 1%/point, and only bends beyond about 20. A 45-point lead is worth 84%, a 90-point lead 89%. It never reaches certainty, which is what leaves room for a monster's eva column to keep mattering at high level: the old flat 3%/point hit its 95% cap at a 15-point lead, so eva 25 and eva 40 played identically from mid-run on." },
       ],
     },
     {
@@ -1055,14 +1059,6 @@
         { name: "Total damage", formula: "total = weapon roll + strBonus + skill bonus (Smite/Rush/etc.) + flat passive bonus (Sword Master, etc.)", note: "" },
         { name: "Surprise attack", formula: "no damage bonus — guaranteed hit (no accuracy/evasion roll) against a target that hasn't noticed you", note: "Purely a free hit, not extra damage — flags 'aware' true on the target either way." },
         { name: "Critical hit", formula: "total × critMult", note: "" },
-      ],
-    },
-    {
-      title: "Monster scaling by depth",
-      rows: [
-        { name: "Max HP", formula: "authored hp × (1 + 0.10 × (depth − 1))", note: "Every monster row in the Monsters tab is authored at its depth-1 strength and scaled up by the floor it is actually met on. Bosses are exempt — they sit on fixed depths and are authored for the floor they own." },
-        { name: "Attack", formula: "atk min/max × (1 + 0.08 × (depth − 1))", note: "" },
-        { name: "Accuracy / evasion", formula: "acc + 0.8 × (depth − 1),  eva + 0.5 × (depth − 1)", note: "A blank acc/eva column starts from the defaults (12 / 4) before scaling." },
       ],
     },
     {
@@ -1124,9 +1120,19 @@
       ],
     },
     {
+      title: "The floor's patience (the Horror)",
+      rows: [
+        { name: "Grace period", formula: "1000 turns on a floor", note: "A warning lands at 900 turns. The turn count resets on every new floor, so this is per-floor, not per-run. The player watches it drain on the TIME bar in the bottom-left vitals stack, which turns red at the warning." },
+        { name: "What arrives", formula: "the biome's `horror` monster, or its deepest-starting monster if unset", note: "Spawned out of sight, at least 8 tiles away, already hunting." },
+        { name: "How it differs", formula: "×3 max HP, ×4 attack, and it never loses your trail", note: "Every other monster gives up after 10 turns with no line of sight; the Horror does not. Breaking sight buys distance, not escape." },
+        { name: "XP awarded", formula: "0", note: "Deliberate: paying XP for a Horror would make farming them the best grind in the game, on the floor the player was meant to leave." },
+        { name: "If you kill it", formula: "another comes 60 turns later", note: "Killing it buys a breather, not the floor back." },
+      ],
+    },
+    {
       title: "Experience & leveling",
       rows: [
-        { name: "XP to next level", formula: "threshold = current level × 8", note: "" },
+        { name: "XP to next level", formula: "threshold = current level × 6", note: "So reaching level L costs 3 × L × (L−1) XP in total: 6 to reach level 2, 270 for level 10, 1140 for level 20. Quadratic, the same shape Shattered Pixel Dungeon uses." },
         { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
         { name: "Monster XP", formula: "ceil(monster's minFloor / 2)", note: "1 XP for a floor 1–2 monster, 2 for floor 3–4, 3 for floor 5+." },
         { name: "Boss XP", formula: "15 + round(boss's max HP × 0.4)", note: "" },
@@ -1657,7 +1663,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",

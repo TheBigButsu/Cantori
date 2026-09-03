@@ -126,16 +126,22 @@
   const critMult = () => (BASE_CRIT_DMG + eff("LCK") * 2) / 100;
   // To-hit is difference-based and still easy to read: 50% at even acc/eva, and
   // every point of lead pushes it toward — but never all the way to — certainty.
-  // The lead runs through a tanh so the first points of accuracy are worth the
-  // most and the fiftieth is worth almost nothing.
   //
-  // It used to be a flat 3 percentage points per point of lead, clamped at 95%.
-  // Accuracy grows every single level while monster evasion never did, so the
-  // clamp was reached at a 15-point lead — which a warrior clears around level 4.
-  // Past that, accuracy, evasion and every affix that touched them all stopped
-  // meaning anything, in both directions at once: you hit everything and nothing
-  // could hit you. A curve that never saturates keeps them live for the whole run.
-  const HIT_SCALE = 20;   // points of lead worth ~63% of the way to the 95% ceiling
+  // A point of lead is worth ~1 percentage point. It used to be worth 3, clamped
+  // at 95%, which the lead reached at 15 points — and accuracy grows every level
+  // while a monster's evasion is a fixed number in data.js, so past that clamp
+  // accuracy, evasion and every affix touching them all stopped meaning anything
+  // in both directions at once: you hit everything and nothing could hit you. Two
+  // monsters authored at evasion 25 and evasion 40 played identically from about
+  // level 19 on, so the column may as well not have been there.
+  //
+  // The lead runs through a tanh rather than being added flat, which over normal
+  // leads (up to ~20) is within a point of a straight 1%/point and only starts to
+  // bend beyond that — so a big accuracy lead still helps, just less and less, and
+  // the curve never arrives at certainty. That last part is the whole point: there
+  // is always headroom left for a monster's evasion to occupy, which is what keeps
+  // a genuinely slippery foe slippery at level 25.
+  const HIT_SCALE = 45;   // a lead of this many points lands ~84% (tanh(1) of the way up)
   const hitChance = (acc, eva) => 0.5 + 0.45 * Math.tanh((acc - eva) / HIT_SCALE);
   const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
   // RES cuts a percentage off every incoming hit, on a curve that approaches but
@@ -1344,6 +1350,7 @@
     items = [];
     traps = [];
     turns = 0;
+    horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
 
     const rooms = [];
     const attachEdges = [];   // [roomIdx, partnerIdx, doorTile] for attached rooms (doorway, no hall)
@@ -1468,6 +1475,7 @@
     items = [];
     traps = [];
     turns = 0;
+    horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
     bossActive = false;
     bossRoom = null;
 
@@ -1501,43 +1509,24 @@
   }
 
   // ---- Monster & boss factories -------------------------------------------
-  // Monsters are authored once in data.js and then scaled by the DEPTH they are
-  // met on. Without this the only thing that moved across a run was the player —
-  // levels, stats, gear, upgrade scrolls, boons — while a depth-20 wolf stayed
-  // the animal from depth 2. That is the whole of "I'm a god by level 4": the
-  // character's curve was the only curve in the game.
+  // A monster is EXACTLY what data.js says it is, on every floor it appears on.
+  // There is deliberately no depth multiplier layered over the row: difficulty
+  // across the run is authored, per biome, as the monsters that biome spawns and
+  // the floors they are eligible for (minFloor + spawnMix). A blanket "+x% per
+  // depth" would silently re-tune every row from underneath whoever wrote it, and
+  // it papers over a thin roster instead of showing you that it is thin.
   //
-  // Bosses are deliberately left alone: they sit on fixed depths (5, 10, 15, 20,
-  // 25) and are already authored for the floor they own, so scaling them too
-  // would count the same depth twice.
-  const DEPTH_HP = 0.10;    // +10% max HP per depth past the first
-  const DEPTH_DMG = 0.08;   // +8% attack per depth past the first
-  const DEPTH_ACC = 0.8;    // +0.8 accuracy per depth past the first
-  const DEPTH_EVA = 0.5;    // +0.5 evasion per depth past the first
-  function scaleToDepth(m, d) {
-    const n = Math.max(0, (d || 1) - 1);
-    // acc/eva are read off the monster everywhere (rollHit, the boss playbooks),
-    // so fill in the defaults here rather than leaving them undefined — otherwise
-    // a row that never authored them would scale from nothing.
-    m.acc = (m.acc != null ? m.acc : MON_ACC) + DEPTH_ACC * n;
-    m.eva = (m.eva != null ? m.eva : MON_EVA) + DEPTH_EVA * n;
-    if (!n) return m;
-    m.maxHp = Math.max(1, Math.round(m.maxHp * (1 + DEPTH_HP * n)));
-    m.hp = m.maxHp;
-    const dmgMul = 1 + DEPTH_DMG * n;
-    m.atkMin = Math.round((m.atkMin || 0) * dmgMul);
-    m.atkMax = Math.round((m.atkMax || 0) * dmgMul);
-    return m;
-  }
+  // If a late biome plays too easy, the fix is its monster list and its acc / eva
+  // / hp columns — not a curve here.
   function makeMonster(type, x, y) {
     // copy the whole template so ability flags (evasion/charge/ranged/range) carry over
-    return scaleToDepth(Object.assign({}, VERMIN[type], {
+    return Object.assign({}, VERMIN[type], {
       x, y, type, boss: false, hp: VERMIN[type].hp, maxHp: VERMIN[type].hp, level: depth,
       // Asleep until something wakes it. This is the single biggest thing the state
       // machine buys: a floor is quiet until you make it loud, you can creep past a
       // room you don't fancy, and striking first actually means something.
       state: SLEEPING, aware: false, target: null,
-    }), depth);
+    });
   }
   function makeBoss(key, x, y) {
     // spread the whole row so authored fields (speed, acc, eva, ranged, range,
@@ -1549,6 +1538,7 @@
     });
   }
   function monName(m) {
+    if (m.horror) return m.name || "Horror";        // the floor's anger, not the animal it wears
     return m.boss ? m.name : (VERMIN[m.type] ? VERMIN[m.type].name : m.type);
   }
   function spawnBoss(room) {
@@ -1771,7 +1761,7 @@
     const lv = document.getElementById("lv");
     if (lv) lv.textContent = "Lv " + player.level;
 
-    // bottom-left vitals: HP is live; MP and Food (hunger) are placeholders at full
+    // bottom-left vitals: HP, MP, and the floor's patience counting down
     const setBar = (fillId, numId, cur, max) => {
       const f = document.getElementById(fillId), n = document.getElementById(numId);
       if (f) f.style.width = Math.max(0, Math.min(100, (cur / Math.max(1, max)) * 100)) + "%";
@@ -1779,7 +1769,7 @@
     };
     setBar("vHp", "vHpNum", player.hp, player.maxHp);
     setBar("vMp", "vMpNum", player.mp != null ? player.mp : 100, player.maxMp != null ? player.maxMp : 100);
-    setBar("vHg", "vHgNum", player.food != null ? player.food : 100, 100);
+    updatePatienceBar();
 
     // enemy counter (SPD-style): how many foes you can currently see
     const en = document.getElementById("enemies");
@@ -1788,6 +1778,26 @@
       en.textContent = "☠ " + n;
       en.classList.toggle("active", n > 0);
     }
+  }
+  // The third vitals bar is the floor's welcome, draining as you spend it. It
+  // replaces the Food placeholder, which sat pinned at 100/100 doing nothing.
+  //
+  // It is the ONLY warning the player gets that they are on a clock, so it says
+  // the turns left rather than a percentage, and it changes colour at the same
+  // moment the log does. Boss floors and the merchant den have no clock (see
+  // maybeHorror), so there the bar reads "—" and dims rather than lying about a
+  // countdown that isn't running.
+  function updatePatienceBar() {
+    const row = document.querySelector(".vbar.tm");
+    const fill = document.getElementById("vTm"), num = document.getElementById("vTmNum");
+    if (!row || !fill || !num) return;
+    const running = !bossActive && !inShop;
+    const left = Math.max(0, FLOOR_PATIENCE - turns);
+    row.classList.toggle("off", !running);
+    row.classList.toggle("low", running && left > 0 && turns >= FLOOR_WARNING);
+    row.classList.toggle("spent", running && left <= 0);
+    fill.style.width = (running ? (left / FLOOR_PATIENCE) * 100 : 100) + "%";
+    num.textContent = running ? String(left) : "—";
   }
   function setDepthLabel() {
     const el = document.getElementById("depthLabel");
@@ -1809,9 +1819,13 @@
     // than a depth-1 rat instead of both landing in the same 1–3 band.
     // Bosses give a larger scaled reward.
     let xp;
-    if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
+    // A Horror is worth NOTHING. It exists to price out staying, so paying XP for
+    // one would invert the mechanic exactly: farming Horrors would become the most
+    // efficient grind in the game, on a floor the player was supposed to leave.
+    if (target.horror) { horrorDeadAt = turns; xp = 0; }
+    else if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
-    gainXP(xp);
+    if (xp > 0) gainXP(xp);
     tickBoonKillCounters();
     _boss.onKill(target);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
@@ -2204,9 +2218,17 @@
     if (el) el.hidden = false;
   }
 
+  // XP to go from level L to L+1 is L × XP_PER_LEVEL, so the cost to reach level L
+  // is XP_PER_LEVEL × L(L−1)/2 — a quadratic, the same shape SPD uses (5 + 5×lvl
+  // a level). It was ×8, which made the FIRST level the slow one: the opening
+  // floor is where you have the fewest ways to earn and the most need of a level,
+  // and 8 XP of depth-1 vermin at 1 XP each is a lot of rats before anything
+  // happens. ×6 pulls the whole curve in by a quarter and level 2 in particular.
+  const XP_PER_LEVEL = 6;
+  const xpToNext = () => player.level * XP_PER_LEVEL;
   function gainXP(amount) {
     player.xp += amount;
-    let threshold = player.level * 8;
+    let threshold = xpToNext();
     while (player.xp >= threshold) {
       player.xp -= threshold;
       player.level++;
@@ -2233,7 +2255,7 @@
       const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra);
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
-      threshold = player.level * 8;
+      threshold = xpToNext();
     }
     updateHUD();
   }
@@ -2728,7 +2750,9 @@
     // Chasing a trail you cannot reach is how a monster ends up jammed against a
     // wall forever: it never arrives, so it never gives up. Sight resets the
     // clock; running out of it drops the chase wherever it got to.
-    if (canSee(m)) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
+    // A Horror always knows. Breaking line of sight buys distance and a chance to
+    // reach the stairs — it does not buy escape, which is the whole point of it.
+    if (canSee(m) || m.horror) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
     else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
@@ -2848,6 +2872,76 @@
     const every = biome.spawnEvery || 0;
     const cap = biome.spawnCap || 12;
     if (every > 0 && turns % every === 0 && monsters.length < cap) spawnOne();
+  }
+
+  // ---- The floor's patience: the Horror -------------------------------------
+  // A floor tolerates you for FLOOR_PATIENCE turns. Past that it sends something
+  // after you, and it does not stop sending it.
+  //
+  // This is the anti-grind, and it is deliberately a MONSTER rather than a rule.
+  // A hard XP cutoff per monster (Shattered Pixel Dungeon's `maxLvl`) or a forced
+  // descent would both work arithmetically, but they teach the player nothing and
+  // they cannot be played around. A hunter can: you can run from it, break line of
+  // sight, fight it if you have the resources, or — the intended read — take the
+  // stairs. Grinding stops being disallowed and starts being expensive, which is
+  // the same answer the surprise/ambush system gives everywhere else in the game.
+  //
+  // `turns` already resets in generateLevel, so it IS the per-floor clock; no
+  // second counter to keep in sync.
+  const FLOOR_PATIENCE = 1000;    // turns of welcome before the floor turns on you
+  const FLOOR_WARNING = 900;      // when it starts to be felt
+  const HORROR_RESPAWN = 60;      // turns after a kill before the next one comes
+  const HORROR_HP_MULT = 3;       // it is the same creature, wrong
+  const HORROR_DMG_MULT = 4;      // and it hits like nothing else on the floor
+  let horrorWarned = false, horrorDeadAt = -1;
+  // Which monster the Horror wears. Authored per biome (`horror` in data.js);
+  // falls back to the deepest-starting monster the biome spawns, so a biome that
+  // has not been given one yet still gets its scariest resident rather than none.
+  function horrorType() {
+    if (biome.horror && VERMIN[biome.horror]) return biome.horror;
+    let best = null, bestFloor = -1;
+    for (const k of (biome.monsters || [])) {
+      const v = VERMIN[k];
+      if (!v || v.minFloor == null) continue;
+      if (v.minFloor > bestFloor) { bestFloor = v.minFloor; best = k; }
+    }
+    return best;
+  }
+  function spawnHorror() {
+    const type = horrorType();
+    if (!type) return false;
+    for (let t = 0; t < 200; t++) {
+      const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+      if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
+      if (cheb(x, y, player.x, player.y) < 8) continue;      // it arrives out of sight, at a distance
+      const m = makeMonster(type, x, y);
+      m.horror = true;
+      m.name = biome.horrorName || "Horror";
+      m.maxHp = Math.max(1, Math.round(m.maxHp * HORROR_HP_MULT)); m.hp = m.maxHp;
+      m.atkMin = Math.round((m.atkMin || 0) * HORROR_DMG_MULT);
+      m.atkMax = Math.round((m.atkMax || 0) * HORROR_DMG_MULT);
+      startHunting(m);                                        // it already knows where you are
+      monsters.push(m);
+      return true;
+    }
+    return false;
+  }
+  function maybeHorror() {
+    if (bossActive || inShop || dead) return;                 // a boss floor has its own pressure
+    if (turns === FLOOR_WARNING && !horrorWarned) {
+      horrorWarned = true;
+      log("The air goes wrong. You have been here too long.", "hurt");
+      flashScreen("#3a1e1e", 420);
+    }
+    if (turns < FLOOR_PATIENCE) return;
+    if (monsters.some((m) => m.horror && m.hp > 0)) return;    // one at a time
+    // Killing it buys a breather, not the floor back.
+    if (horrorDeadAt >= 0 && turns - horrorDeadAt < HORROR_RESPAWN) return;
+    if (spawnHorror()) {
+      horrorDeadAt = -1;
+      log("Something is coming for you.", "hurt");
+      flashScreen("#5a1e1e", 500);
+    }
   }
 
   // One monster action (its burn tick, stun, and AI move/attack). Returns after
@@ -3045,6 +3139,7 @@
     healQueueTick();
     searchForTraps();
     maybeReinforce();
+    maybeHorror();
     updateHotbar();
     // Doors/bushes count as open while something stands in them, so the monsters
     // that just moved have changed what you can see through. Recompute before the
@@ -5200,7 +5295,7 @@
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">crit% = 5 + DEX + LCK×0.5 + skills · crit dmg% = 125 + LCK×2 + skills</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
-      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 20) — a lead always helps, and never becomes certainty</div>` +
+      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 45) — about 1% per point of lead, always helping, never becoming certainty</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
       `<div class="cline cformula">incoming dmg ×(1 − RES ÷ (RES + 100)), then armor block subtracted</div>` +
@@ -5693,6 +5788,14 @@
       }));
     },
     turns: () => turns,
+    // ---- Horror (the floor's patience) test hooks ----
+    setTurns: (n) => { turns = n; },
+    horrorState: () => {
+      const h = monsters.find((m) => m.horror && m.hp > 0);
+      return { turns, warned: horrorWarned, deadAt: horrorDeadAt, type: horrorType(),
+               alive: !!h, at: h ? { x: h.x, y: h.y } : null, hp: h ? h.hp : 0,
+               maxHp: h ? h.maxHp : 0, atk: h ? [h.atkMin, h.atkMax] : null, state: h ? h.state : null };
+    },
     // ---- Boon-system test hooks ----
     setKillCount: (n) => { player.killCount = n; },
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },

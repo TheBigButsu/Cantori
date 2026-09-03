@@ -158,7 +158,7 @@ body{
   -webkit-tap-highlight-color:transparent;
 }
 
-/* Bottom-left vitals: HP / MP / Food bars (framed over the game space) */
+/* Bottom-left vitals: HP / MP / the floor's patience (framed over the game space) */
 #vitals{
   z-index:6;
   display:flex;
@@ -168,7 +168,7 @@ body{
 }
 .vbar{display:flex;align-items:center;gap:7px}
 .vlabel{
-  width:20px;
+  width:26px;
   font-size:9px;font-weight:700;letter-spacing:.06em;
   color:var(--ink-dim);text-transform:uppercase;
 }
@@ -189,7 +189,13 @@ body{
 }
 .vbar.hp .vfill{background:linear-gradient(90deg,#c8402f,#e0685a)}
 .vbar.mp .vfill{background:linear-gradient(90deg,#3a63b0,#5a8fd6)}
-.vbar.hg .vfill{background:linear-gradient(90deg,#a97f2a,#f0c14b)}
+/* The floor's patience, counting down. Amber while there is time, red once the
+   warning has landed — the bar is the only notice you get before the Horror. */
+.vbar.tm .vfill{background:linear-gradient(90deg,#a97f2a,#f0c14b)}
+.vbar.tm.low .vfill{background:linear-gradient(90deg,#c8402f,#e0685a)}
+.vbar.tm.low .vlabel,.vbar.tm.low .vnum{color:#e0685a}
+.vbar.tm.spent .vfill{background:linear-gradient(90deg,#7a1a12,#c8402f)}
+.vbar.tm.off{opacity:.35}
 .vnum{
   font-size:9.5px;font-variant-numeric:tabular-nums;
   color:var(--ink-dim);letter-spacing:.02em;

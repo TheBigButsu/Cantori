@@ -277,9 +277,11 @@ any visible tile. Banked points are spent on the skill tree.
   foes inside are still `unaware` → your opening blow is a guaranteed ambush hit.
 - **HUD frame.** Zoom buttons are gone (pinch / scroll-wheel still zoom); the right
   rail is 👤 Character · 🎒 Pack · 🔍 Examine · ▦ Map. The top bar shows **Lv**, an
-  **enemies-in-sight counter** (☠ N, SPD-style), and the biome/depth. HP/MP/Food
+  **enemies-in-sight counter** (☠ N, SPD-style), and the biome/depth. HP/MP/TIME
   live in a **bottom-left vitals stack** so the notch can crop the top bar harmlessly.
-  MP and Food are placeholders pinned at 100 until spells and hunger land.
+  MP was a placeholder pinned at 100 until spells landed. The third bar was **Food**,
+  pinned at 100/100 doing nothing while hunger stayed unbuilt; it is now **TIME** —
+  the floor's patience, counting down (see the Horror, below).
 - **Examine auto-closes** after one inspection — tap 🔍, tap a tile, done.
 - **Berry bushes & thorn vaults.** Forest doorways are berry bushes (red fruit
   dotted through the leaves). A separate hazard tile — **thorns** — seals off the
@@ -302,21 +304,25 @@ The complaint this answers: *"once I get to L4 I'm basically a god."* Every curv
 that mattered was linear in a quantity that only ever went up, so each of them ran
 out of road at roughly the same point in a run.
 
-- **Hit chance no longer saturates.** It was `50% + (acc − eva) × 3%`, clamped at
-  95% — reached at a 15-point lead, which a Warrior clears around level 4. Now
-  `50% + 45% × tanh((acc − eva) / 20)`: the first points of accuracy are worth the
-  most, the fiftieth is worth almost nothing, and neither 100% nor 0% is ever
-  reached. Accuracy, evasion and every affix touching them stay live for the whole
-  run, in both directions.
+- **Hit chance no longer saturates, and a point of lead is worth ~1%, not 3%.** It
+  was `50% + (acc − eva) × 3%`, clamped at 95% — a 15-point lead, which a Warrior
+  clears around level 4. Now `50% + 45% × tanh((acc − eva) / 45)`. Over normal
+  leads that is within a point of a straight 1%/point; it only bends beyond about
+  20, and it never arrives at certainty. Both halves matter: the gentler slope
+  stops accuracy from outrunning the monster roster, and the missing ceiling
+  leaves headroom for a monster's `eva` to keep mattering. Under the old rule a
+  Snake at eva 30 was a 95% hit from level 12 on — indistinguishable from a Rat;
+  it is now 61% at 12, 66% at 15 and still only 80% at 25.
 - **RES can no longer reach immunity.** It was a flat `1 − RES/100`, so 100 RES was
   literal invulnerability — and RES climbs on its own, from a class's secondary
   stat, Kethara's Gift of the Faithful, and gear affixes. Now `RES / (RES + 100)`:
   50 RES cuts a third, 100 RES cuts half, immunity is unreachable.
-- **Monsters scale with depth.** Each row in `data.js` is authored at its depth-1
-  strength and scaled by the floor it is actually met on: `+10%` max HP, `+8%`
-  attack, `+0.8` accuracy and `+0.5` evasion per depth past the first. Before this
-  the player's curve was the only curve in the game. Bosses are exempt — they sit
-  on fixed depths and are already authored for the floor they own.
+- **Monster difficulty stays authored, not multiplied.** A blanket "+x% per depth"
+  over every row was tried and deliberately backed out. It re-tunes every monster
+  from underneath whoever wrote it, and — worse — it hides a thin roster instead of
+  showing you that it is thin. Difficulty across the run is the monsters each biome
+  spawns, their `minFloor`, their `spawnMix`, and their own `acc` / `eva` / `hp`
+  columns. If a late biome plays too easy, that is where the fix goes.
 - **Per-level gains trimmed.** Warrior `accuracy 3 → 2`, `evasion 2 → 1`; Monk
   `accuracy 2 → 1`, `evasion 3 → 2`. Class flavour comes from the main stat (a
   Monk's `+2 DEX` a level is already `+2` to both) rather than from a flat gift.
@@ -360,3 +366,61 @@ out of road at roughly the same point in a run.
   wrong order, stepped over on the way to the stairs, or dropped somewhere a
   knockback had made unreachable. Killing the boss now opens the same 1-of-3 modal
   the run starts with, and play is blocked until you pick.
+
+## Biomes 3–5 — planned
+
+Content stops at biome 2 today. The next three are each meant to carry **one
+structural mechanic of their own**, not just a new monster list — the biome is the
+unit of variety, and the mobs get written after the level design so they can be
+built around the mechanic rather than retrofitted to it.
+
+- **Biome 3 — keys.** The way onward is locked: each floor's exit door needs a key
+  found on that floor. Turns a floor from "find the stairs" into "find the key,
+  then find the stairs", and gives the generator something real to hide.
+- **Biome 4 — defence points.** A node on the floor is under attack and has to be
+  kept alive. This is the hardest of the three by some distance — it inverts the
+  game from "clear at your own pace" to "hold a position on a clock", which touches
+  spawning, monster targeting (a second thing worth attacking) and the fail state.
+  Worth prototyping on its own before committing the biome to it.
+- **Biome 5 — auras.** A standing negative aura afflicts the player until they find
+  and clear the node projecting it. The floor is hostile by default and the player
+  buys their way out of it.
+
+Monsters and bosses for each land after that biome's level design is settled.
+
+## The floor's patience — the Horror — DONE
+
+A floor tolerates you for **1000 turns**. A warning lands at 900 ("the air goes
+wrong"); at 1000 something comes after you, and it does not stop coming.
+
+This is the anti-grind, and it is deliberately **a monster rather than a rule**. A
+hard XP cutoff per monster (Shattered Pixel Dungeon's `maxLvl`) or a forced descent
+would both work arithmetically, but neither can be played around. A hunter can: run
+from it, break line of sight to buy distance, fight it if you have the resources,
+or — the intended read — take the stairs. Grinding stops being *disallowed* and
+starts being *expensive*, which is the answer the ambush system already gives
+everywhere else in the game.
+
+- **What arrives** is authored per biome: `horror` in `data.js` names a monster key,
+  and `horrorName` is what it is called when it shows up. Blank falls back to the
+  biome's deepest-starting monster, so a biome that has not been given one yet still
+  sends its scariest resident rather than nothing. It reuses that monster's sprite,
+  so no new art ships with the mechanic.
+- **How it differs** from the animal it wears: ×3 max HP, ×4 attack, and it never
+  loses the trail. Every other monster gives up after 10 turns without line of
+  sight; the Horror does not.
+- **It is worth 0 XP.** This one is load-bearing. Paying XP for a Horror would
+  invert the mechanic exactly — farming them would become the most efficient grind
+  in the game, on the floor the player was supposed to leave.
+- **Killing it buys 60 turns**, then the next one comes. Not the floor back.
+- It stays out of boss floors and the merchant den, which have their own pressure,
+  and the clock (`turns`, already reset by `generateLevel`) restarts every floor.
+- **The clock is visible.** The third vitals bar — the old **Food** placeholder,
+  which sat pinned at 100/100 while hunger stayed unbuilt — is now **TIME**, and it
+  drains as you spend the floor's welcome. It shows turns remaining rather than a
+  percentage, because it is the only warning the player gets that they are on a
+  clock, and it turns red at the same moment the log does. On a floor with no clock
+  (boss, merchant) it reads "—" and dims rather than faking a countdown.
+
+Still open: the XP curve is `level × 6` and nothing else caps levelling, so the
+Horror is the only brake. If a run still over-levels, `FLOOR_PATIENCE` is the dial.
