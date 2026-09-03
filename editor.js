@@ -1141,7 +1141,7 @@
     {
       title: "Identification",
       rows: [
-        { name: "Uses needed", formula: "idNeed = (tier + plus) × (random 1–10 + rarity rank)", note: "Rarity rank: white 1, green 2, blue 3, purple 4, gold 5. A plain white item with no plus/stats/enchants starts already identified." },
+        { name: "Uses needed", formula: "idNeed = round((tier + plus) × (random 1–10 + rarity rank) × 0.5)", note: "Rarity rank: white 1, green 2, blue 3, purple 4, gold 5. A USE is one swing of that weapon, or one hit taken while wearing that armor — not one turn. So a tier-1 white runs 1–6 uses, a tier-3 blue 6–20, a tier-5 gold +2 21–52. The ×0.5 is the dial; it was ×3, which put an ordinary blue at ~76 connecting blows and meant most gear was replaced before it was ever identified. A plain white item with no plus/stats/enchants starts already identified." },
         { name: "Progress", formula: "gains idXp on use/hits; identified once idXp ≥ idNeed", note: "" },
       ],
     },

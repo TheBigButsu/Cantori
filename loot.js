@@ -66,12 +66,18 @@ window.CantoriLoot = function (deps) {
     if (JEWELRY[base.cat] && stats.length === 0 && enchants.length === 0) {
       if (ekeys.length && Math.random() < 0.5) addEnchant(); else addStat();
     }
-    // Identification: how much use it takes to learn this item's hidden properties.
-    //   idNeed = (tier + plus) * (1..10 + rarity rank) * 3,  white=1 … purple=4 … gold=5
-    // The ×3 keeps it from resolving inside a single fight (a white tier-1 item used to
-    // average ~6-7 hits — one or two fights — to fully identify).
+    // Identification: how much USE it takes to learn this item's hidden properties.
+    //   idNeed = (tier + plus) * (1..10 + rarity rank) * ID_EFFORT,  white=1 … gold=5
+    //
+    // ID_EFFORT is the whole dial. It was 3, on the reasoning that identification
+    // shouldn't resolve inside a single fight — but "a use" is one swing of that
+    // weapon, or one hit taken while wearing that armor, not one turn, so the real
+    // cost was three times what it looked like: an ordinary tier-3 blue wanted ~76
+    // connecting blows before it would say what it was. Long enough that most gear
+    // was replaced unidentified, which makes the whole affix system invisible.
+    const ID_EFFORT = 0.5;
     const rank = LOOT.rarities.findIndex((r) => r.key === rarity) + 1;
-    const idNeed = (tier + plus) * (randInt(1, 10) + (rank > 0 ? rank : 5)) * 3;
+    const idNeed = Math.max(1, Math.round((tier + plus) * (randInt(1, 10) + (rank > 0 ? rank : 5)) * ID_EFFORT));
     const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0;
     const inst = { key, rarity, plus, stats, enchants, idNeed, idXp: 0, identified: nothingHidden };
     // A base with `variants` picks one at drop (e.g. the Metrognome's walk/attack mode).

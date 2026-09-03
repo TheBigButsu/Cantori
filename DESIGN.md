@@ -101,14 +101,28 @@ Gear is **unidentified on pickup** — you see the base type (e.g. "Sword") and 
 intrinsic feel (dmg range, speed, accuracy), but its **magic is hidden**: rarity
 colour, the +X, and rolled affixes don't show until you learn the item. It still
 **works fully** while unidentified; you just can't read the numbers. You learn it
-by **using it** (any turn it's equipped adds 1 identify-progress); it reveals once
-progress reaches:
+by **using it** — one swing of that weapon, or one hit taken while wearing that
+armor, adds 1 identify-progress. Walking around equipped adds nothing. It reveals
+once progress reaches:
 
-> **idNeed = (tier + plus) × (random 1–10 + rarity rank)**,  rank white=1 … purple=4 … gold=5
+> **idNeed = round((tier + plus) × (random 1–10 + rarity rank) × 0.5)**,  rank white=1 … gold=5
 
-So rarer, higher-plus, higher-tier items take longer to identify. Truly blank items
+So rarer, higher-plus, higher-tier items take longer to identify: a tier-1 white
+runs 1–6 uses, a tier-3 blue 6–20, a tier-5 gold +2 21–52. Truly blank items
 (white, +0, no affixes — e.g. the starting kit) are known immediately. The pack
 shows an "id NN%" progress tag on unidentified gear.
+
+The `× 0.5` (`ID_EFFORT` in `loot.js`) is the only dial here, and it has moved a
+long way. It was `× 3`, chosen so identification wouldn't resolve inside a single
+fight — but that reasoning assumed a use was a turn. It isn't; it is a *connecting
+blow*. The real cost was three times what it read as, putting an ordinary blue at
+~76 landed hits, so most gear was outgrown and replaced before it ever revealed
+itself and the affix system stayed invisible. Note also that both this document and
+the editor's formula reference omitted the `× 3` entirely for as long as it existed.
+
+**Still crooked:** `plus` sits inside the multiplier, so pouring Scrolls of Upgrade
+into a weapon makes it *harder* to learn. That is backwards — investment should not
+buy opacity — but it is left alone for now rather than folded into a speed change.
 
 ## Free-look camera — DONE
 
