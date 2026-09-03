@@ -28,6 +28,18 @@
     button.tool.primary{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
     button.tool.warn{color:var(--red)}
     button.tool.on{background:var(--green);color:#0e1a10;border-color:var(--green);font-weight:700}
+    /* Where the data on screen came from. The single question that has cost the
+       most work here is "am I looking at the live data.js?" — so it is answered
+       in the header at all times, and shouted in a banner when the answer is no. */
+    header .src{font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid #3a352c;color:#9d9482;white-space:nowrap}
+    header .src.draft{color:#14100a;background:var(--amber);border-color:var(--amber);font-weight:700}
+    #freshBar{
+      display:none;padding:9px 14px;font-size:13px;line-height:1.45;
+      background:#3a2c12;border-bottom:1px solid var(--amber);color:#f0dcae;
+      display:none;align-items:center;gap:10px;flex-wrap:wrap;
+    }
+    #freshBar.show{display:flex}
+    #freshBar b{color:var(--amber)}
     #status{color:var(--ink-dim);font-size:11.5px;min-width:120px}
     #status.ok{color:var(--green)} #status.err{color:var(--red)}
     .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
@@ -203,6 +215,7 @@
   <header>
     <span class="title">CANTORI · EDITOR</span>
     <span id="status">loading…</span>
+    <span class="src" id="srcTag">…</span>
     <span class="spacer"></span>
     <button class="tool primary" id="btnPlay">▶ Playtest</button>
     <button class="tool on" id="btnStop" style="display:none">■ Stop playtest</button>
@@ -211,6 +224,11 @@
     <button class="tool" id="btnDownload">⤓ Download data.js</button>
     <button class="tool warn" id="btnRevert">↺ Revert to shipped</button>
   </header>
+
+  <div id="freshBar">
+    <span id="freshMsg"></span>
+    <span id="freshActs"></span>
+  </div>
 
   <nav class="tabs" id="tabs"></nav>
 
@@ -303,7 +321,7 @@
     </div>
   </dialog>
 
-  <script src="./data.js?v=93"></script>
-  <script src="./editor.js?v=93"></script>
+  <script src="./data.js?v=94"></script>
+  <script src="./editor.js?v=94"></script>
 </body>
 </html>

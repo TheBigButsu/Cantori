@@ -119,6 +119,14 @@ Play it by hand with `python3 -m http.server 8000`, then open `http://localhost:
 Content changes can also be tested without touching code: open `editor.html` and hit **Playtest**,
 which stores a draft in `localStorage` and shows a green ⚙ DRAFT badge in the game.
 
+**That draft outranks `data.js` until you clear it, and reloading will not clear it** — `localStorage`
+is not the HTTP cache, so a hard refresh leaves it exactly where it was. One Playtest click months ago
+is enough to make a freshly-reloaded editor show content from months ago. The editor now names its
+source in the header (`live data.js` vs `⚙ local draft · 26h ago`) and raises a banner offering to drop
+a draft that disagrees with what shipped; it also re-fetches `data.js` with `cache: "no-store"` on load
+and says so if the server's copy differs from the one the `<script>` tag gave it. If content ever looks
+wrong or old, read that badge first.
+
 ## Style
 
 Match the surrounding code: plain ES5-ish browser JavaScript in one IIFE, no modules or build tooling,
