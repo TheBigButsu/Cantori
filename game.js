@@ -2191,9 +2191,17 @@
     if (el) el.hidden = false;
   }
 
+  // XP to go from level L to L+1 is L × XP_PER_LEVEL, so the cost to reach level L
+  // is XP_PER_LEVEL × L(L−1)/2 — a quadratic, the same shape SPD uses (5 + 5×lvl
+  // a level). It was ×8, which made the FIRST level the slow one: the opening
+  // floor is where you have the fewest ways to earn and the most need of a level,
+  // and 8 XP of depth-1 vermin at 1 XP each is a lot of rats before anything
+  // happens. ×6 pulls the whole curve in by a quarter and level 2 in particular.
+  const XP_PER_LEVEL = 6;
+  const xpToNext = () => player.level * XP_PER_LEVEL;
   function gainXP(amount) {
     player.xp += amount;
-    let threshold = player.level * 8;
+    let threshold = xpToNext();
     while (player.xp >= threshold) {
       player.xp -= threshold;
       player.level++;
@@ -2220,7 +2228,7 @@
       const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra);
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
-      threshold = player.level * 8;
+      threshold = xpToNext();
     }
     updateHUD();
   }

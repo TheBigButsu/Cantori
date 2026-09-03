@@ -1118,7 +1118,7 @@
     {
       title: "Experience & leveling",
       rows: [
-        { name: "XP to next level", formula: "threshold = current level × 8", note: "" },
+        { name: "XP to next level", formula: "threshold = current level × 6", note: "So reaching level L costs 3 × L × (L−1) XP in total: 6 to reach level 2, 270 for level 10, 1140 for level 20. Quadratic, the same shape Shattered Pixel Dungeon uses." },
         { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
         { name: "Monster XP", formula: "ceil(monster's minFloor / 2)", note: "1 XP for a floor 1–2 monster, 2 for floor 3–4, 3 for floor 5+." },
         { name: "Boss XP", formula: "15 + round(boss's max HP × 0.4)", note: "" },
