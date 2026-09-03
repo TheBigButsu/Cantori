@@ -446,6 +446,21 @@ body{
   background:#14100a;border:1px solid var(--line);color:var(--ink);
   font-family:var(--mono);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap;
 }
+/* The 5×5 board: an unfilled slot is drawn as an empty socket rather than closed
+   up, because a node's ROW is its level gate — collapsing the blanks would move a
+   tier-4 skill into tier 2's row and misstate what it costs. */
+.skempty{position:absolute;border-radius:50%;box-sizing:border-box;border:2px dashed var(--line);opacity:.3}
+.sktier{
+  position:absolute;left:0;width:56px;display:flex;flex-direction:column;align-items:center;gap:1px;
+  font-family:var(--mono);font-size:10px;line-height:1.25;color:var(--ink-dim);text-align:center;
+}
+.sktier b{color:var(--amber);font-size:12.5px}
+.sktier.shut{opacity:.45}
+.sktier.shut b{color:var(--ink-dim)}
+/* The requirement line on the detail card is always present; it just changes
+   colour once the requirement is actually met. */
+.sreq{color:var(--ink-dim)}
+.sreq.shut{color:#e0a05a}
 .cboon{color:var(--ink-dim);font-size:13px;line-height:1.5}
 .cboon .god{color:var(--ink);display:block;margin-top:8px}
 .cboon .god b{color:var(--amber)}

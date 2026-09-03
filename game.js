@@ -109,19 +109,42 @@
   const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseMp != null ? cls.baseMp : 0) + eff("INT") + (player.lvlMp || 0); };
   const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills + boons
   const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + armorEvasion() + passiveMod("eva");     // DEX + level + armor weight/item + skills + boons
-  // Critical hits: 5% chance to deal 200% damage by default, each grown by the
-  // class's per-level crit / critDmg gains (added, not multiplied), Ourn's
-  // Perfectly Timed Blow (+1% per character level), DEX (+1% per point) and
-  // LCK (+1% chance per point, +2% crit damage per point).
-  const BASE_CRIT = 5, BASE_CRIT_DMG = 200;
+  // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
+  // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
+  // and LCK (+0.5% chance per point, +2% crit damage per point).
+  //
+  // Crits used to be a free 2× on top of everything else, they grew every level
+  // whether you'd asked for it or not, and LCK bought a whole point of crit each
+  // — three stacking sources that turned a mid-run character into a blender. The
+  // per-level gains are gone entirely (levels give stats and flat HP/MP; they no
+  // longer quietly multiply your damage), and a crit is now a good roll rather
+  // than a different attack.
+  const BASE_CRIT = 5, BASE_CRIT_DMG = 125;
+  const CRIT_PER_LCK = 0.5;
   const timedBlowBonus = () => (player.boons && player.boons.has("timed_blow")) ? player.level : 0;
-  const critChance = () => (BASE_CRIT + (player.lvlCrit || 0) + timedBlowBonus() + eff("DEX") + eff("LCK")) / 100;
-  const critMult = () => (BASE_CRIT_DMG + (player.lvlCritDmg || 0) + eff("LCK") * 2) / 100;
-  // hit chance = attacker accuracy / (accuracy + defender evasion)
-  // To-hit is difference-based and easy to read: 50% at even acc/eva, then ±3%
-  // for each point of accuracy over (or under) evasion, clamped to 10%–95%.
-  const hitChance = (acc, eva) => Math.max(0.10, Math.min(0.95, 0.5 + (acc - eva) * 0.03));
+  const critChance = () => (BASE_CRIT + timedBlowBonus() + eff("DEX") + eff("LCK") * CRIT_PER_LCK) / 100;
+  const critMult = () => (BASE_CRIT_DMG + eff("LCK") * 2) / 100;
+  // To-hit is difference-based and still easy to read: 50% at even acc/eva, and
+  // every point of lead pushes it toward — but never all the way to — certainty.
+  // The lead runs through a tanh so the first points of accuracy are worth the
+  // most and the fiftieth is worth almost nothing.
+  //
+  // It used to be a flat 3 percentage points per point of lead, clamped at 95%.
+  // Accuracy grows every single level while monster evasion never did, so the
+  // clamp was reached at a 15-point lead — which a warrior clears around level 4.
+  // Past that, accuracy, evasion and every affix that touched them all stopped
+  // meaning anything, in both directions at once: you hit everything and nothing
+  // could hit you. A curve that never saturates keeps them live for the whole run.
+  const HIT_SCALE = 20;   // points of lead worth ~63% of the way to the 95% ceiling
+  const hitChance = (acc, eva) => 0.5 + 0.45 * Math.tanh((acc - eva) / HIT_SCALE);
   const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
+  // RES cuts a percentage off every incoming hit, on a curve that approaches but
+  // never reaches immunity. It was a flat 1 − RES/100, which made 100 RES literal
+  // invulnerability — and RES climbs on its own, from a class's secondary stat,
+  // Kethara's Gift of the Faithful, and gear affixes, so that was a wall the run
+  // could simply walk into.
+  const RES_SCALE = 100;   // RES equal to this halves incoming damage
+  const resReduction = () => { const r = Math.max(0, eff("RES")); return r / (r + RES_SCALE); };
 
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
@@ -130,7 +153,6 @@
     cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
-    lvlCrit: 0, lvlCritDmg: 0,                         // per-level crit% and crit-damage% gains
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
     killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
@@ -154,7 +176,6 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
-    player.lvlCrit = 0; player.lvlCritDmg = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -765,6 +786,7 @@
   }
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
+  const doorWordOne = () => (biome && biome.door === "bush" ? "bush" : "doorway");   // singular, for "wedged in the …"
 
   // Bushes/doors at room mouths. With 3-wide entrances we place them sparsely — a
   // single bush per opening, and never two bushes touching (8-neighbour), so a
@@ -1479,15 +1501,43 @@
   }
 
   // ---- Monster & boss factories -------------------------------------------
+  // Monsters are authored once in data.js and then scaled by the DEPTH they are
+  // met on. Without this the only thing that moved across a run was the player —
+  // levels, stats, gear, upgrade scrolls, boons — while a depth-20 wolf stayed
+  // the animal from depth 2. That is the whole of "I'm a god by level 4": the
+  // character's curve was the only curve in the game.
+  //
+  // Bosses are deliberately left alone: they sit on fixed depths (5, 10, 15, 20,
+  // 25) and are already authored for the floor they own, so scaling them too
+  // would count the same depth twice.
+  const DEPTH_HP = 0.10;    // +10% max HP per depth past the first
+  const DEPTH_DMG = 0.08;   // +8% attack per depth past the first
+  const DEPTH_ACC = 0.8;    // +0.8 accuracy per depth past the first
+  const DEPTH_EVA = 0.5;    // +0.5 evasion per depth past the first
+  function scaleToDepth(m, d) {
+    const n = Math.max(0, (d || 1) - 1);
+    // acc/eva are read off the monster everywhere (rollHit, the boss playbooks),
+    // so fill in the defaults here rather than leaving them undefined — otherwise
+    // a row that never authored them would scale from nothing.
+    m.acc = (m.acc != null ? m.acc : MON_ACC) + DEPTH_ACC * n;
+    m.eva = (m.eva != null ? m.eva : MON_EVA) + DEPTH_EVA * n;
+    if (!n) return m;
+    m.maxHp = Math.max(1, Math.round(m.maxHp * (1 + DEPTH_HP * n)));
+    m.hp = m.maxHp;
+    const dmgMul = 1 + DEPTH_DMG * n;
+    m.atkMin = Math.round((m.atkMin || 0) * dmgMul);
+    m.atkMax = Math.round((m.atkMax || 0) * dmgMul);
+    return m;
+  }
   function makeMonster(type, x, y) {
     // copy the whole template so ability flags (evasion/charge/ranged/range) carry over
-    return Object.assign({}, VERMIN[type], {
+    return scaleToDepth(Object.assign({}, VERMIN[type], {
       x, y, type, boss: false, hp: VERMIN[type].hp, maxHp: VERMIN[type].hp, level: depth,
       // Asleep until something wakes it. This is the single biggest thing the state
       // machine buys: a floor is quiet until you make it loud, you can creep past a
       // room you don't fancy, and striking first actually means something.
       state: SLEEPING, aware: false, target: null,
-    });
+    }), depth);
   }
   function makeBoss(key, x, y) {
     // spread the whole row so authored fields (speed, acc, eva, ranged, range,
@@ -1890,19 +1940,29 @@
         floatText(player.x, player.y, "seen!", "#e0d0a0");
         log("You strike, and the shimmer falls away — they can see you again.", "hurt");
       }
-      if (!surprise && !rollHit(playerAcc(), target.eva != null ? target.eva : MON_EVA)) {
+      // Two ways a blow is certain rather than rolled: the ambush (it has never
+      // seen you), and a foe standing in a doorway — the forest's bushes included.
+      // A doorway is a one-tile gap it has to shoulder through, so there is
+      // nowhere to give ground to: dodging is off the table however alert it is.
+      // That makes a bush worth fighting *at* rather than merely hiding behind,
+      // and it is the reliable answer to the genuinely slippery foes (a bee at
+      // eva 25) that a fair roll almost never lands on.
+      const pinned = isDoor(target.x, target.y);
+      if (!surprise && !pinned && !rollHit(playerAcc(), target.eva != null ? target.eva : MON_EVA)) {
         floatText(target.x, target.y, "miss", "#cfe6b0");
         log("The " + monName(target) + " evades your blow.");
         return;
       }
       let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
-      const crit = Math.random() < critChance();       // 5%+ chance for 200%+ damage
+      const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
-      const pre = surprise ? "Surprise! You strike the " : "You strike the ";
+      const pre = surprise ? "Surprise! You strike the "
+        : pinned ? "Wedged in the " + doorWordOne() + ", the "
+        : "You strike the ";
       if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
       // Maelon's Merciful End: an execute threshold on a connecting hit.
       if (target.hp > 0 && player.boons && player.boons.has("merciful") && target.hp / target.maxHp < player.level / 100) {
@@ -1919,7 +1979,7 @@
       if (target.hp <= 0) {
         killMonster(target, "dies");
       } else {
-        log(pre + monName(target) + ". (-" + dmg + ")", "hit");
+        log(pre + monName(target) + (pinned && !surprise ? " cannot dodge. (-" : ". (-") + dmg + ")", "hit");
         // weapon enchants proc on a connecting hit (power = weapon damage)
         if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon), null, player.weapon);
       }
@@ -1934,8 +1994,7 @@
       let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
       // RES applies first, as a % reduction of the raw hit; armor (and other
       // flat mitigation) then reduces whatever's left.
-      const resMult = Math.max(0, 1 - eff("RES") / 100);
-      dmg = Math.max(1, Math.round(dmg * resMult) - armorBlock());
+      dmg = Math.max(1, Math.round(dmg * (1 - resReduction())) - armorBlock());
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
@@ -2004,13 +2063,16 @@
       items.push(Object.assign({ x: spot.x, y: spot.y }, trink));
       floatText(spot.x, spot.y, "✦", "#9ad0ff");
     }
-    // Boss boon choice: 3 distinct "Boon of [Family]" runes drop on the floor —
-    // step onto one to claim it, and the other two fade away.
-    const boonsDropped = dropBossBoonChoices(x, y);
     // Equipment set: a weapon, an armor, and a ring/necklace, rolled with access
     // to tiers well beyond the current floor.
     dropBossEquipmentSet(x, y);
-    log("The " + bossName + " falls — the way opens. (+" + granted + " Potions of Insight" + (trink ? ", a trinket glints nearby" : "") + (boonsDropped ? ", and blessings + spoils scattered about" : "") + ")", "hit");
+    log("The " + bossName + " falls — the way opens. (+" + granted + " Potions of Insight" + (trink ? ", a trinket glints nearby" : "") + ", and spoils scattered about)", "hit");
+    // The boon choice is the kill's reward, so it lands on the kill. It used to
+    // be three runes scattered on the floor that you walked onto — which meant
+    // the god's blessing could be looted in the wrong order, stepped over on the
+    // way to the stairs, or dropped somewhere a knockback had made unreachable.
+    // The modal blocks play until you pick, so it cannot be missed.
+    offerBoons();
   }
   // Scatter `count` items on distinct free floor tiles within `radius` of (cx,cy).
   function distinctNearbySpots(cx, cy, radius, count) {
@@ -2025,51 +2087,11 @@
     while (spots.length < count) spots.push({ x: cx, y: cy });   // fallback: stack if truly cramped
     return spots;
   }
-  // Like distinctNearbySpots, but confined to one room's interior and spread
-  // at least `minSep` tiles apart — for drops where the player needs to see
-  // and reach EVERY spot on its own before committing to any one (a mutually-
-  // exclusive boon choice), rather than being funneled past one to reach the
-  // next in a corridor. Falls back to the radius scatter if the room can't
-  // fit `count` well-separated spots.
-  function distinctRoomSpots(room, count, cx, cy, minSep) {
-    if (room) {
-      const cand = [];
-      for (let y = room.y; y < room.y + room.h; y++) {
-        for (let x = room.x; x < room.x + room.w; x++) {
-          if (!passable(x, y) || shuns(x, y)) continue;
-          if (itemAt(x, y) || monsterAt(x, y) || (x === player.x && y === player.y)) continue;
-          cand.push([x, y]);
-        }
-      }
-      for (let i = cand.length - 1; i > 0; i--) { const j = randInt(0, i); const t = cand[i]; cand[i] = cand[j]; cand[j] = t; }
-      const spots = [];
-      for (const [x, y] of cand) {
-        if (spots.some((s) => Math.max(Math.abs(s.x - x), Math.abs(s.y - y)) < minSep)) continue;
-        spots.push({ x, y });
-        if (spots.length >= count) return spots;
-      }
-    }
-    return distinctNearbySpots(cx, cy, 2, count);   // room too small/absent — fall back
-  }
   // Roll a gear item of a specific category (not the usual random-category pick).
   function rollGearOfCat(cat, floor) {
     const tier = _loot.pickTier(floor);
     const key = _loot.pickTypeInTierCat(cat, tier) || _loot.pickAnyInCat(cat, tier) || GEAR_KEYS.find((k) => GEAR[k].cat === cat);
     return key ? rollItem(key, floor) : null;
-  }
-  let boonGroupSeq = 0;
-  // Drop 3 boon-choice runes near (x,y); claiming one despawns the other two
-  // (handled in pickUp). Returns how many were dropped (0 if every boon is owned).
-  function dropBossBoonChoices(x, y) {
-    const all = DATA.boons || {};
-    const avail = Object.keys(all).filter((k) => !(player.boons && player.boons.has(k)));
-    if (!avail.length) return 0;
-    for (let i = avail.length - 1; i > 0; i--) { const j = randInt(0, i); const t = avail[i]; avail[i] = avail[j]; avail[j] = t; }
-    const pick = avail.slice(0, 3);
-    const groupId = ++boonGroupSeq;
-    const spots = distinctRoomSpots(bossRoom, pick.length, x, y, 3);
-    pick.forEach((k, i) => { const s = spots[i]; items.push({ x: s.x, y: s.y, boonKey: k, boonGroup: groupId }); });
-    return pick.length;
   }
   // Drop a weapon + armor + ring/necklace, rolled with tiers boosted well past
   // the current floor — a boss's equipment reward should outclass normal drops.
@@ -2197,8 +2219,6 @@
       player.lvlHp += lu.hp || 0;
       player.lvlAcc += lu.accuracy || 0;
       player.lvlEva += lu.evasion || 0;
-      player.lvlCrit += lu.crit || 0;
-      player.lvlCritDmg += lu.critDmg || 0;
       player.lvlMp += lu.mp || 0;
       const nmMp = computeMaxMp();
       player.mp = Math.min(nmMp, player.mp + (nmMp - player.maxMp));   // gain by the max-MP increase
@@ -2209,7 +2229,6 @@
       const extra = [];
       if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
       if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
-      if (lu.crit) extra.push("+" + lu.crit + "% crit"); if (lu.critDmg) extra.push("+" + lu.critDmg + "% crit dmg");
       log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + (extra.length ? " · " + extra.join(", ") : ""), "hit");
       const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra);
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
@@ -2328,14 +2347,6 @@
   function pickUp() {
     const it = itemAt(player.x, player.y);
     if (!it) return;
-    if (it.boonKey) {
-      const siblings = items.filter((x) => x.boonGroup === it.boonGroup && x !== it);
-      for (const s of siblings) spawnBurst(s.x, s.y, "#8a7a5a");
-      items = items.filter((x) => x.boonGroup !== it.boonGroup);
-      pickBoon(it.boonKey);
-      if (siblings.length) log("The other blessings fade away.");
-      return;
-    }
     if (it.key === "gold") {
       player.gold += it.amount;
       items = items.filter((x) => x !== it);
@@ -2437,13 +2448,22 @@
   // up by Vitality:  effective = regenTurns − VIT × vitRegen.  Healing accrues
   // fractionally each turn (maxHp / effective), so a partial tick carries over and
   // the interval per HP can be non-integer.
+
+  // Early-game HP regen multiplier, indexed by CHARACTER level (not depth). The
+  // first floors are where a bad fight is unrecoverable: potions are scarce, the
+  // pack is empty, and a level-1 character healing at the level-20 rate spends
+  // most of the floor walking in circles waiting to be whole. It tapers by 50
+  // points a level and is gone by level 4, so it props up the opening rather than
+  // changing the run's economy.
+  const EARLY_REGEN = [2.5, 2.0, 1.5];   // L1 ×2.5, L2 ×2.0, L3 ×1.5, L4+ ×1
+  const earlyRegenMult = () => EARLY_REGEN[player.level - 1] || 1;
   function regenTick() {
     const cls = DATA.classes[player.cls] || {};
     let changed = false, healed = 0;
     // HP: heals to full over regenTurns, sped by Vitality.
     if (player.hp < player.maxHp) {
       const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - eff("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2));
-      player.regenAcc = (player.regenAcc || 0) + player.maxHp / effTurns;
+      player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult();
       while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
       if (player.hp >= player.maxHp) player.regenAcc = 0;
       if (healed) changed = true;
@@ -2664,13 +2684,25 @@
       m.wanderBest = null; m.wanderStale = 0;
     }
   }
-  // A sleeping monster rolls once a turn to notice you: certain at one tile away,
-  // halving with each tile after that, and impossible if it cannot see you at all
-  // — so a closed bush, a dark corner or a Scroll of Invisibility all buy you the
-  // same thing. Sleepers take the full surprise bonus when you strike first.
+  // A sleeping monster rolls once a turn to notice you. The roll is WAKE_ACUITY
+  // over the distance between you, so it is certain out to WAKE_ACUITY tiles and
+  // tails off past that — and impossible if it cannot see you at all, so a closed
+  // bush, a dark corner or a Scroll of Invisibility all still buy you the same
+  // thing. Sleepers take the full surprise bonus when you strike first.
+  //
+  // It used to be a flat 1/distance, which read as "the whole floor is asleep":
+  // a sleeper eight tiles off in plain sight took eight turns on average to look
+  // up, so most rooms were cleared before anything in them woke. Raising the
+  // numerator is the whole tuning knob — it moves the "certain" radius outward
+  // without changing the shape of the falloff.
+  //
+  // Sight stays a hard requirement rather than becoming a short "it hears you"
+  // radius: the ambush is built on broken line of sight, and a sleeper that woke
+  // to footsteps through a wall would have no opening left to be ambushed in.
+  const WAKE_ACUITY = 3;    // certain within this many tiles; 3/d beyond it
   function noticesPlayer(m) {
     if (!canSee(m)) return false;
-    return Math.random() * Math.max(1, cheb(m.x, m.y, player.x, player.y)) < 1;
+    return Math.random() * Math.max(1, cheb(m.x, m.y, player.x, player.y)) < WAKE_ACUITY;
   }
   function actSleeping(m) {
     if (noticesPlayer(m)) {
@@ -3322,23 +3354,6 @@
     ctx.strokeStyle = "#a9791f";
     ctx.stroke();
   }
-  // A boss's boon-choice drop: a pulsing glowing rune (a diamond), tinted to
-  // the boon's own colour so all 3 choices read as distinct at a glance.
-  function drawBoonRune(px, py, color, now) {
-    const cx = px + tile / 2, cy = py + tile / 2;
-    const pulse = 0.6 + 0.35 * Math.abs(Math.sin(now / 260));
-    const g = ctx.createRadialGradient(cx, cy, tile * 0.05, cx, cy, tile * 0.55);
-    g.addColorStop(0, color); g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.globalAlpha = pulse * 0.5; ctx.fillStyle = g;
-    ctx.fillRect(px, py, tile, tile);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - tile * 0.26); ctx.lineTo(cx + tile * 0.22, cy); ctx.lineTo(cx, cy + tile * 0.26); ctx.lineTo(cx - tile * 0.22, cy);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = Math.max(1, tile * 0.04);
-    ctx.stroke();
-  }
   // Doors are drawn procedurally (no sprite dependency). Forest biomes render a
   // leafy bush that thins once pushed through; other biomes get a plank/stone
   // panel with a seam that splits open.
@@ -3833,8 +3848,7 @@
     for (const it of items) {
       if (!inBounds(it.x, it.y) || !visible[it.y][it.x]) continue;
       const px = SX(it.x), py = SY(it.y);
-      if (it.boonKey) drawBoonRune(px, py, ((DATA.boons || {})[it.boonKey] || {}).color || "#f0c14b", now);
-      else if (it.key === "gold") drawCoin(px, py);
+      if (it.key === "gold") drawCoin(px, py);
       else {
         // no rarity glow on the ground — gear is unidentified until you use it, so a
         // dropped item shouldn't telegraph how good it is
@@ -4661,7 +4675,14 @@
   // cheap and it stays forever: editor.html rewrites data.js wholesale, so a
   // stale draft in localStorage — or an old data.js out of git history — must
   // still open rather than brick the Skills tab.
-  const TREE_COLS = 5;   // only a fallback layout width, for nodes authored without x/y
+  const TREE_COLS = 5, TREE_ROWS = 5;   // the grid: 5 tiers of 5 slots
+  // Every row of the grid is a TIER, and a tier is gated on character level:
+  // tier 1 from the start, tier 2 at level 5, tier 3 at 10, tier 4 at 15, tier 5
+  // at 20. The gate is derived from where a node sits rather than authored on it,
+  // so the grid means something again — a node's row IS its cost in levels, and
+  // no tree can be authored with a deep skill reachable on the first floor.
+  const TIER_LEVELS = 5;
+  const tierLevel = (y) => (y > 0 ? y * TIER_LEVELS : 0);   // tier 1 (y=0) is ungated
   const skillSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   function normalizeTree(raw) {
     if (!Array.isArray(raw)) return [];
@@ -4720,11 +4741,14 @@
         kind: n.kind || "passive", when: n.when || null,
         max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
         req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0,
-        minLevel: n.minLevel || 0, pos: { x: n.x, y: n.y },
+        // The tier gate always applies; an authored minLevel can only ask for MORE,
+        // never less — a node cannot buy its way out of the row it sits in.
+        minLevel: Math.max(n.minLevel || 0, tierLevel(n.y || 0)),
+        tier: (n.y || 0) + 1, pos: { x: n.x, y: n.y },
       };
     }
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
-      for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], pos: null }, c.skills[k]);
+      for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], tier: 1, minLevel: 0, pos: null }, c.skills[k]);
     }
     _skillCache = { cls, skills, byId };
     return _skillCache;
@@ -4816,7 +4840,7 @@
     };
     const names = (d.req || []).map(refName).filter(Boolean);
     if (d.reqPoints) names.unshift(d.reqPoints + " points spent in the tree (you have " + skillPointsSpent() + ")");
-    if (d.minLevel) names.unshift("character level " + d.minLevel + " (you are " + player.level + ")");
+    if (d.minLevel) names.unshift((d.tier > 1 ? "tier " + d.tier + " — " : "") + "character level " + d.minLevel + " (you are " + player.level + ")");
     const reqAny = d.reqAny || [];
     if (reqAny.length) {
       const parts = reqAny.map(refName).filter(Boolean);
@@ -5114,7 +5138,6 @@
     }
     const it = items.find((i) => i.x === x && i.y === y);
     if (it && visible[y][x]) {
-      if (it.boonKey) { const g = (DATA.boons || {})[it.boonKey] || {}; log("Boon of " + (g.name || it.boonKey) + " — " + (g.desc || "") + " Step onto it to claim it."); return; }
       if (it.key === "gold") { log(it.amount + " gold"); return; }
       const aff = isGear(it) ? itemAffixText(it) : "";
       log(itemName(it) + (aff ? " — " + aff : "")); return;
@@ -5158,7 +5181,7 @@
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(eff("RES")) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
       const g = equipStat(k);
       const val = player.stats[k] + (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
@@ -5175,40 +5198,47 @@
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
-      `<div class="cline cformula">crit% = 5 + DEX + LCK + skills · crit dmg% = 200 + LCK×2 + skills</div>` +
+      `<div class="cline cformula">crit% = 5 + DEX + LCK×0.5 + skills · crit dmg% = 125 + LCK×2 + skills</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
-      `<div class="cline cformula">hit% = 50% + (attacker acc − defender eva) × 3%, clamped 10–95%</div>` +
+      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 20) — a lead always helps, and never becomes certainty</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
-      `<div class="cline cformula">incoming dmg ×(1 − RES%), then armor block subtracted</div>` +
+      `<div class="cline cformula">incoming dmg ×(1 − RES ÷ (RES + 100)), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
-  // Grid layout for the skill tree: nodes at their authored x/y (see
-  // normalizeTree), one column per branch, spaced a node-diameter apart so
-  // there's room for an arrow between rows. A skill with no x/y (a boon
-  // active, granted outside the tree) gets stacked in reading order on a
-  // row of its own below the real tree rather than overlapping node 0,0.
+  // Grid layout for the skill tree: the fixed 5×5 board, nodes at their authored
+  // x/y (see normalizeTree). Blank cells are drawn as blanks rather than closed
+  // up, because a node's ROW is now its level gate — squeezing the empties out
+  // would move a tier-4 skill up into tier 2's row and quietly lie about what it
+  // costs. The grid grows past 5×5 only if a tree was authored beyond it, so an
+  // off-grid node stays visible instead of vanishing.
+  //
+  // A skill with no x/y (a boon active, granted outside the tree) is not part of
+  // any tier; it gets a row of its own below the board.
+  const SK_NODE = 88, SK_COL = 168, SK_ROW = 152, SK_GUTTER = 62;
   function skillTreeLayout(sk) {
-    const NODE = 88, COL = 176, ROW = 176;
     const keys = Object.keys(sk);
     const wired = [], loose = [];
-    let maxTreeY = -1;
+    let rows = TREE_ROWS, cols = TREE_COLS;
     for (const key of keys) {
       const d = sk[key];
-      if (d.pos && typeof d.pos.x === "number" && typeof d.pos.y === "number") { wired.push(key); maxTreeY = Math.max(maxTreeY, d.pos.y); }
-      else loose.push(key);
+      if (d.pos && typeof d.pos.x === "number" && typeof d.pos.y === "number") {
+        wired.push(key);
+        rows = Math.max(rows, d.pos.y + 1); cols = Math.max(cols, d.pos.x + 1);
+      } else loose.push(key);
     }
-    const looseRow = maxTreeY + 1;
     const pos = {};
-    let maxX = 0, maxY = maxTreeY;
-    for (const key of wired) { const d = sk[key]; pos[key] = { x: d.pos.x, y: d.pos.y }; maxX = Math.max(maxX, d.pos.x); }
-    loose.forEach((key, i) => { pos[key] = { x: i, y: looseRow }; maxX = Math.max(maxX, i); maxY = Math.max(maxY, looseRow); });
+    for (const key of wired) pos[key] = { x: sk[key].pos.x, y: sk[key].pos.y };
+    loose.forEach((key, i) => { pos[key] = { x: i % cols, y: rows + ((i / cols) | 0) }; });
+    const looseRows = loose.length ? Math.ceil(loose.length / cols) : 0;
     return {
-      pos, NODE,
-      cx: (key) => pos[key].x * COL + COL / 2,
-      cy: (key) => pos[key].y * ROW + ROW / 2,
-      width: (maxX + 1) * COL, height: (maxY + 1) * ROW + 30,
+      pos, NODE: SK_NODE, rows, cols, looseRows,
+      cellX: (x) => SK_GUTTER + x * SK_COL + SK_COL / 2,
+      cellY: (y) => y * SK_ROW + SK_ROW / 2,
+      cx: (key) => SK_GUTTER + pos[key].x * SK_COL + SK_COL / 2,
+      cy: (key) => pos[key].y * SK_ROW + SK_ROW / 2,
+      width: SK_GUTTER + cols * SK_COL, height: (rows + looseRows) * SK_ROW + 10,
     };
   }
   function skillFmt(r) {
@@ -5224,24 +5254,31 @@
   }
   // The lower detail card for whichever node is selected — same markup/CSS
   // (`.skillrow`) the old flat list used, just for one skill at a time.
+  //
+  // The requirement line is ALWAYS shown, met or not, rather than appearing only
+  // once a node is locked. What a skill costs is how you plan a build, and a
+  // player who can only read the cost of the things they can't have yet is
+  // planning blind — worse, a requirement that silently disappears the moment it
+  // is satisfied reads as though it was never there.
   function charSkillDetailHTML(sk, key) {
     if (!key || !sk[key]) return `<div class="cline">Tap a node above to see what it does.</div>`;
     const d = sk[key], st = player.skills[key];
     const nextDef = st.rank < d.max ? d.ranks[st.rank] : null;
-    const levelGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
+    const rankGate = (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) ? nextDef.minLevel : 0;
     const prereqLocked = st.rank === 0 && !prereqsMet(d);
-    const locked = prereqLocked || !!levelGate;
+    const locked = prereqLocked || !!rankGate;
     const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || skillFmt(d.ranks[st.rank - 1])) : null;
     const nextTxt = st.rank < d.max ? (d.levels[st.rank] || skillFmt(d.ranks[st.rank])) : "Maxed.";
     const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
     const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
     const kindTag = d.kind === "passive" ? " · passive" : "";
-    const reqParts = [];
-    if (prereqLocked) reqParts.push(prereqNames(d).join(", ") || "a prerequisite");
-    if (levelGate) reqParts.push("character level " + levelGate);
-    const reqTxt = locked ? `<div class="sdesc" style="color:#e0a05a">Requires: ${reqParts.join(", ")}</div>` : "";
+    const tierTag = d.tier ? ` · tier ${d.tier}` : "";
+    const reqParts = prereqNames(d);
+    if (rankGate) reqParts.push("character level " + rankGate + " for the next rank (you are " + player.level + ")");
+    const reqTxt = reqParts.length
+      ? `<div class="sdesc sreq${locked ? " shut" : ""}">Requires: ${reqParts.join(" · ")}</div>` : "";
     return `<div class="skillrow"><div class="sh"><span class="sname"><span class="ic">${d.icon}</span>${d.name}</span>` +
-      `<span class="srank">rank ${st.rank}/${d.max}${kindTag}</span></div>` +
+      `<span class="srank">rank ${st.rank}/${d.max}${tierTag}${kindTag}</span></div>` +
       `<div class="sdesc">${d.desc}</div>` + reqTxt +
       `<div class="snext">${curTxt ? "Now: " + curTxt + "<br>" : ""}${st.rank < d.max ? "Next: " + nextTxt : nextTxt}</div>` +
       `<button class="upg" id="upg-${key}" ${canUp ? "" : "disabled"}>${label}</button></div>`;
@@ -5257,6 +5294,21 @@
       if (st.rank >= 1) return "invested";
       return prereqsMet(d) ? "available" : "locked";
     };
+    // The empty cells of the board, drawn first so they sit under everything —
+    // a tier you can't reach yet should still LOOK like five slots waiting, not
+    // like the tree simply stops.
+    const filled = new Set(keys.filter((k) => layout.pos[k]).map((k) => layout.pos[k].y + "," + layout.pos[k].x));
+    let cellsHtml = "", tiersHtml = "";
+    for (let y = 0; y < layout.rows; y++) {
+      const need = tierLevel(y), open = player.level >= need;
+      tiersHtml += `<div class="sktier${open ? "" : " shut"}" style="top:${layout.cellY(y) - 24}px">` +
+        `<b>T${y + 1}</b><span>${need ? "Lv " + need : "start"}</span></div>`;
+      for (let x = 0; x < layout.cols; x++) {
+        if (filled.has(y + "," + x)) continue;
+        cellsHtml += `<div class="skempty" style="left:${layout.cellX(x) - layout.NODE / 2}px;top:${layout.cellY(y) - layout.NODE / 2}px;` +
+          `width:${layout.NODE}px;height:${layout.NODE}px"></div>`;
+      }
+    }
     let nodesHtml = "";
     for (const key of keys) {
       const d = sk[key], st = player.skills[key];
@@ -5271,6 +5323,8 @@
     // One arrow per prerequisite reference (req = AND, reqAny = OR — both
     // drawn the same way; the arrow itself only tells you whether *that*
     // source is invested, not whether it's enough to unlock the target).
+    // The same prerequisites are spelled out in words on the detail card below,
+    // because an arrow can say "this one" but not "this one, maxed".
     let arrowsHtml = "";
     for (const key of keys) {
       const d = sk[key];
@@ -5284,12 +5338,12 @@
         arrowsHtml += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="skarrow ${cls}" marker-end="url(#skarrow-${cls})"/>`;
       }
     }
-    return `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend</div>` +
+    return `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend · a tier opens every ${TIER_LEVELS} character levels</div>` +
       `<div class="skilltree-wrap"><div class="skilltree" style="width:${layout.width}px;height:${layout.height}px">` +
       `<svg class="skilltree-svg" width="${layout.width}" height="${layout.height}"><defs>` +
       `<marker id="skarrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead amber"/></marker>` +
       `<marker id="skarrow-grey" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead grey"/></marker>` +
-      `</defs>${arrowsHtml}</svg>${nodesHtml}</div></div>` +
+      `</defs>${arrowsHtml}</svg>${cellsHtml}${tiersHtml}${nodesHtml}</div></div>` +
       charSkillDetailHTML(sk, charSelSkill);
   }
   function charBoonsHTML() {
@@ -5573,7 +5627,7 @@
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
         mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
-        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault, boonKey: it.boonKey || null, boonGroup: it.boonGroup || null })),
+        items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
         thorns: (() => { let n = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === THORN) n++; return n; })(),
