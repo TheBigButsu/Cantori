@@ -1311,19 +1311,49 @@
   let ghOverwriteArmed = false;   // one deliberate confirmation, then it disarms again
   function ghMsg(m, k) { const e = $("ghMsg"); e.textContent = m; e.className = k || ""; }
   function reflectGhButton() { $("btnGh").classList.toggle("on", !!ghToken()); }
+  // The repo's own default branch, so we can tell "you're saving to main" from
+  // "you're saving to a feature branch that was merged and abandoned weeks ago".
+  // That distinction is invisible in a text field, and a stale branch here is a
+  // setting that quietly outlives the branch it names.
+  let ghDefaultBranch = null;
+  async function fetchDefaultBranch(c, token) {
+    if (ghDefaultBranch || !token || !c.owner || !c.repo) return ghDefaultBranch;
+    try {
+      const res = await fetch("https://api.github.com/repos/" + c.owner + "/" + c.repo + "?_=" + Date.now(), {
+        headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json" }, cache: "no-store",
+      });
+      if (res.ok) ghDefaultBranch = (await res.json()).default_branch || null;
+    } catch (e) { /* offline or no permission — the target line just stays plain */ }
+    return ghDefaultBranch;
+  }
+  function ghTargetLine(c) {
+    const target = c.owner + "/" + c.repo + " → " + c.branch + " · " + c.path;
+    if (ghDefaultBranch && c.branch !== ghDefaultBranch) {
+      return "⚠ Saving to " + target + ". That is NOT this repo's default branch (" + ghDefaultBranch +
+             "), so nothing you commit here reaches the live game until someone merges it.";
+    }
+    return "Saving to " + target + ".";
+  }
+  function refreshGhState() {
+    const c = ghCfg();
+    const conn = ghToken() ? "Connected." : "No token yet — paste one below to connect.";
+    $("ghState").textContent = conn + " " + ghTargetLine(c);
+  }
   function openGh() {
     const c = ghCfg();
     $("ghOwner").value = c.owner; $("ghRepo").value = c.repo; $("ghBranch").value = c.branch; $("ghPath").value = c.path;
     $("ghToken").value = ghToken();
-    $("ghState").textContent = ghToken() ? "Token saved in this browser — you're connected." : "No token yet — paste one below to connect.";
+    refreshGhState();
     ghMsg("", "");
     $("ghDlg").showModal();
+    fetchDefaultBranch(c, $("ghToken").value.trim() || ghToken()).then(refreshGhState);
   }
   function ghSaveCfg() {
     const c = { owner: $("ghOwner").value.trim(), repo: $("ghRepo").value.trim(), branch: $("ghBranch").value.trim(), path: $("ghPath").value.trim() };
     try { localStorage.setItem(GH_CFG, JSON.stringify(c)); } catch (e) {}
     return c;
   }
+  const ghBranchInput = () => $("ghBranch");
   function ghSaveToken() {
     const t = $("ghToken").value.trim();
     try { if (t) localStorage.setItem(GH_TOK, t); else localStorage.removeItem(GH_TOK); } catch (e) {}
@@ -1367,6 +1397,23 @@
       const liveData = live.text == null ? null : parseDataFile(live.text);
       if (liveData && JSON.stringify(liveData) !== ghBaseline && !ghOverwriteArmed) {
         ghOverwriteArmed = true;
+        // If the target isn't the default branch, THAT is almost always the story:
+        // a one-off branch that was merged and left behind, still sitting in this
+        // browser's settings. Say so first — "the file differs" is the symptom.
+        await fetchDefaultBranch(c, token);
+        if (ghDefaultBranch && c.branch !== ghDefaultBranch) {
+          ghMsg("Stopped: you are saving to “" + c.branch + "”, which is NOT this repo's default branch (" +
+                ghDefaultBranch + "). That branch has been left behind, so its data.js is far older than the one " +
+                "this page loaded — committing would look like a mass revert, and would not reach the live game anyway. " +
+                "Set Branch to “" + ghDefaultBranch + "” above and Commit again.", "err");
+          // Pre-fill AND persist it, so the field, the stored config and the line
+          // above all agree — a warning that contradicts the box it points at is
+          // worse than no warning. Committing is still a deliberate second press.
+          $("ghBranch").value = ghDefaultBranch;
+          ghSaveCfg();
+          refreshGhState();
+          return;
+        }
         ghMsg("Stopped: data.js on “" + c.branch + "” is NOT what this page loaded, so saving now would revert whatever changed since (" +
               "the branch differs in: " + whatMoved(JSON.parse(ghBaseline), liveData) + "). Hit “Load latest from branch” to start from what's actually there, " +
               "or press Commit again to overwrite them deliberately.", "err");
@@ -1608,6 +1655,7 @@
   $("ghClose").onclick = () => $("ghDlg").close();
   $("ghSave").onclick = ghCommit;
   $("ghPull").onclick = ghPull;
+  ghBranchInput().oninput = () => { ghSaveCfg(); ghOverwriteArmed = false; refreshGhState(); };
   $("ghSaveToken").onclick = ghSaveToken;
   $("ghForget").onclick = ghForget;
 
