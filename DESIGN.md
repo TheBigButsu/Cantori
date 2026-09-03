@@ -277,9 +277,11 @@ any visible tile. Banked points are spent on the skill tree.
   foes inside are still `unaware` → your opening blow is a guaranteed ambush hit.
 - **HUD frame.** Zoom buttons are gone (pinch / scroll-wheel still zoom); the right
   rail is 👤 Character · 🎒 Pack · 🔍 Examine · ▦ Map. The top bar shows **Lv**, an
-  **enemies-in-sight counter** (☠ N, SPD-style), and the biome/depth. HP/MP/Food
+  **enemies-in-sight counter** (☠ N, SPD-style), and the biome/depth. HP/MP/TIME
   live in a **bottom-left vitals stack** so the notch can crop the top bar harmlessly.
-  MP and Food are placeholders pinned at 100 until spells and hunger land.
+  MP was a placeholder pinned at 100 until spells landed. The third bar was **Food**,
+  pinned at 100/100 doing nothing while hunger stayed unbuilt; it is now **TIME** —
+  the floor's patience, counting down (see the Horror, below).
 - **Examine auto-closes** after one inspection — tap 🔍, tap a tile, done.
 - **Berry bushes & thorn vaults.** Forest doorways are berry bushes (red fruit
   dotted through the leaves). A separate hazard tile — **thorns** — seals off the
@@ -404,7 +406,7 @@ everywhere else in the game.
   biome's deepest-starting monster, so a biome that has not been given one yet still
   sends its scariest resident rather than nothing. It reuses that monster's sprite,
   so no new art ships with the mechanic.
-- **How it differs** from the animal it wears: ×3 max HP, ×2 attack, and it never
+- **How it differs** from the animal it wears: ×3 max HP, ×4 attack, and it never
   loses the trail. Every other monster gives up after 10 turns without line of
   sight; the Horror does not.
 - **It is worth 0 XP.** This one is load-bearing. Paying XP for a Horror would
@@ -413,6 +415,12 @@ everywhere else in the game.
 - **Killing it buys 60 turns**, then the next one comes. Not the floor back.
 - It stays out of boss floors and the merchant den, which have their own pressure,
   and the clock (`turns`, already reset by `generateLevel`) restarts every floor.
+- **The clock is visible.** The third vitals bar — the old **Food** placeholder,
+  which sat pinned at 100/100 while hunger stayed unbuilt — is now **TIME**, and it
+  drains as you spend the floor's welcome. It shows turns remaining rather than a
+  percentage, because it is the only warning the player gets that they are on a
+  clock, and it turns red at the same moment the log does. On a floor with no clock
+  (boss, merchant) it reads "—" and dims rather than faking a countdown.
 
 Still open: the XP curve is `level × 6` and nothing else caps levelling, so the
 Horror is the only brake. If a run still over-levels, `FLOOR_PATIENCE` is the dial.

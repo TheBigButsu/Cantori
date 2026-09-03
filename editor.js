@@ -1122,9 +1122,9 @@
     {
       title: "The floor's patience (the Horror)",
       rows: [
-        { name: "Grace period", formula: "1000 turns on a floor", note: "A warning lands at 900 turns. The turn count resets on every new floor, so this is per-floor, not per-run." },
+        { name: "Grace period", formula: "1000 turns on a floor", note: "A warning lands at 900 turns. The turn count resets on every new floor, so this is per-floor, not per-run. The player watches it drain on the TIME bar in the bottom-left vitals stack, which turns red at the warning." },
         { name: "What arrives", formula: "the biome's `horror` monster, or its deepest-starting monster if unset", note: "Spawned out of sight, at least 8 tiles away, already hunting." },
-        { name: "How it differs", formula: "×3 max HP, ×2 attack, and it never loses your trail", note: "Every other monster gives up after 10 turns with no line of sight; the Horror does not. Breaking sight buys distance, not escape." },
+        { name: "How it differs", formula: "×3 max HP, ×4 attack, and it never loses your trail", note: "Every other monster gives up after 10 turns with no line of sight; the Horror does not. Breaking sight buys distance, not escape." },
         { name: "XP awarded", formula: "0", note: "Deliberate: paying XP for a Horror would make farming them the best grind in the game, on the floor the player was meant to leave." },
         { name: "If you kill it", formula: "another comes 60 turns later", note: "Killing it buys a breather, not the floor back." },
       ],

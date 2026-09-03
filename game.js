@@ -1761,7 +1761,7 @@
     const lv = document.getElementById("lv");
     if (lv) lv.textContent = "Lv " + player.level;
 
-    // bottom-left vitals: HP is live; MP and Food (hunger) are placeholders at full
+    // bottom-left vitals: HP, MP, and the floor's patience counting down
     const setBar = (fillId, numId, cur, max) => {
       const f = document.getElementById(fillId), n = document.getElementById(numId);
       if (f) f.style.width = Math.max(0, Math.min(100, (cur / Math.max(1, max)) * 100)) + "%";
@@ -1769,7 +1769,7 @@
     };
     setBar("vHp", "vHpNum", player.hp, player.maxHp);
     setBar("vMp", "vMpNum", player.mp != null ? player.mp : 100, player.maxMp != null ? player.maxMp : 100);
-    setBar("vHg", "vHgNum", player.food != null ? player.food : 100, 100);
+    updatePatienceBar();
 
     // enemy counter (SPD-style): how many foes you can currently see
     const en = document.getElementById("enemies");
@@ -1778,6 +1778,26 @@
       en.textContent = "☠ " + n;
       en.classList.toggle("active", n > 0);
     }
+  }
+  // The third vitals bar is the floor's welcome, draining as you spend it. It
+  // replaces the Food placeholder, which sat pinned at 100/100 doing nothing.
+  //
+  // It is the ONLY warning the player gets that they are on a clock, so it says
+  // the turns left rather than a percentage, and it changes colour at the same
+  // moment the log does. Boss floors and the merchant den have no clock (see
+  // maybeHorror), so there the bar reads "—" and dims rather than lying about a
+  // countdown that isn't running.
+  function updatePatienceBar() {
+    const row = document.querySelector(".vbar.tm");
+    const fill = document.getElementById("vTm"), num = document.getElementById("vTmNum");
+    if (!row || !fill || !num) return;
+    const running = !bossActive && !inShop;
+    const left = Math.max(0, FLOOR_PATIENCE - turns);
+    row.classList.toggle("off", !running);
+    row.classList.toggle("low", running && left > 0 && turns >= FLOOR_WARNING);
+    row.classList.toggle("spent", running && left <= 0);
+    fill.style.width = (running ? (left / FLOOR_PATIENCE) * 100 : 100) + "%";
+    num.textContent = running ? String(left) : "—";
   }
   function setDepthLabel() {
     const el = document.getElementById("depthLabel");
@@ -2872,7 +2892,7 @@
   const FLOOR_WARNING = 900;      // when it starts to be felt
   const HORROR_RESPAWN = 60;      // turns after a kill before the next one comes
   const HORROR_HP_MULT = 3;       // it is the same creature, wrong
-  const HORROR_DMG_MULT = 2;
+  const HORROR_DMG_MULT = 4;      // and it hits like nothing else on the floor
   let horrorWarned = false, horrorDeadAt = -1;
   // Which monster the Horror wears. Authored per biome (`horror` in data.js);
   // falls back to the deepest-starting monster the biome spawns, so a biome that
