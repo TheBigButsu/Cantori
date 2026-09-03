@@ -4770,7 +4770,7 @@
   // cheap and it stays forever: editor.html rewrites data.js wholesale, so a
   // stale draft in localStorage — or an old data.js out of git history — must
   // still open rather than brick the Skills tab.
-  const TREE_COLS = 5, TREE_ROWS = 5;   // the grid: 5 tiers of 5 slots
+  const TREE_COLS = 5;   // only a fallback width, for nodes authored without x/y
   // Every row of the grid is a TIER, and a tier is gated on character level:
   // tier 1 from the start, tier 2 at level 5, tier 3 at 10, tier 4 at 15, tier 5
   // at 20. The gate is derived from where a node sits rather than authored on it,
@@ -5264,7 +5264,7 @@
     if (!body) return;
     body.innerHTML = charTab === "stats" ? charStatsHTML() : charTab === "skills" ? charSkillsHTML() : charBoonsHTML();
     if (charTab === "skills") {
-      for (const el of body.querySelectorAll(".sknode-wrap")) {
+      for (const el of body.querySelectorAll(".skcell")) {
         el.addEventListener("click", () => { charSelSkill = el.getAttribute("data-key"); renderChar(); });
       }
       for (const key of Object.keys(classSkills())) {
@@ -5301,40 +5301,6 @@
       `<div class="cline cformula">incoming dmg ×(1 − RES ÷ (RES + 100)), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
-  }
-  // Grid layout for the skill tree: the fixed 5×5 board, nodes at their authored
-  // x/y (see normalizeTree). Blank cells are drawn as blanks rather than closed
-  // up, because a node's ROW is now its level gate — squeezing the empties out
-  // would move a tier-4 skill up into tier 2's row and quietly lie about what it
-  // costs. The grid grows past 5×5 only if a tree was authored beyond it, so an
-  // off-grid node stays visible instead of vanishing.
-  //
-  // A skill with no x/y (a boon active, granted outside the tree) is not part of
-  // any tier; it gets a row of its own below the board.
-  const SK_NODE = 88, SK_COL = 168, SK_ROW = 152, SK_GUTTER = 62;
-  function skillTreeLayout(sk) {
-    const keys = Object.keys(sk);
-    const wired = [], loose = [];
-    let rows = TREE_ROWS, cols = TREE_COLS;
-    for (const key of keys) {
-      const d = sk[key];
-      if (d.pos && typeof d.pos.x === "number" && typeof d.pos.y === "number") {
-        wired.push(key);
-        rows = Math.max(rows, d.pos.y + 1); cols = Math.max(cols, d.pos.x + 1);
-      } else loose.push(key);
-    }
-    const pos = {};
-    for (const key of wired) pos[key] = { x: sk[key].pos.x, y: sk[key].pos.y };
-    loose.forEach((key, i) => { pos[key] = { x: i % cols, y: rows + ((i / cols) | 0) }; });
-    const looseRows = loose.length ? Math.ceil(loose.length / cols) : 0;
-    return {
-      pos, NODE: SK_NODE, rows, cols, looseRows,
-      cellX: (x) => SK_GUTTER + x * SK_COL + SK_COL / 2,
-      cellY: (y) => y * SK_ROW + SK_ROW / 2,
-      cx: (key) => SK_GUTTER + pos[key].x * SK_COL + SK_COL / 2,
-      cy: (key) => pos[key].y * SK_ROW + SK_ROW / 2,
-      width: SK_GUTTER + cols * SK_COL, height: (rows + looseRows) * SK_ROW + 10,
-    };
   }
   function skillFmt(r) {
     const p = [];
@@ -5383,62 +5349,48 @@
     const keys = Object.keys(sk);
     if (!keys.length) return `<div class="cline">This class has no skills yet.</div>`;
     if (charSelSkill && !sk[charSelSkill]) charSelSkill = null;
-    const layout = skillTreeLayout(sk);
+    // Grouped by TIER, which is the only thing the grid's rows ever meant: a
+    // tier is a level gate. The columns meant nothing but reading order, so they
+    // are reading order here too, and nothing has to be laid out in pixels.
+    const tiers = new Map(), loose = [];
+    for (const key of keys) {
+      const d = sk[key];
+      if (d.pos && typeof d.pos.y === "number") {
+        const t = d.tier || 1;
+        if (!tiers.has(t)) tiers.set(t, []);
+        tiers.get(t).push(key);
+      } else loose.push(key);   // a boon active — granted by a god, part of no tier
+    }
+    for (const arr of tiers.values()) arr.sort((a, b) => (sk[a].pos.x || 0) - (sk[b].pos.x || 0));
     const stateOf = (key) => {
       const d = sk[key], st = player.skills[key];
       if (st.rank >= 1) return "invested";
       return prereqsMet(d) ? "available" : "locked";
     };
-    // The empty cells of the board, drawn first so they sit under everything —
-    // a tier you can't reach yet should still LOOK like five slots waiting, not
-    // like the tree simply stops.
-    const filled = new Set(keys.filter((k) => layout.pos[k]).map((k) => layout.pos[k].y + "," + layout.pos[k].x));
-    let cellsHtml = "", tiersHtml = "";
-    for (let y = 0; y < layout.rows; y++) {
-      const need = tierLevel(y), open = player.level >= need;
-      tiersHtml += `<div class="sktier${open ? "" : " shut"}" style="top:${layout.cellY(y) - 24}px">` +
-        `<b>T${y + 1}</b><span>${need ? "Lv " + need : "start"}</span></div>`;
-      for (let x = 0; x < layout.cols; x++) {
-        if (filled.has(y + "," + x)) continue;
-        cellsHtml += `<div class="skempty" style="left:${layout.cellX(x) - layout.NODE / 2}px;top:${layout.cellY(y) - layout.NODE / 2}px;` +
-          `width:${layout.NODE}px;height:${layout.NODE}px"></div>`;
-      }
-    }
-    let nodesHtml = "";
-    for (const key of keys) {
+    const cell = (key) => {
       const d = sk[key], st = player.skills[key];
-      const x = layout.cx(key) - layout.NODE / 2, y = layout.cy(key) - layout.NODE / 2;
-      const sel = key === charSelSkill;
-      const icon = d.iconSprite ? `<img class="skicon-img" src="${d.iconSprite}" alt="">` : `<span class="skicon">${d.icon}</span>`;
-      nodesHtml += `<div class="sknode-wrap" data-key="${key}" style="left:${x}px;top:${y}px;width:${layout.NODE}px">` +
-        (sel ? `<div class="sksel" style="width:${layout.NODE + 16}px;height:${layout.NODE + 16}px;left:-8px;top:-8px"></div>` : "") +
-        `<div class="sknode st-${stateOf(key)}">${icon}</div>` +
-        `<div class="skbadge">${st.rank}/${d.max}</div></div>`;
+      const icon = d.iconSprite ? `<img class="skico-img" src="${d.iconSprite}" alt="">` : `<span class="skico">${d.icon}</span>`;
+      let pips = "";
+      for (let i = 0; i < d.max; i++) pips += `<i${i < st.rank ? ' class="on"' : ""}></i>`;
+      return `<button type="button" class="skcell st-${stateOf(key)}${key === charSelSkill ? " sel" : ""}" data-key="${key}">` +
+        icon + `<span class="sknm">${d.name}</span><span class="skpips">${pips}</span></button>`;
+    };
+    // Only tiers that actually hold something. An empty tier is not information —
+    // it was five dashed circles telling the player nothing at all.
+    let html = "";
+    for (const t of [...tiers.keys()].sort((a, b) => a - b)) {
+      const need = tierLevel(t - 1), open = player.level >= need;
+      const gate = !need ? "from the start" : open ? "level " + need : "needs level " + need;
+      html += `<div class="sktr${open ? "" : " shut"}">` +
+        `<div class="sktr-h"><b>Tier ${t}</b><span>${gate}</span></div>` +
+        `<div class="sktr-row">${tiers.get(t).map(cell).join("")}</div></div>`;
     }
-    // One arrow per prerequisite reference (req = AND, reqAny = OR — both
-    // drawn the same way; the arrow itself only tells you whether *that*
-    // source is invested, not whether it's enough to unlock the target).
-    // The same prerequisites are spelled out in words on the detail card below,
-    // because an arrow can say "this one" but not "this one, maxed".
-    let arrowsHtml = "";
-    for (const key of keys) {
-      const d = sk[key];
-      const refs = (d.req || []).concat(d.reqAny || []).map((r) => r[0]);
-      for (const srcKey of refs) {
-        if (!sk[srcKey] || !layout.pos[srcKey]) continue;
-        const invested = player.skills[srcKey] && player.skills[srcKey].rank >= 1;
-        const cls = invested ? "amber" : "grey";
-        const x1 = layout.cx(srcKey), y1 = layout.cy(srcKey) + layout.NODE / 2;
-        const x2 = layout.cx(key), y2 = layout.cy(key) - layout.NODE / 2;
-        arrowsHtml += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="skarrow ${cls}" marker-end="url(#skarrow-${cls})"/>`;
-      }
+    if (loose.length) {
+      html += `<div class="sktr"><div class="sktr-h"><b>Blessings</b><span>granted by a god</span></div>` +
+        `<div class="sktr-row">${loose.map(cell).join("")}</div></div>`;
     }
     return `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend · a tier opens every ${TIER_LEVELS} character levels</div>` +
-      `<div class="skilltree-wrap"><div class="skilltree" style="width:${layout.width}px;height:${layout.height}px">` +
-      `<svg class="skilltree-svg" width="${layout.width}" height="${layout.height}"><defs>` +
-      `<marker id="skarrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead amber"/></marker>` +
-      `<marker id="skarrow-grey" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="skarrowhead grey"/></marker>` +
-      `</defs>${arrowsHtml}</svg>${cellsHtml}${tiersHtml}${nodesHtml}</div></div>` +
+      `<div class="sktiers">${html}</div>` +
       charSkillDetailHTML(sk, charSelSkill);
   }
   function charBoonsHTML() {

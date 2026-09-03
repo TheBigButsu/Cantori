@@ -364,17 +364,14 @@ out of road at roughly the same point in a run.
   so there is nowhere to give ground to. This makes a bush worth fighting *at*
   rather than only hiding behind, and it is the reliable answer to the genuinely
   slippery foes (a Bee at eva 25) a fair roll almost never lands on.
-- **The skill tree is a level-gated 5×5 board again.** Five tiers of five slots, and
-  a row IS a tier: tier 1 from the start, tier 2 at character level 5, tier 3 at 10,
-  tier 4 at 15, tier 5 at 20. The gate is derived from where a node sits rather than
-  authored on it, so the grid means something — moving a skill down a row is how you
-  make it cost more levels, and no tree can be authored with a deep skill reachable
-  on the first floor. A node's own `minLevel` can raise the gate but never lower it.
-  Blank cells stay blank (drawn as empty sockets) instead of closing up, because
-  collapsing them would move a tier-4 skill into tier 2's row and misstate its cost.
-  Prerequisites are still real requirements, and they are now spelled out in words
-  on the skill's card whether or not they are met — what a skill costs is how you
-  plan a build.
+- **Skills are level-gated by tier.** Tier 1 from the start, tier 2 at character
+  level 5, tier 3 at 10, tier 4 at 15, tier 5 at 20. The gate is derived from the
+  row a node is authored on rather than set per node, so moving a skill down a row
+  in the editor is how you make it cost more levels, and no tree can be authored
+  with a deep skill reachable on the first floor. A node's own `minLevel` can raise
+  the gate but never lower it. Prerequisites are still real requirements, and they
+  are spelled out in words on the skill's card whether or not they are met — what a
+  skill costs is how you plan a build.
 - **The boon choice lands on the kill.** It used to be three runes scattered on the
   boss room floor that you walked onto; the god's blessing could be looted in the
   wrong order, stepped over on the way to the stairs, or dropped somewhere a
@@ -438,3 +435,29 @@ everywhere else in the game.
 
 Still open: the XP curve is `level × 6` and nothing else caps levelling, so the
 Horror is the only brake. If a run still over-levels, `FLOOR_PATIENCE` is the dial.
+
+## Skills: a tiered selector, not a node graph — DONE
+
+The Skills tab drew the tree as a node graph: circles on an absolutely-positioned
+5×5 board, with an SVG layer drawing an arrow per prerequisite. It is gone.
+
+It did not survive contact with a phone. The board was wider than the character
+card at 430px, so half the tree lived behind a horizontal scroll; the arrows
+crossed each other as soon as a node had two parents; and the empty sockets of
+tiers the character could not reach for another fifteen levels took up most of the
+screen. It looked like a diagram of the data rather than a thing to use.
+
+It is now a **Shattered-Pixel-style tiered selector**: one row per tier, each row a
+header (the tier and its level gate) above a wrap of compact cells — icon, name,
+and rank pips. Tap a cell to select it; the detail card below is unchanged and
+carries the description, the current and next rank, the requirement line and the
+Learn/Upgrade button. Nothing scrolls sideways.
+
+What was lost with the arrows is nothing: an arrow could say "this one" but never
+"this one, **maxed**", which is what the tier-2 gate actually asks for. The
+requirement line says it in words, and always — met or not.
+
+The underlying data is untouched. Nodes still carry `x`/`y`; `y` is the tier (its
+level gate) and `x` is now just the order cells appear in the row. The editor's
+authoring grid is unchanged, and so is every prerequisite in `data.js`. Only tiers
+that hold at least one skill are drawn — an empty tier is not information.
