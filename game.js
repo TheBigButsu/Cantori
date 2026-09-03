@@ -1350,6 +1350,7 @@
     items = [];
     traps = [];
     turns = 0;
+    horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
 
     const rooms = [];
     const attachEdges = [];   // [roomIdx, partnerIdx, doorTile] for attached rooms (doorway, no hall)
@@ -1474,6 +1475,7 @@
     items = [];
     traps = [];
     turns = 0;
+    horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
     bossActive = false;
     bossRoom = null;
 
@@ -1536,6 +1538,7 @@
     });
   }
   function monName(m) {
+    if (m.horror) return m.name || "Horror";        // the floor's anger, not the animal it wears
     return m.boss ? m.name : (VERMIN[m.type] ? VERMIN[m.type].name : m.type);
   }
   function spawnBoss(room) {
@@ -1796,9 +1799,13 @@
     // than a depth-1 rat instead of both landing in the same 1–3 band.
     // Bosses give a larger scaled reward.
     let xp;
-    if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
+    // A Horror is worth NOTHING. It exists to price out staying, so paying XP for
+    // one would invert the mechanic exactly: farming Horrors would become the most
+    // efficient grind in the game, on a floor the player was supposed to leave.
+    if (target.horror) { horrorDeadAt = turns; xp = 0; }
+    else if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
-    gainXP(xp);
+    if (xp > 0) gainXP(xp);
     tickBoonKillCounters();
     _boss.onKill(target);
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
@@ -2723,7 +2730,9 @@
     // Chasing a trail you cannot reach is how a monster ends up jammed against a
     // wall forever: it never arrives, so it never gives up. Sight resets the
     // clock; running out of it drops the chase wherever it got to.
-    if (canSee(m)) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
+    // A Horror always knows. Breaking line of sight buys distance and a chance to
+    // reach the stairs — it does not buy escape, which is the whole point of it.
+    if (canSee(m) || m.horror) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
     else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
@@ -2843,6 +2852,76 @@
     const every = biome.spawnEvery || 0;
     const cap = biome.spawnCap || 12;
     if (every > 0 && turns % every === 0 && monsters.length < cap) spawnOne();
+  }
+
+  // ---- The floor's patience: the Horror -------------------------------------
+  // A floor tolerates you for FLOOR_PATIENCE turns. Past that it sends something
+  // after you, and it does not stop sending it.
+  //
+  // This is the anti-grind, and it is deliberately a MONSTER rather than a rule.
+  // A hard XP cutoff per monster (Shattered Pixel Dungeon's `maxLvl`) or a forced
+  // descent would both work arithmetically, but they teach the player nothing and
+  // they cannot be played around. A hunter can: you can run from it, break line of
+  // sight, fight it if you have the resources, or — the intended read — take the
+  // stairs. Grinding stops being disallowed and starts being expensive, which is
+  // the same answer the surprise/ambush system gives everywhere else in the game.
+  //
+  // `turns` already resets in generateLevel, so it IS the per-floor clock; no
+  // second counter to keep in sync.
+  const FLOOR_PATIENCE = 1000;    // turns of welcome before the floor turns on you
+  const FLOOR_WARNING = 900;      // when it starts to be felt
+  const HORROR_RESPAWN = 60;      // turns after a kill before the next one comes
+  const HORROR_HP_MULT = 3;       // it is the same creature, wrong
+  const HORROR_DMG_MULT = 2;
+  let horrorWarned = false, horrorDeadAt = -1;
+  // Which monster the Horror wears. Authored per biome (`horror` in data.js);
+  // falls back to the deepest-starting monster the biome spawns, so a biome that
+  // has not been given one yet still gets its scariest resident rather than none.
+  function horrorType() {
+    if (biome.horror && VERMIN[biome.horror]) return biome.horror;
+    let best = null, bestFloor = -1;
+    for (const k of (biome.monsters || [])) {
+      const v = VERMIN[k];
+      if (!v || v.minFloor == null) continue;
+      if (v.minFloor > bestFloor) { bestFloor = v.minFloor; best = k; }
+    }
+    return best;
+  }
+  function spawnHorror() {
+    const type = horrorType();
+    if (!type) return false;
+    for (let t = 0; t < 200; t++) {
+      const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
+      if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
+      if (cheb(x, y, player.x, player.y) < 8) continue;      // it arrives out of sight, at a distance
+      const m = makeMonster(type, x, y);
+      m.horror = true;
+      m.name = biome.horrorName || "Horror";
+      m.maxHp = Math.max(1, Math.round(m.maxHp * HORROR_HP_MULT)); m.hp = m.maxHp;
+      m.atkMin = Math.round((m.atkMin || 0) * HORROR_DMG_MULT);
+      m.atkMax = Math.round((m.atkMax || 0) * HORROR_DMG_MULT);
+      startHunting(m);                                        // it already knows where you are
+      monsters.push(m);
+      return true;
+    }
+    return false;
+  }
+  function maybeHorror() {
+    if (bossActive || inShop || dead) return;                 // a boss floor has its own pressure
+    if (turns === FLOOR_WARNING && !horrorWarned) {
+      horrorWarned = true;
+      log("The air goes wrong. You have been here too long.", "hurt");
+      flashScreen("#3a1e1e", 420);
+    }
+    if (turns < FLOOR_PATIENCE) return;
+    if (monsters.some((m) => m.horror && m.hp > 0)) return;    // one at a time
+    // Killing it buys a breather, not the floor back.
+    if (horrorDeadAt >= 0 && turns - horrorDeadAt < HORROR_RESPAWN) return;
+    if (spawnHorror()) {
+      horrorDeadAt = -1;
+      log("Something is coming for you.", "hurt");
+      flashScreen("#5a1e1e", 500);
+    }
   }
 
   // One monster action (its burn tick, stun, and AI move/attack). Returns after
@@ -3040,6 +3119,7 @@
     healQueueTick();
     searchForTraps();
     maybeReinforce();
+    maybeHorror();
     updateHotbar();
     // Doors/bushes count as open while something stands in them, so the monsters
     // that just moved have changed what you can see through. Recompute before the
@@ -5688,6 +5768,14 @@
       }));
     },
     turns: () => turns,
+    // ---- Horror (the floor's patience) test hooks ----
+    setTurns: (n) => { turns = n; },
+    horrorState: () => {
+      const h = monsters.find((m) => m.horror && m.hp > 0);
+      return { turns, warned: horrorWarned, deadAt: horrorDeadAt, type: horrorType(),
+               alive: !!h, at: h ? { x: h.x, y: h.y } : null, hp: h ? h.hp : 0,
+               maxHp: h ? h.maxHp : 0, atk: h ? [h.atkMin, h.atkMax] : null, state: h ? h.state : null };
+    },
     // ---- Boon-system test hooks ----
     setKillCount: (n) => { player.killCount = n; },
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },

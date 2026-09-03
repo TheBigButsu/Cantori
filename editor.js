@@ -540,7 +540,7 @@
     const h = document.createElement("h2"); h.textContent = "biomes — " + biomeRows.length + " in depth order"; bar.appendChild(h);
     wrap.appendChild(bar);
     const note = document.createElement("p"); note.className = "hint";
-    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear — that is the DEPTH it starts on, 1–25). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors shallower than a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs.";
+    note.textContent = "The biomes in depth order (each is 5 floors). Monsters = which creatures can spawn here (click to toggle; a monster also needs a minFloor on the Monsters tab to actually appear — that is the DEPTH it starts on, 1–25). Spawn mix is each monster's % chance to be the one that spawns, per floor — keep a floor's column ≤100% (over 100 turns red); floors shallower than a monster's minFloor are locked. spawnInitial = how many spawn on a fresh floor — one number, or per-floor like 3,5,5,5. exitStyle \"wall\" carves the exit into the border; blank = stairs. horror = which monster this biome sends after a player who overstays a floor (1000 turns); blank falls back to the biome's deepest-starting monster, and horror name is what it is called when it arrives.";
     wrap.appendChild(note);
     const bossKeys = rows.bosses.map((r) => r.key);
     const monKeys = rows.monsters.map((r) => r.key);
@@ -569,6 +569,10 @@
       grid.appendChild(biomeField(b, "spawnEvery", "spawnEvery", "num"));
       grid.appendChild(biomeField(b, "spawnCap", "spawnCap", "num"));
       grid.appendChild(biomeField(b, "spawnInitial", "spawnInitial", "spawn"));
+      // The Horror: which monster this biome's floor sends after a player who
+      // overstays (1000 turns). Blank = the biome's deepest-starting monster.
+      grid.appendChild(biomeField(b, "horror", "horror", "select", [""].concat(monKeys)));
+      grid.appendChild(biomeField(b, "horror name", "horrorName", "text"));
       grid.appendChild(biomeField(b, "final biome?", "final", "bool"));
       grid.appendChild(terrainField(b, "water", "pools"));
       grid.appendChild(terrainField(b, "grass", "patches"));
@@ -1116,6 +1120,16 @@
       ],
     },
     {
+      title: "The floor's patience (the Horror)",
+      rows: [
+        { name: "Grace period", formula: "1000 turns on a floor", note: "A warning lands at 900 turns. The turn count resets on every new floor, so this is per-floor, not per-run." },
+        { name: "What arrives", formula: "the biome's `horror` monster, or its deepest-starting monster if unset", note: "Spawned out of sight, at least 8 tiles away, already hunting." },
+        { name: "How it differs", formula: "×3 max HP, ×2 attack, and it never loses your trail", note: "Every other monster gives up after 10 turns with no line of sight; the Horror does not. Breaking sight buys distance, not escape." },
+        { name: "XP awarded", formula: "0", note: "Deliberate: paying XP for a Horror would make farming them the best grind in the game, on the floor the player was meant to leave." },
+        { name: "If you kill it", formula: "another comes 60 turns later", note: "Killing it buys a breather, not the floor back." },
+      ],
+    },
+    {
       title: "Experience & leveling",
       rows: [
         { name: "XP to next level", formula: "threshold = current level × 6", note: "So reaching level L costs 3 × L × (L−1) XP in total: 6 to reach level 2, 270 for level 10, 1140 for level 20. Quadratic, the same shape Shattered Pixel Dungeon uses." },
@@ -1649,7 +1663,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",

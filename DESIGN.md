@@ -385,3 +385,34 @@ built around the mechanic rather than retrofitted to it.
   buys their way out of it.
 
 Monsters and bosses for each land after that biome's level design is settled.
+
+## The floor's patience — the Horror — DONE
+
+A floor tolerates you for **1000 turns**. A warning lands at 900 ("the air goes
+wrong"); at 1000 something comes after you, and it does not stop coming.
+
+This is the anti-grind, and it is deliberately **a monster rather than a rule**. A
+hard XP cutoff per monster (Shattered Pixel Dungeon's `maxLvl`) or a forced descent
+would both work arithmetically, but neither can be played around. A hunter can: run
+from it, break line of sight to buy distance, fight it if you have the resources,
+or — the intended read — take the stairs. Grinding stops being *disallowed* and
+starts being *expensive*, which is the answer the ambush system already gives
+everywhere else in the game.
+
+- **What arrives** is authored per biome: `horror` in `data.js` names a monster key,
+  and `horrorName` is what it is called when it shows up. Blank falls back to the
+  biome's deepest-starting monster, so a biome that has not been given one yet still
+  sends its scariest resident rather than nothing. It reuses that monster's sprite,
+  so no new art ships with the mechanic.
+- **How it differs** from the animal it wears: ×3 max HP, ×2 attack, and it never
+  loses the trail. Every other monster gives up after 10 turns without line of
+  sight; the Horror does not.
+- **It is worth 0 XP.** This one is load-bearing. Paying XP for a Horror would
+  invert the mechanic exactly — farming them would become the most efficient grind
+  in the game, on the floor the player was supposed to leave.
+- **Killing it buys 60 turns**, then the next one comes. Not the floor back.
+- It stays out of boss floors and the merchant den, which have their own pressure,
+  and the clock (`turns`, already reset by `generateLevel`) restarts every floor.
+
+Still open: the XP curve is `level × 6` and nothing else caps levelling, so the
+Horror is the only brake. If a run still over-levels, `FLOOR_PATIENCE` is the dial.
