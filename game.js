@@ -126,16 +126,22 @@
   const critMult = () => (BASE_CRIT_DMG + eff("LCK") * 2) / 100;
   // To-hit is difference-based and still easy to read: 50% at even acc/eva, and
   // every point of lead pushes it toward — but never all the way to — certainty.
-  // The lead runs through a tanh so the first points of accuracy are worth the
-  // most and the fiftieth is worth almost nothing.
   //
-  // It used to be a flat 3 percentage points per point of lead, clamped at 95%.
-  // Accuracy grows every single level while monster evasion never did, so the
-  // clamp was reached at a 15-point lead — which a warrior clears around level 4.
-  // Past that, accuracy, evasion and every affix that touched them all stopped
-  // meaning anything, in both directions at once: you hit everything and nothing
-  // could hit you. A curve that never saturates keeps them live for the whole run.
-  const HIT_SCALE = 20;   // points of lead worth ~63% of the way to the 95% ceiling
+  // A point of lead is worth ~1 percentage point. It used to be worth 3, clamped
+  // at 95%, which the lead reached at 15 points — and accuracy grows every level
+  // while a monster's evasion is a fixed number in data.js, so past that clamp
+  // accuracy, evasion and every affix touching them all stopped meaning anything
+  // in both directions at once: you hit everything and nothing could hit you. Two
+  // monsters authored at evasion 25 and evasion 40 played identically from about
+  // level 19 on, so the column may as well not have been there.
+  //
+  // The lead runs through a tanh rather than being added flat, which over normal
+  // leads (up to ~20) is within a point of a straight 1%/point and only starts to
+  // bend beyond that — so a big accuracy lead still helps, just less and less, and
+  // the curve never arrives at certainty. That last part is the whole point: there
+  // is always headroom left for a monster's evasion to occupy, which is what keeps
+  // a genuinely slippery foe slippery at level 25.
+  const HIT_SCALE = 45;   // a lead of this many points lands ~84% (tanh(1) of the way up)
   const hitChance = (acc, eva) => 0.5 + 0.45 * Math.tanh((acc - eva) / HIT_SCALE);
   const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
   // RES cuts a percentage off every incoming hit, on a curve that approaches but
@@ -5181,7 +5187,7 @@
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">crit% = 5 + DEX + LCK×0.5 + skills · crit dmg% = 125 + LCK×2 + skills</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
-      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 20) — a lead always helps, and never becomes certainty</div>` +
+      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 45) — about 1% per point of lead, always helping, never becoming certainty</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
       `<div class="cline cformula">incoming dmg ×(1 − RES ÷ (RES + 100)), then armor block subtracted</div>` +

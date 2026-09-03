@@ -302,12 +302,15 @@ The complaint this answers: *"once I get to L4 I'm basically a god."* Every curv
 that mattered was linear in a quantity that only ever went up, so each of them ran
 out of road at roughly the same point in a run.
 
-- **Hit chance no longer saturates.** It was `50% + (acc − eva) × 3%`, clamped at
-  95% — reached at a 15-point lead, which a Warrior clears around level 4. Now
-  `50% + 45% × tanh((acc − eva) / 20)`: the first points of accuracy are worth the
-  most, the fiftieth is worth almost nothing, and neither 100% nor 0% is ever
-  reached. Accuracy, evasion and every affix touching them stay live for the whole
-  run, in both directions.
+- **Hit chance no longer saturates, and a point of lead is worth ~1%, not 3%.** It
+  was `50% + (acc − eva) × 3%`, clamped at 95% — a 15-point lead, which a Warrior
+  clears around level 4. Now `50% + 45% × tanh((acc − eva) / 45)`. Over normal
+  leads that is within a point of a straight 1%/point; it only bends beyond about
+  20, and it never arrives at certainty. Both halves matter: the gentler slope
+  stops accuracy from outrunning the monster roster, and the missing ceiling
+  leaves headroom for a monster's `eva` to keep mattering. Under the old rule a
+  Snake at eva 30 was a 95% hit from level 12 on — indistinguishable from a Rat;
+  it is now 61% at 12, 66% at 15 and still only 80% at 25.
 - **RES can no longer reach immunity.** It was a flat `1 − RES/100`, so 100 RES was
   literal invulnerability — and RES climbs on its own, from a class's secondary
   stat, Kethara's Gift of the Faithful, and gear affixes. Now `RES / (RES + 100)`:

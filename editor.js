@@ -1038,7 +1038,7 @@
       rows: [
         { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
         { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
-        { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 20)", note: "50% at even acc/eva; a lead of 20 points is worth about 84%, 40 points about 93%. Diminishing, so it never saturates — the old flat 3%/point hit its 95% cap at a 15-point lead and made accuracy and evasion both stop mattering by mid-run." },
+        { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 45)", note: "50% at even acc/eva, then roughly 1 percentage point per point of lead — over normal leads the tanh is within a point of a straight 1%/point, and only bends beyond about 20. A 45-point lead is worth 84%, a 90-point lead 89%. It never reaches certainty, which is what leaves room for a monster's eva column to keep mattering at high level: the old flat 3%/point hit its 95% cap at a 15-point lead, so eva 25 and eva 40 played identically from mid-run on." },
       ],
     },
     {
