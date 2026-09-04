@@ -284,48 +284,6 @@ window.CANTORI_DATA = {
       "toHit": -5,
       "rarity": 4
     },
-    "leather": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Leather Armor",
-      "tier": 1,
-      "req": {
-        "STR": 0
-      },
-      "glyph": "[",
-      "color": "#b98a5a",
-      "defMin": 1,
-      "defMax": 4,
-      "ac": 2
-    },
-    "chain": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Chain Mail",
-      "tier": 3,
-      "glyph": "[",
-      "color": "#b9c0c8",
-      "req": {
-        "STR": 15
-      },
-      "defMin": 2,
-      "defMax": 10,
-      "ac": 3
-    },
-    "plate": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Plate Armor",
-      "tier": 5,
-      "glyph": "[",
-      "color": "#dfe6f0",
-      "req": {
-        "STR": 40
-      },
-      "defMin": 3,
-      "defMax": 25,
-      "ac": 4
-    },
     "ring_copper": {
       "cat": "ring",
       "name": "Copper Ring",
@@ -430,35 +388,207 @@ window.CANTORI_DATA = {
       "speed": 1.2,
       "rarity": 0
     },
-    "Shitty_armor": {
+    "grass_armor": {
       "cat": "armor",
-      "name": "Shitty armor",
-      "req": {
-        "STR": 0
-      },
-      "glyph": "/",
-      "color": "#cccccc",
       "sub": "light",
-      "defMin": 0,
-      "defMax": 1,
-      "ac": 1,
-      "tier": 0,
-      "rarity": 0
-    },
-    "cloth": {
-      "cat": "armor",
-      "name": "Cloth",
-      "accuracy": 0,
-      "tier": 1,
-      "req": {
-        "STR": 0
-      },
-      "glyph": "/",
-      "color": "#cccccc",
+      "name": "Grass armor",
       "defMin": 0,
       "defMax": 2,
-      "ac": 1,
-      "sub": "light"
+      "tier": 1,
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 1,
+      "mp": 5
+    },
+    "cloth_armor": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Cloth armor",
+      "defMin": 0,
+      "defMax": 4,
+      "tier": 2,
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 2,
+      "mp": 8
+    },
+    "refined_robe": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Refined robe",
+      "defMin": 1,
+      "defMax": 7,
+      "tier": 3,
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 3,
+      "mp": 12
+    },
+    "mages_robe": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Mages robe",
+      "defMin": 2,
+      "defMax": 11,
+      "tier": 4,
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 4,
+      "mp": 17
+    },
+    "threads_of_fate": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Threads of fate",
+      "defMin": 3,
+      "defMax": 17,
+      "tier": 5,
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 5,
+      "mp": 23
+    },
+    "padded_jerkin": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Padded jerkin",
+      "defMin": 1,
+      "defMax": 3,
+      "tier": 1,
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#c9a86a"
+    },
+    "studded_leather": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Studded leather",
+      "defMin": 2,
+      "defMax": 6,
+      "tier": 2,
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 2
+      }
+    },
+    "scale_hauberk": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Scale hauberk",
+      "defMin": 3,
+      "defMax": 10,
+      "tier": 3,
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 4
+      }
+    },
+    "elven_mail": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Elven mail",
+      "defMin": 5,
+      "defMax": 16,
+      "tier": 4,
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 6
+      }
+    },
+    "windwoven_coat": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Windwoven coat",
+      "defMin": 7,
+      "defMax": 24,
+      "tier": 5,
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 8
+      }
+    },
+    "rusted_mail": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Rusted mail",
+      "defMin": 2,
+      "defMax": 5,
+      "tier": 1,
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 4
+      }
+    },
+    "chainmail": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Chainmail",
+      "defMin": 4,
+      "defMax": 9,
+      "tier": 2,
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 6
+      }
+    },
+    "banded_plate": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Banded plate",
+      "defMin": 6,
+      "defMax": 15,
+      "tier": 3,
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 8
+      }
+    },
+    "knights_plate": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Knight's plate",
+      "defMin": 9,
+      "defMax": 23,
+      "tier": 4,
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 10
+      }
+    },
+    "adamant_bulwark": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Adamant bulwark",
+      "defMin": 13,
+      "defMax": 34,
+      "tier": 5,
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 12
+      }
     }
   },
   "loot": {
@@ -1235,7 +1365,7 @@ window.CANTORI_DATA = {
       },
       "start": {
         "weapon": "Shitty_sword",
-        "armor": "Shitty_armor"
+        "armor": "rusted_mail"
       },
       "baseHp": 18,
       "baseMp": 5,
@@ -1515,7 +1645,7 @@ window.CANTORI_DATA = {
         "LCK": 10
       },
       "start": {
-        "armor": "leather"
+        "armor": "padded_jerkin"
       },
       "baseHp": 16,
       "baseMp": 6,
@@ -1615,7 +1745,7 @@ window.CANTORI_DATA = {
       "unlock": "start",
       "start": {
         "weapon": "dagger",
-        "armor": "cloth"
+        "armor": "grass_armor"
       },
       "blurb": "Frail, and the only thing on the floor that can kill from across the room.",
       "stats": {

@@ -604,3 +604,38 @@ level, which drove a main stat to 53 by level 20 — a +21 modifier, nothing lik
 bounded thing `(score − 10) / 2` assumes. At this rate a main stat gains 10 points
 over 20 levels and its modifier tops out near +7. HP and MP still rise every level
 through the `levelUp` set; only the stats slowed down.
+
+## Armour: three identities, not three points on one axis — DONE
+
+Armour was the weakest drop in the game: every piece was "more AC, more soak", so a
+new one was interesting only if the number was bigger. The three subtypes are now
+three different answers to *how do I not die*.
+
+- **Light** — a caster's robe. Grants **INT (= its tier) and MP** outright, thin
+  mitigation, and **no AC at all**. *Grass armor, Cloth armor, Refined robe, Mages
+  robe, Threads of fate.*
+- **Medium** — the only armour that turns DEX into AC, and so the only place AC is a
+  live stat. It lets through **tier + plus** points of your DEX modifier: a tier-1
+  jerkin caps you at +1 however nimble you are, and **each upgrade scroll widens what
+  your DEX is allowed to do**. Spending past your own modifier is wasted — the cap
+  never invents DEX you do not have. *Padded jerkin, Studded leather, Scale hauberk,
+  Elven mail, Windwoven coat.*
+- **Heavy** — no AC, no DEX, the largest mitigation ranges in the game. You get hit;
+  it barely matters. *Rusted mail, Chainmail, Banded plate, Knight's plate, Adamant
+  bulwark.*
+
+Mitigation is the item's own min–max roll (no subtype bonus any more), exponential
+with widening gaps so a **tier** jump is felt more than an upgrade scroll:
+
+| | t1 | t2 | t3 | t4 | t5 |
+|---|---|---|---|---|---|
+| light | 0–2 | 0–4 | 1–7 | 2–11 | 3–17 |
+| medium | 1–3 | 2–6 | 3–10 | 5–16 | 7–24 |
+| heavy | 2–5 | 4–9 | 6–15 | 9–23 | 13–34 |
+
+**Armour's `+X` runs the opposite way to a weapon's.** A weapon's plus opens its top
+end; armour's raises the floor fast and the ceiling slowly, and the ceiling can at
+most double: `min += floor((plus+1)/2)`, `max = min(2 × base max, base max + plus)`.
+Upgrading armour should make it *dependable*, not spiky — a +3 tier-1 robe is a
+reliable 2–4, not a wild 0–8. Light tier 1 therefore runs 0–2 / 1–3 / 1–4 / 2–4
+across +0…+3.

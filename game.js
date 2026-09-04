@@ -147,7 +147,7 @@
   // at level 20 against 20 at level 1. A modifier is a flat bonus, exactly as it
   // reads, and the per-level growth stays the levelUp set's job.
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(1, (cls.baseHp != null ? cls.baseHp : HP_BASE) + mod("VIT") * HP_PER_VIT_MOD + (player.lvlHp || 0)); };
-  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + (player.lvlMp || 0)); };
+  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + armorMp() + (player.lvlMp || 0)); };
   const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");
   // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
   // how much DEX it lets through — light takes all of it, medium at most +2, heavy
@@ -385,8 +385,12 @@
   // scales the same way as weapon damage, by tier.
   const baseDefMin = (key) => { const g = GEAR[key]; return g.defMin != null ? g.defMin : (g.def || 0); };
   const baseDefMax = (key) => { const g = GEAR[key]; return g.defMax != null ? g.defMax : (g.def != null ? g.def : (g.defMin || 0)); };
-  const gDefMin = (inst) => baseDefMin(inst.key) + (gearTier(inst.key) - 1) * (inst.plus || 0);
-  const gDefMax = (inst) => baseDefMax(inst.key) + gearTier(inst.key) * 2 * (inst.plus || 0);
+  // Armour upgrades raise the FLOOR quickly and the ceiling slowly, and the ceiling
+  // can at most double. That is what makes a +3 tier-1 robe a reliable 2–4 rather
+  // than a wild 0–8: upgrading armour should make it dependable, not spiky. (A
+  // weapon's +X still works the other way, opening its top end — see gDmgMax.)
+  const gDefMin = (inst) => baseDefMin(inst.key) + Math.floor(((inst.plus || 0) + 1) / 2);
+  const gDefMax = (inst) => { const b = baseDefMax(inst.key); return Math.min(b * 2, b + (inst.plus || 0)); };
   const gDef = (inst) => gDefMax(inst);   // top-end block (enchant power, parallels weapon dmgMax)
   // A stat affix's +X is additive-triangular: +1 = 1, +2 = 1+2 = 3, +3 = 1+2+3 = 6…
   const triangular = (n) => (n * (n + 1)) / 2;
@@ -399,8 +403,13 @@
   function equipStat(statKey) {
     let n = 0;
     for (const it of wornItems()) n += gStatBonus(it, statKey);
+    // A light armour's INT is a property of the garment itself, not a rolled affix —
+    // every robe of that tier carries it, so it is a base gear field.
+    if (statKey === "INT" && player.armor) n += GEAR[player.armor.key].int || 0;
     return n;
   }
+  // Likewise its MP pool.
+  const armorMp = () => (player.armor ? (GEAR[player.armor.key].mp || 0) : 0);
   // Rarity → quality multiplier used by the Guild's Scribe's Intellect / Blacksmith's
   // Arm boons: INT (or STR) rises with your gear's total upgrades weighted by quality.
   const QUALITY_MULT = { white: 1.0, green: 1.5, blue: 2.0, purple: 3.0, gold: 5.0 };
@@ -468,19 +477,35 @@
   const weaponSub = () => (player.weapon ? (GEAR[player.weapon.key].sub || "") : "");
   // Armor subtype: lighter armor dodges better (evasion), heavier mitigates more
   // damage on top of the item's def. Tunable here.
-  // Armour subtypes, 5e-shaped: light takes the whole DEX modifier, medium caps it
-  // at +2, heavy takes none. `mit` is this game's own addition — flat damage soaked
-  // on top of AC — and it runs the other way, which is what pays heavy armour back
-  // for the DEX it refuses.
-  const ARMOR_SUB = { light: { dexCap: Infinity, mit: 0 }, medium: { dexCap: 2, mit: 1 }, heavy: { dexCap: 0, mit: 3 } };
+  // Armour subtypes are three different answers to "how do I not die", not three
+  // points on one axis:
+  //
+  //   light   — a caster's robe. Grants INT and MP outright; mitigation is thin and
+  //             it offers no AC at all.
+  //   medium  — the only armour that turns DEX into AC, and the only one where AC
+  //             is a live stat. How much it lets through is TIER + the item's plus,
+  //             so a tier-1 robe caps you at +1 no matter how nimble you are, and
+  //             upgrade scrolls literally widen what your DEX is allowed to do.
+  //             Spending past your own modifier is wasted — the cap never invents
+  //             DEX you do not have.
+  //   heavy   — no AC and no DEX, just the largest mitigation range in the game.
+  //             You get hit; it barely matters.
+  //
+  // Mitigation itself is the item's own defMin/defMax roll, so a subtype no longer
+  // carries a flat `mit` bonus — the ranges below say everything.
+  const ARMOR_SUB = { light: { dex: false }, medium: { dex: true }, heavy: { dex: false } };
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
-  // How much of the DEX modifier this armour lets through: light all of it, medium
-  // at most +2, heavy none — 5e's rule, and the reason plate isn't simply best.
-  const armorDexCap = () => { const a = armorSub(); return a && a.dexCap != null ? a.dexCap : Infinity; };
-  const armorDexAllowed = (m) => Math.min(m, armorDexCap());
-  const armorSubMit = () => { const a = armorSub(); return a ? (a.mit || 0) : 0; };
-  // A worn armour piece's own AC.
-  const armorAC = () => (player.armor ? (GEAR[player.armor.key].ac || 0) : 0);
+  // Only medium armour converts DEX into AC, and only up to tier + plus of it.
+  const armorDexCap = () => {
+    const a = armorSub();
+    if (!a || !a.dex || !player.armor) return 0;
+    return gearTier(player.armor.key) + (player.armor.plus || 0);
+  };
+  const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
+  const armorSubMit = () => 0;   // mitigation lives entirely in the item's defMin/defMax now
+  // Armour grants no flat AC — see ARMOR_SUB. Medium's contribution is the DEX it
+  // unlocks; light and heavy pay you in INT/MP and mitigation instead.
+  const armorAC = () => 0;
   // Passive haste from worn enchants, tiered by the item bearing it. There are two
   // independent kinds and an enchant carries exactly one: `haste` quickens the
   // weapon, `walkHaste` quickens the feet. Kit that speeds your swing does nothing
@@ -542,8 +567,10 @@
   // Display damage/def hide the +X until identified (combat still uses the real gDmg*/gDef).
   const dDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + dispPlus(inst);
   const dDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + dispPlus(inst);
-  const dDefMin = (inst) => baseDefMin(inst.key) + dispPlus(inst);
-  const dDefMax = (inst) => baseDefMax(inst.key) + dispPlus(inst);
+  // Mirror gDefMin/gDefMax exactly, but with the plus hidden until identified —
+  // the pack must never quote a range the item does not actually roll.
+  const dDefMin = (inst) => baseDefMin(inst.key) + Math.floor((dispPlus(inst) + 1) / 2);
+  const dDefMax = (inst) => { const b = baseDefMax(inst.key); return Math.min(b * 2, b + dispPlus(inst)); };
   const dDef = (inst) => dDefMax(inst);
   // "3" if the block is fixed, "1–3" if it's a range — for gear labels.
   const defRange = (lo, hi) => (lo === hi ? "" + lo : lo + "–" + hi);

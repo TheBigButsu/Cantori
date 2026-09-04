@@ -78,9 +78,10 @@
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
-    // Armour's own column set: no weapon-only damage columns, plus its AC. The
-    // subtype also caps how much of the DEX modifier gets through — light all of it,
-    // medium at most +2, heavy none.
+    // Armour's own column set. There is no AC column: armour grants no flat AC.
+    // The SUBTYPE decides what a piece is for — light pays in INT/MP, medium turns
+    // DEX into AC (up to tier + plus of it), heavy just soaks. Mitigation is the
+    // min/max range rolled on every hit taken.
     armor: [
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
@@ -88,8 +89,8 @@
       { f: "name", type: "text", cls: "name" },
       { f: "speed", type: "num", step: "0.1" }, { f: "toHit", label: "to-hit", type: "num" },
       { f: "range", type: "num" },
-      { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
-      { f: "ac", label: "AC", type: "num" },
+      { f: "defMin", label: "mit min", type: "num" }, { f: "defMax", label: "mit max", type: "num" },
+      { f: "int", label: "INT (light)", type: "num" }, { f: "mp", label: "MP (light)", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
@@ -1044,7 +1045,7 @@
       title: "Accuracy & evasion",
       rows: [
         { name: "To hit", formula: "toHit = proficiency + mod(DEX) + weapon's to-hit + boon acc + passive skill acc", note: "Proficiency is 5e's: +2, rising by one every four levels (+2 at 1–4, +3 at 5–8, … +6 at 17+). There is no per-level accuracy any more — on a d20, +2 a level is +10 percentage points a level." },
-        { name: "Armour Class", formula: "AC = 10 + min(mod(DEX), subtype DEX cap) + armour's own AC + boon eva + passive skill eva", note: "DEX cap by subtype: light unlimited, medium +2, heavy 0. Heavy armour buys that back with flat mitigation (light +0, medium +1, heavy +3 damage soaked)." },
+        { name: "Armour Class", formula: "AC = 10 + min(mod(DEX), armour's tier + plus) + boon eva + passive skill eva — MEDIUM armour only", note: "Armour grants no flat AC. Only medium turns DEX into AC, and only up to tier + plus of it: a tier-1 jerkin caps you at +1 however nimble you are, and each upgrade scroll widens what your DEX is allowed to do. Spending past your own modifier is wasted. Light and heavy give no AC at all — they pay in INT/MP and in mitigation." },
         { name: "Hit roll", formula: "a hit is d20 + attacker's to-hit ≥ defender's AC", note: "A natural 1 always misses and a natural 20 always hits, so every fight stays 5–95%. One point of to-hit or AC is worth exactly 5 percentage points, which is the whole reason ability modifiers can be small: mod(DEX) spanning −1…+2 is a 15-point swing here, where on the old tanh curve it was worth 3." },
       ],
     },
@@ -1069,14 +1070,14 @@
       rows: [
         { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },
         { name: "RES reduction", formula: "raw × (1 − m / (m + 10)), m = mod(RES)", note: "Applied FIRST, as a % of the raw hit. +2 cuts 17%, +5 a third, +10 a half; immunity is unreachable." },
-        { name: "Armor block", formula: "− random(armor's def min, def max) − armor subtype mitigation − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Armor subtype mitigation: light +0, medium +1, heavy +3, added on top of the item's own def range. Final damage is floored at 1 no matter how much is mitigated." },
+        { name: "Armour block", formula: "− random(armour's mit min, mit max) − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Subtypes no longer carry a flat bonus — mitigation is entirely the item's own range, which is where the three armour identities live. Final damage is floored at 1 no matter how much is mitigated." },
       ],
     },
     {
       title: "Weapon / armor upgrades (+X)",
       rows: [
         { name: "Weapon +X", formula: "dmg min += (tier − 1) × plus,  dmg max += tier × 2 × plus", note: "Higher-tier gear scales much harder per point of +X." },
-        { name: "Armor +X", formula: "def min += (tier − 1) × plus,  def max += tier × 2 × plus", note: "Same shape as the weapon formula." },
+        { name: "Armour +X", formula: "mit min += floor((plus + 1) / 2),  mit max = min(2 × base max, base max + plus)", note: "The OPPOSITE shape to a weapon's. A weapon's +X opens its top end; armour's raises the floor fast and the ceiling slowly, and the ceiling can at most double. Upgrading armour should make it dependable, not spiky — a +3 tier-1 robe is a reliable 2–4, not a wild 0–8." },
       ],
     },
     {
@@ -1120,6 +1121,15 @@
         { name: "Prerequisites", formula: "req = every listed skill at its listed rank (AND); reqAny = at least one of them (OR)", note: "A rank of \"max\" means that skill's own top rank. Both are spelled out in words on the skill's card in-game, met or not." },
         { name: "Points gate", formula: "reqPoints = total ranks already bought anywhere in this class's tree", note: "For deep nodes that shouldn't depend on one particular branch." },
         { name: "Cost", formula: "1 unspent point per rank", note: "Points come only from Potions of Insight — 1 guaranteed per floor, 3 more on a boss kill." },
+      ],
+    },
+    {
+      title: "Armour: three identities",
+      rows: [
+        { name: "Light", formula: "+INT and +MP, thin mitigation, no AC", note: "A caster's robe. INT bonus equals its tier; MP runs 5/8/12/17/23 by tier plus one per point of plus. Grass armor, Cloth armor, Refined robe, Mages robe, Threads of fate." },
+        { name: "Medium", formula: "AC = 10 + min(mod(DEX), tier + plus), mid mitigation", note: "The only armour where AC is a live stat, and the only place upgrade scrolls buy AC — each +1 opens one more point of your own DEX. Padded jerkin, Studded leather, Scale hauberk, Elven mail, Windwoven coat." },
+        { name: "Heavy", formula: "no AC, no DEX, the largest mitigation ranges", note: "You get hit; it barely matters. Rusted mail, Chainmail, Banded plate, Knight\'s plate, Adamant bulwark." },
+        { name: "Mitigation by tier", formula: "light 0–2 / 0–4 / 1–7 / 2–11 / 3–17 · medium 1–3 / 2–6 / 3–10 / 5–16 / 7–24 · heavy 2–5 / 4–9 / 6–15 / 9–23 / 13–34", note: "Exponential with widening gaps, so a tier jump is felt more than an upgrade scroll." },
       ],
     },
     {
