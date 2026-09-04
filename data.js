@@ -9,10 +9,10 @@ window.CANTORI_DATA = {
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
-      "eva": 12,
+      "ac": 13,
       "atkMin": 1,
       "atkMax": 4,
-      "acc": 5
+      "toHit": 1
     },
     "bat": {
       "name": "Bat",
@@ -24,8 +24,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "atkMin": 1,
       "atkMax": 4,
-      "eva": 20,
-      "acc": 5
+      "ac": 15,
+      "toHit": 1
     },
     "snake": {
       "name": "Snake",
@@ -34,9 +34,9 @@ window.CANTORI_DATA = {
       "color": "#7ec98a",
       "minFloor": 3,
       "speed": 1,
-      "acc": 10,
+      "toHit": 2,
       "atkMin": 1,
-      "eva": 30,
+      "ac": 18,
       "atkMax": 6
     },
     "spider": {
@@ -47,8 +47,8 @@ window.CANTORI_DATA = {
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
-      "acc": 15,
-      "eva": 10,
+      "toHit": 4,
+      "ac": 12,
       "range": 4,
       "ranged": true,
       "atkMin": 1,
@@ -56,7 +56,7 @@ window.CANTORI_DATA = {
     },
     "wolf": {
       "name": "Wolf",
-      "acc": 0,
+      "toHit": 0,
       "glyph": "W",
       "color": "#9aa0a8",
       "hp": 16,
@@ -64,7 +64,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "minFloor": 2,
       "atkMin": 2,
-      "eva": 15
+      "ac": 14
     },
     "bee": {
       "name": "Bee",
@@ -72,13 +72,13 @@ window.CANTORI_DATA = {
       "hp": 10,
       "atkMin": 2,
       "atkMax": 6,
-      "acc": 9,
+      "toHit": 2,
       "glyph": "e",
       "color": "#e6c34a",
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "eva": 25,
+      "ac": 16,
       "minFloor": 2
     },
     "bear": {
@@ -87,8 +87,8 @@ window.CANTORI_DATA = {
       "hp": 35,
       "atkMin": 2,
       "atkMax": 4,
-      "acc": 15,
-      "eva": 6,
+      "toHit": 4,
+      "ac": 12,
       "charge": true,
       "glyph": "B",
       "color": "#8a6a44",
@@ -100,8 +100,8 @@ window.CANTORI_DATA = {
       "name": "Harpy",
       "flying": true,
       "atkMax": 12,
-      "acc": 12,
-      "eva": 14,
+      "toHit": 3,
+      "ac": 14,
       "ranged": true,
       "range": 4,
       "glyph": "H",
@@ -217,8 +217,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "walkSpeed": 1,
       "attackSpeed": 1,
-      "acc": 8,
-      "eva": 10,
+      "toHit": 2,
+      "ac": 12,
       "minFloor": 7
     },
     "Goblin_archer": {
@@ -228,8 +228,8 @@ window.CANTORI_DATA = {
       "atkMax": 8,
       "glyph": "?",
       "color": "#c0c0c0",
-      "acc": 20,
-      "eva": 0,
+      "toHit": 5,
+      "ac": 10,
       "range": 4,
       "ranged": true,
       "minFloor": 8
@@ -248,7 +248,7 @@ window.CANTORI_DATA = {
       },
       "glyph": "/",
       "color": "#cfc3a0",
-      "accuracy": 9,
+      "toHit": 3,
       "dmgMax": 4,
       "rarity": 25
     },
@@ -266,7 +266,7 @@ window.CANTORI_DATA = {
         "STR": 10
       },
       "rarity": 25,
-      "accuracy": 6
+      "toHit": 2
     },
     "big axe": {
       "cat": "weapon",
@@ -281,50 +281,8 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 15
       },
-      "accuracy": -15,
+      "toHit": -5,
       "rarity": 4
-    },
-    "leather": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Leather Armor",
-      "tier": 1,
-      "req": {
-        "STR": 0
-      },
-      "glyph": "[",
-      "color": "#b98a5a",
-      "defMin": 1,
-      "defMax": 4,
-      "evasion": 1
-    },
-    "chain": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Chain Mail",
-      "tier": 3,
-      "glyph": "[",
-      "color": "#b9c0c8",
-      "req": {
-        "STR": 15
-      },
-      "defMin": 2,
-      "defMax": 10,
-      "evasion": 0
-    },
-    "plate": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Plate Armor",
-      "tier": 5,
-      "glyph": "[",
-      "color": "#dfe6f0",
-      "req": {
-        "STR": 40
-      },
-      "defMin": 3,
-      "defMax": 25,
-      "evasion": -10
     },
     "ring_copper": {
       "cat": "ring",
@@ -377,7 +335,7 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "dmgMin": 4,
       "speed": 0.9,
-      "accuracy": -15,
+      "toHit": -5,
       "rarity": 25
     },
     "spear": {
@@ -394,7 +352,7 @@ window.CANTORI_DATA = {
       "range": 2,
       "glyph": "/",
       "color": "#c8b890",
-      "accuracy": 3,
+      "toHit": 1,
       "rarity": 10
     },
     "bow": {
@@ -411,7 +369,7 @@ window.CANTORI_DATA = {
       "color": "#b08a4a",
       "dmgMin": 0,
       "dmgMax": 8,
-      "accuracy": -10,
+      "toHit": -3,
       "rarity": 15
     },
     "Shitty_sword": {
@@ -419,7 +377,7 @@ window.CANTORI_DATA = {
       "name": "Shitty sword",
       "dmgMin": 1,
       "dmgMax": 2,
-      "accuracy": 5,
+      "toHit": 2,
       "tier": 0,
       "req": {
         "STR": 0
@@ -430,35 +388,207 @@ window.CANTORI_DATA = {
       "speed": 1.2,
       "rarity": 0
     },
-    "Shitty_armor": {
+    "grass_armor": {
       "cat": "armor",
-      "name": "Shitty armor",
-      "req": {
-        "STR": 0
-      },
-      "glyph": "/",
-      "color": "#cccccc",
       "sub": "light",
-      "defMin": 0,
-      "defMax": 1,
-      "evasion": 0,
-      "tier": 0,
-      "rarity": 0
-    },
-    "cloth": {
-      "cat": "armor",
-      "name": "Cloth",
-      "accuracy": 0,
-      "tier": 1,
-      "req": {
-        "STR": 0
-      },
-      "glyph": "/",
-      "color": "#cccccc",
+      "name": "Grass armor",
       "defMin": 0,
       "defMax": 2,
-      "evasion": 10,
-      "sub": "light"
+      "tier": 1,
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 1,
+      "mp": 5
+    },
+    "cloth_armor": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Cloth armor",
+      "defMin": 0,
+      "defMax": 4,
+      "tier": 2,
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 2,
+      "mp": 8
+    },
+    "refined_robe": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Refined robe",
+      "defMin": 1,
+      "defMax": 7,
+      "tier": 3,
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 3,
+      "mp": 12
+    },
+    "mages_robe": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Mages robe",
+      "defMin": 2,
+      "defMax": 11,
+      "tier": 4,
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 4,
+      "mp": 17
+    },
+    "threads_of_fate": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Threads of fate",
+      "defMin": 3,
+      "defMax": 17,
+      "tier": 5,
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#8fd6a8",
+      "int": 5,
+      "mp": 23
+    },
+    "padded_jerkin": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Padded jerkin",
+      "defMin": 1,
+      "defMax": 3,
+      "tier": 1,
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#c9a86a"
+    },
+    "studded_leather": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Studded leather",
+      "defMin": 2,
+      "defMax": 6,
+      "tier": 2,
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 2
+      }
+    },
+    "scale_hauberk": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Scale hauberk",
+      "defMin": 3,
+      "defMax": 10,
+      "tier": 3,
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 4
+      }
+    },
+    "elven_mail": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Elven mail",
+      "defMin": 5,
+      "defMax": 16,
+      "tier": 4,
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 6
+      }
+    },
+    "windwoven_coat": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Windwoven coat",
+      "defMin": 7,
+      "defMax": 24,
+      "tier": 5,
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#c9a86a",
+      "req": {
+        "STR": 8
+      }
+    },
+    "rusted_mail": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Rusted mail",
+      "defMin": 2,
+      "defMax": 5,
+      "tier": 1,
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 4
+      }
+    },
+    "chainmail": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Chainmail",
+      "defMin": 4,
+      "defMax": 9,
+      "tier": 2,
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 6
+      }
+    },
+    "banded_plate": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Banded plate",
+      "defMin": 6,
+      "defMax": 15,
+      "tier": 3,
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 8
+      }
+    },
+    "knights_plate": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Knight's plate",
+      "defMin": 9,
+      "defMax": 23,
+      "tier": 4,
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 10
+      }
+    },
+    "adamant_bulwark": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Adamant bulwark",
+      "defMin": 13,
+      "defMax": 34,
+      "tier": 5,
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#9aa6b8",
+      "req": {
+        "STR": 12
+      }
     }
   },
   "loot": {
@@ -976,32 +1106,42 @@ window.CANTORI_DATA = {
       "name": "The Pied Piper",
       "atkMin": 6,
       "atkMax": 10,
-      "hp": 200
+      "hp": 200,
+      "ac": 14,
+      "toHit": 5
     },
     "golem": {
       "arena": "hall",
       "name": "Stone Golem",
       "atkMin": 1,
       "hp": 400,
-      "atkMax": 25
+      "atkMax": 25,
+      "ac": 16,
+      "toHit": 6
     },
     "cultist": {
       "name": "Cultist",
       "hp": 200,
       "atkMin": 0,
-      "atkMax": 20
+      "atkMax": 20,
+      "ac": 16,
+      "toHit": 8
     },
     "mummy": {
       "name": "The Mummy",
       "hp": 90,
       "atkMin": 7,
-      "atkMax": 10
+      "atkMax": 10,
+      "ac": 15,
+      "toHit": 7
     },
     "demigod": {
       "name": "The Demi-God",
       "hp": 150,
       "atkMin": 9,
-      "atkMax": 13
+      "atkMax": 13,
+      "ac": 17,
+      "toHit": 9
     }
   },
   "biomes": [
@@ -1216,16 +1356,16 @@ window.CANTORI_DATA = {
       "secondary": "VIT",
       "unlock": "start",
       "stats": {
-        "STR": 8,
-        "INT": 3,
-        "VIT": 7,
-        "DEX": 4,
-        "RES": 3,
-        "LCK": 4
+        "STR": 15,
+        "INT": 8,
+        "VIT": 14,
+        "DEX": 12,
+        "RES": 13,
+        "LCK": 10
       },
       "start": {
         "weapon": "Shitty_sword",
-        "armor": "Shitty_armor"
+        "armor": "rusted_mail"
       },
       "baseHp": 18,
       "baseMp": 5,
@@ -1235,9 +1375,7 @@ window.CANTORI_DATA = {
       "intRegen": 2,
       "levelUp": {
         "hp": 5,
-        "mp": 2,
-        "accuracy": 2,
-        "evasion": 1
+        "mp": 2
       },
       "blurb": "Front-line brawler. All around weapons master.",
       "skillTree": [
@@ -1499,15 +1637,15 @@ window.CANTORI_DATA = {
       "secondary": "VIT",
       "unlock": "start",
       "stats": {
-        "STR": 4,
-        "INT": 3,
-        "VIT": 7,
-        "DEX": 8,
-        "RES": 3,
-        "LCK": 4
+        "STR": 12,
+        "INT": 8,
+        "VIT": 14,
+        "DEX": 15,
+        "RES": 13,
+        "LCK": 10
       },
       "start": {
-        "armor": "leather"
+        "armor": "padded_jerkin"
       },
       "baseHp": 16,
       "baseMp": 6,
@@ -1517,9 +1655,7 @@ window.CANTORI_DATA = {
       "intRegen": 2,
       "levelUp": {
         "hp": 5,
-        "mp": 2,
-        "accuracy": 1,
-        "evasion": 2
+        "mp": 2
       },
       "blurb": "Fights best barehanded — hurls foes aside and lands harder the longer she goes unarmed.",
       "skillTree": [
@@ -1602,26 +1738,284 @@ window.CANTORI_DATA = {
         }
       ]
     },
-    "adept": {
-      "name": "Adept",
+    "mage": {
+      "name": "ToneTum",
       "main": "INT",
       "secondary": "RES",
-      "unlock": "town",
+      "unlock": "start",
       "start": {
         "weapon": "dagger",
-        "armor": null
+        "armor": "grass_armor"
       },
-      "blurb": "Wands and enchantments over steel. (needs spells system)",
+      "blurb": "Frail, and the only thing on the floor that can kill from across the room.",
       "stats": {
-        "STR": 5,
-        "INT": 5,
-        "VIT": 5,
-        "DEX": 5,
-        "RES": 5,
-        "LCK": 5
+        "STR": 8,
+        "INT": 15,
+        "VIT": 10,
+        "DEX": 12,
+        "RES": 14,
+        "LCK": 13
       },
-      "levelUp": {},
-      "skillTree": []
+      "levelUp": {
+        "hp": 3,
+        "mp": 4
+      },
+      "skillTree": [
+        {
+          "id": "magic_missile",
+          "x": 4,
+          "y": 0,
+          "name": "Magic Missile",
+          "icon": "✦",
+          "kind": "bolt",
+          "innate": true,
+          "desc": "A bolt of force, always at hand. 1–4 damage plus 1 for every character level, for 5 MP.",
+          "levels": [
+            "5 MP · 1–4 damage +1 per character level · known from the start"
+          ],
+          "ranks": [
+            {
+              "mp": 5
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "burning_sensation",
+          "x": 0,
+          "y": 0,
+          "name": "Burning Sensation",
+          "icon": "🔥",
+          "kind": "passive",
+          "desc": "Your bolts and blows leave the target alight.",
+          "levels": [
+            "Sets the target burning (1 damage a turn for 3 turns)",
+            "Burn deals 2 a turn",
+            "Burn lasts 4 turns",
+            "Burn deals 4 a turn for 6 turns"
+          ],
+          "ranks": [
+            {
+              "burnDmg": 1,
+              "burnTurns": 3
+            },
+            {
+              "burnDmg": 2,
+              "burnTurns": 3
+            },
+            {
+              "burnDmg": 2,
+              "burnTurns": 4
+            },
+            {
+              "burnDmg": 4,
+              "burnTurns": 6
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "sleep",
+          "x": 1,
+          "y": 0,
+          "name": "Sleep",
+          "icon": "💤",
+          "kind": "sleepcast",
+          "desc": "Tap a foe. If it is weak enough it drops where it stands — and a sleeper takes the full ambush hit when you strike it.",
+          "levels": [
+            "10 MP · sleeps a target at or below INT ÷ 2 HP · 150 turn cooldown",
+            "Sleeps a target at or below INT HP",
+            "Cooldown 100 turns",
+            "Catches a 5-tile cross — the target and each neighbour"
+          ],
+          "ranks": [
+            {
+              "mp": 10,
+              "cd": 150,
+              "thr": 0.5,
+              "area": 0
+            },
+            {
+              "mp": 10,
+              "cd": 150,
+              "thr": 1,
+              "area": 0
+            },
+            {
+              "mp": 10,
+              "cd": 100,
+              "thr": 1,
+              "area": 0
+            },
+            {
+              "mp": 10,
+              "cd": 100,
+              "thr": 1,
+              "area": 1
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "mp_recovery",
+          "x": 2,
+          "y": 0,
+          "name": "Deep Well",
+          "icon": "🌀",
+          "kind": "passive",
+          "desc": "Mana returns to you faster. Each rank replaces the last, it does not stack on it.",
+          "levels": [
+            "+10% MP regeneration",
+            "+25% MP regeneration",
+            "+50% MP regeneration (character level 5)",
+            "+100% MP regeneration (character level 10)"
+          ],
+          "ranks": [
+            {
+              "mpRegen": 0.1
+            },
+            {
+              "mpRegen": 0.25
+            },
+            {
+              "mpRegen": 0.5,
+              "minLevel": 5
+            },
+            {
+              "mpRegen": 1.0,
+              "minLevel": 10
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "blink",
+          "x": 0,
+          "y": 1,
+          "name": "Blink",
+          "icon": "➹",
+          "kind": "blinkcast",
+          "desc": "Step through the space between. Tap any tile you can see.",
+          "levels": [
+            "20 MP · teleport anywhere in line of sight · 250 turn cooldown",
+            "Every kill takes 10 turns off the cooldown",
+            "Costs 15 MP",
+            "Costs 10 MP, and every kill takes 20 turns off"
+          ],
+          "ranks": [
+            {
+              "mp": 20,
+              "cd": 250,
+              "killCd": 0
+            },
+            {
+              "mp": 20,
+              "cd": 250,
+              "killCd": 10
+            },
+            {
+              "mp": 15,
+              "cd": 250,
+              "killCd": 10
+            },
+            {
+              "mp": 10,
+              "cd": 250,
+              "killCd": 20
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "mirror_image",
+          "x": 1,
+          "y": 1,
+          "name": "Mirror Image",
+          "icon": "👥",
+          "kind": "mirrorcast",
+          "desc": "Cast copies of yourself. Monsters would rather hit them than you.",
+          "levels": [
+            "30 MP · one still image beside you · 200 turn cooldown",
+            "Two images",
+            "Two images, and they wander",
+            "Two wandering images, and you go unseen for 2 turns"
+          ],
+          "ranks": [
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 1,
+              "roam": false,
+              "invis": 0
+            },
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 2,
+              "roam": false,
+              "invis": 0
+            },
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 2,
+              "roam": true,
+              "invis": 0
+            },
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 2,
+              "roam": true,
+              "invis": 2
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "madness",
+          "x": 2,
+          "y": 1,
+          "name": "Madness",
+          "icon": "😵",
+          "kind": "madnesscast",
+          "desc": "Tap a foe. It turns on whatever is nearest — which need not be you.",
+          "levels": [
+            "15 MP · berserk for INT-modifier turns · 250 turn cooldown",
+            "Cooldown 200 turns",
+            "Cooldown 150 turns (character level 10)",
+            "Cooldown 100 turns (character level 15)"
+          ],
+          "ranks": [
+            {
+              "mp": 15,
+              "cd": 250
+            },
+            {
+              "mp": 15,
+              "cd": 200
+            },
+            {
+              "mp": 15,
+              "cd": 150,
+              "minLevel": 10
+            },
+            {
+              "mp": 15,
+              "cd": 100,
+              "minLevel": 15
+            }
+          ],
+          "req": []
+        }
+      ],
+      "icon": "✨",
+      "baseHp": 15,
+      "baseMp": 20,
+      "regenTurns": 350,
+      "vitRegen": 2,
+      "mpRegenTurns": 450,
+      "intRegen": 2
     }
   },
   "gods": {

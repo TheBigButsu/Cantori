@@ -86,15 +86,47 @@
   const SHOP_POTION_PRICE = 20;
   const sellPrice = (inst) => gearTier(inst.key) * 2;
 
-  // Stats → effects (INT / RES / LCK come later)
+  // Stats → effects, D&D style.
+  //
+  // A raw stat does nothing on its own; what every formula reads is its MODIFIER,
+  // floor((stat − 10) / 2). Stat blocks are the 5e standard array (15/14/13/12/10/8),
+  // so a starting character's modifiers run −1 … +2 and 10 is the do-nothing middle.
+  //
+  // This is a much narrower range than the old raw-stat formulas assumed (they read
+  // stats of 3–60 directly), so every derived number below needed its own scale
+  // chosen rather than a straight substitution — a modifier of +2 has to buy what
+  // 14 raw points used to. The per-modifier constants are gathered here so they are
+  // one place to tune, not six.
+  const abilityMod = (raw) => Math.floor((raw - 10) / 2);
+  const mod = (statKey) => abilityMod(eff(statKey));
   const UNARMED_MIN = 2, UNARMED_MAX = 3;
-  const HP_BASE = 13, HP_PER_VIT = 1;     // 1 point of VIT = 1 HP (warrior: 13 + VIT ≈ 20)
-  const ACC_BASE = 10, EVA_BASE = -3;     // DEX → accuracy & evasion. EVA_BASE tuned so a
-  // fresh level-1 warrior (DEX 4, starting light armor +3 eva) evades a baseline monster
-  // (MON_ACC 12) about 25% of the time — the spec's "default base player evasion = 25%".
-  const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
+  const HP_BASE = 13;
+  const HP_PER_VIT_MOD = 1;   // max HP per point of VIT modifier
+  const MP_PER_INT_MOD = 1;   // max MP per point of INT modifier
+  const RES_MOD_SCALE = 10;   // damage cut = m / (m + 10): +2 → 17%, +5 → 33%, never 100%
+  const CRIT_PER_LCK_MOD = 2; // percentage points of crit chance per point of LCK modifier
+  const CRITDMG_PER_LCK_MOD = 5;
+  // Armour Class and a d20 to hit, straight out of 5e: you hit when
+  // d20 + to-hit >= the target's AC. A natural 1 always misses and a natural 20
+  // always hits, so nothing is ever a certainty in either direction.
+  //
+  // This replaced a difference-and-tanh curve. The curve was fine on its own terms
+  // but it could not survive the move to ability modifiers: mod(DEX) spans −1…+2
+  // across every class, and on that curve three points of lead was worth three
+  // percentage points, so DEX had stopped meaning anything. On a d20 a point is
+  // worth five, which is the whole reason the modifiers are small in the first place.
+  const AC_BASE = 10;
+  const MON_TOHIT = 3, MON_AC = 11;       // monster defaults when unspecified
+  // 5e's proficiency bonus: +2, rising by one every four levels. This is what makes
+  // a character better at hitting things as they level; there is deliberately no
+  // per-level accuracy in the class levelUp sets any more, because +2 to-hit a level
+  // on a d20 is +10 percentage points a level and would cap out almost immediately.
+  const proficiency = () => 2 + Math.floor((player.level - 1) / 4);
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
-  const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
+  // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
+  // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
+  // weapon you do not meet, so there is nothing left for the damage formula to gate.
+  const strBonus = () => mod("STR");
   // Stat requirements (e.g. armor/weapon req.STR) gate whether a piece can be
   // equipped at all — met once every listed stat is at or above its threshold.
   const gearReqUnmet = (inst) => {
@@ -104,11 +136,23 @@
     return null;
   };
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
-  const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseHp != null ? cls.baseHp : HP_BASE) + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0); };
-  // maxMp = INT-based mana (1 point of INT = 1 MP) + flat per-level MP from the class's levelUp set
-  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseMp != null ? cls.baseMp : 0) + eff("INT") + (player.lvlMp || 0); };
-  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills + boons
-  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + armorEvasion() + passiveMod("eva");     // DEX + level + armor weight/item + skills + boons
+  // maxHp = class base + the VIT modifier as a FLAT bonus + the flat per-level HP
+  // from the class's levelUp set.
+  //
+  // 5e adds CON to every hit die, and applying the modifier per level that way was
+  // the first thing tried here — but it does not survive this game's level-ups. D&D
+  // stats barely move (an ASI every four levels, hard cap 20), so CON × level is
+  // linear there. Here a class's main stat gains +2 EVERY level, so VIT reaches 33
+  // by level 20, the modifier reaches +11, and mod × level is quadratic: 333 max HP
+  // at level 20 against 20 at level 1. A modifier is a flat bonus, exactly as it
+  // reads, and the per-level growth stays the levelUp set's job.
+  const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(1, (cls.baseHp != null ? cls.baseHp : HP_BASE) + mod("VIT") * HP_PER_VIT_MOD + (player.lvlHp || 0)); };
+  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + armorMp() + (player.lvlMp || 0)); };
+  const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");
+  // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
+  // how much DEX it lets through — light takes all of it, medium at most +2, heavy
+  // none at all. That cap is what stops heavy armour from being strictly best.
+  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + (player.lvlEva || 0) + (player.boonEva || 0) + passiveMod("eva");
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -120,10 +164,9 @@
   // longer quietly multiply your damage), and a crit is now a good roll rather
   // than a different attack.
   const BASE_CRIT = 5, BASE_CRIT_DMG = 125;
-  const CRIT_PER_LCK = 0.5;
   const timedBlowBonus = () => (player.boons && player.boons.has("timed_blow")) ? player.level : 0;
-  const critChance = () => (BASE_CRIT + timedBlowBonus() + eff("DEX") + eff("LCK") * CRIT_PER_LCK) / 100;
-  const critMult = () => (BASE_CRIT_DMG + eff("LCK") * 2) / 100;
+  const critChance = () => (BASE_CRIT + timedBlowBonus() + mod("DEX") + mod("LCK") * CRIT_PER_LCK_MOD) / 100;
+  const critMult = () => (BASE_CRIT_DMG + mod("LCK") * CRITDMG_PER_LCK_MOD) / 100;
   // To-hit is difference-based and still easy to read: 50% at even acc/eva, and
   // every point of lead pushes it toward — but never all the way to — certainty.
   //
@@ -141,22 +184,27 @@
   // the curve never arrives at certainty. That last part is the whole point: there
   // is always headroom left for a monster's evasion to occupy, which is what keeps
   // a genuinely slippery foe slippery at level 25.
-  const HIT_SCALE = 45;   // a lead of this many points lands ~84% (tanh(1) of the way up)
-  const hitChance = (acc, eva) => 0.5 + 0.45 * Math.tanh((acc - eva) / HIT_SCALE);
-  const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
+  // P(d20 + bonus >= ac), with the natural-1 / natural-20 floor and ceiling. Used
+  // for the character screen's readout; the real roll is rollHit below.
+  const hitChance = (bonus, ac) => Math.max(0.05, Math.min(0.95, (21 + bonus - ac) / 20));
+  const d20 = () => randInt(1, 20);
+  function rollHit(bonus, ac) {
+    const r = d20();
+    if (r === 1) return false;            // a natural 1 always misses
+    if (r === 20) return true;            // a natural 20 always hits
+    return r + bonus >= ac;
+  }
   // RES cuts a percentage off every incoming hit, on a curve that approaches but
-  // never reaches immunity. It was a flat 1 − RES/100, which made 100 RES literal
-  // invulnerability — and RES climbs on its own, from a class's secondary stat,
-  // Kethara's Gift of the Faithful, and gear affixes, so that was a wall the run
-  // could simply walk into.
-  const RES_SCALE = 100;   // RES equal to this halves incoming damage
-  const resReduction = () => { const r = Math.max(0, eff("RES")); return r / (r + RES_SCALE); };
+  // never reaches immunity — m / (m + 10) on the RES MODIFIER, so +2 is 17%, +5 is
+  // 33%, +10 is 50%, and total immunity stays unreachable however high RES climbs
+  // from a class's secondary stat, Kethara's Gift of the Faithful, and gear affixes.
+  const resReduction = () => { const m = Math.max(0, mod("RES")); return m / (m + RES_MOD_SCALE); };
 
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
     atkBonus: 0, weapon: null, armor: null, ring1: null, ring2: null, trinket: null, necklace: null,
     inv: [], gold: 0, xp: 0, level: 1,
-    cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
+    cls: "warrior", stats: { STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
@@ -174,7 +222,9 @@
   function applyClass(key) {
     const c = DATA.classes[key] || DATA.classes.warrior;
     player.cls = key;
-    player.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, c.stats || {});
+    // 10 is the do-nothing middle of the D&D scale — a stat a class never authored
+    // should contribute exactly nothing, not a +5 nobody asked for.
+    player.stats = Object.assign({ STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 }, c.stats || {});
     player.statPoints = 0; player.atkBonus = 0;
     player.atkMin = UNARMED_MIN; player.atkMax = UNARMED_MAX;
     player.weapon = null; player.armor = null;
@@ -196,7 +246,9 @@
     _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
     player.skills = {};
     const sk = treeSkills(key).skills;
-    for (const k of Object.keys(sk)) player.skills[k] = { rank: 0, cd: 0 };
+    // An innate skill is known from level 0 and never costs a point — the class
+    // simply has it, the way ToneTum always has Magic Missile.
+    for (const k of Object.keys(sk)) player.skills[k] = { rank: sk[k].innate ? 1 : 0, cd: 0 };
     if (c.start) {                             // starting kit (plain white), already equipped
       if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = mkBase(c.start.weapon);
       if (c.start.armor && GEAR[c.start.armor]) player.armor = mkBase(c.start.armor);
@@ -212,6 +264,12 @@
   let traps = [];
   let walkPath = [];
   let activeWalls = [];   // Kethara's Wall of Faith: temporary wall tiles awaiting reversion
+  // Mirror Image decoys. Not monsters (they never act on the monster list, hold no
+  // HP worth tracking and give no XP) and not the player — a third small kind of
+  // thing, so they get their own list rather than being bolted onto `monsters`.
+  let decoys = [];
+  const DECOY_TURNS = 30;
+  const decoyAt = (x, y) => decoys.find((dc) => dc.x === x && dc.y === y) || null;
   let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
   let biomeScrollFloors = null;   // Set of 2 floor-in-biome numbers (1-5) that guarantee a Scroll of Upgrade this biome
   let bossRoom = null;            // the room the current floor's boss occupies (its exit opens on the nearest wall, not the death tile)
@@ -335,8 +393,12 @@
   // scales the same way as weapon damage, by tier.
   const baseDefMin = (key) => { const g = GEAR[key]; return g.defMin != null ? g.defMin : (g.def || 0); };
   const baseDefMax = (key) => { const g = GEAR[key]; return g.defMax != null ? g.defMax : (g.def != null ? g.def : (g.defMin || 0)); };
-  const gDefMin = (inst) => baseDefMin(inst.key) + (gearTier(inst.key) - 1) * (inst.plus || 0);
-  const gDefMax = (inst) => baseDefMax(inst.key) + gearTier(inst.key) * 2 * (inst.plus || 0);
+  // Armour upgrades raise the FLOOR quickly and the ceiling slowly, and the ceiling
+  // can at most double. That is what makes a +3 tier-1 robe a reliable 2–4 rather
+  // than a wild 0–8: upgrading armour should make it dependable, not spiky. (A
+  // weapon's +X still works the other way, opening its top end — see gDmgMax.)
+  const gDefMin = (inst) => baseDefMin(inst.key) + Math.floor(((inst.plus || 0) + 1) / 2);
+  const gDefMax = (inst) => { const b = baseDefMax(inst.key); return Math.min(b * 2, b + (inst.plus || 0)); };
   const gDef = (inst) => gDefMax(inst);   // top-end block (enchant power, parallels weapon dmgMax)
   // A stat affix's +X is additive-triangular: +1 = 1, +2 = 1+2 = 3, +3 = 1+2+3 = 6…
   const triangular = (n) => (n * (n + 1)) / 2;
@@ -349,8 +411,13 @@
   function equipStat(statKey) {
     let n = 0;
     for (const it of wornItems()) n += gStatBonus(it, statKey);
+    // A light armour's INT is a property of the garment itself, not a rolled affix —
+    // every robe of that tier carries it, so it is a base gear field.
+    if (statKey === "INT" && player.armor) n += GEAR[player.armor.key].int || 0;
     return n;
   }
+  // Likewise its MP pool.
+  const armorMp = () => (player.armor ? (GEAR[player.armor.key].mp || 0) : 0);
   // Rarity → quality multiplier used by the Guild's Scribe's Intellect / Blacksmith's
   // Arm boons: INT (or STR) rises with your gear's total upgrades weighted by quality.
   const QUALITY_MULT = { white: 1.0, green: 1.5, blue: 2.0, purple: 3.0, gold: 5.0 };
@@ -398,7 +465,7 @@
   // between level/2 and (level + floor + VIT)/2.
   const stoneSkinActive = () => !!(player.stoneSkin && player.stoneSkin.turns > 0);
   const stoneSkinLo = () => (stoneSkinActive() ? Math.floor(player.level / 2) : 0);
-  const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + eff("VIT")) / 2) : 0);
+  const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + mod("VIT") * 3) / 2) : 0);
   const stoneSkinRoll = () => (stoneSkinActive() ? randInt(Math.min(stoneSkinLo(), stoneSkinHi()), Math.max(stoneSkinLo(), stoneSkinHi())) : 0);
   const armorFlat = () => armorSubMit() + wornDefense();          // flat, always-on mitigation
   const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi();          // top-end block (display/peek)
@@ -410,7 +477,7 @@
   // Brynn's Unarmed Master passive when no weapon is equipped).
   const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin + passiveMod("dmgMin") + unarmedStatBonus());
   const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax + passiveMod("dmgMax") + unarmedStatBonus());
-  const weaponAccuracy = () => (player.weapon ? (GEAR[player.weapon.key].accuracy || 0) : 0);
+  const weaponToHit = () => (player.weapon ? (GEAR[player.weapon.key].toHit || 0) : 0);
   const weaponSpeed = () => { if (!player.weapon) { const s = passiveMod("speed"); if (s) return s; } return player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1; };
   // Weapon reach: 1 = melee (adjacent only). Spears/bows carry a range > 1 and
   // can strike a monster that far away with line of sight.
@@ -418,12 +485,35 @@
   const weaponSub = () => (player.weapon ? (GEAR[player.weapon.key].sub || "") : "");
   // Armor subtype: lighter armor dodges better (evasion), heavier mitigates more
   // damage on top of the item's def. Tunable here.
-  const ARMOR_SUB = { light: { eva: 3, mit: 0 }, medium: { eva: 0, mit: 1 }, heavy: { eva: -3, mit: 3 } };
+  // Armour subtypes are three different answers to "how do I not die", not three
+  // points on one axis:
+  //
+  //   light   — a caster's robe. Grants INT and MP outright; mitigation is thin and
+  //             it offers no AC at all.
+  //   medium  — the only armour that turns DEX into AC, and the only one where AC
+  //             is a live stat. How much it lets through is TIER + the item's plus,
+  //             so a tier-1 robe caps you at +1 no matter how nimble you are, and
+  //             upgrade scrolls literally widen what your DEX is allowed to do.
+  //             Spending past your own modifier is wasted — the cap never invents
+  //             DEX you do not have.
+  //   heavy   — no AC and no DEX, just the largest mitigation range in the game.
+  //             You get hit; it barely matters.
+  //
+  // Mitigation itself is the item's own defMin/defMax roll, so a subtype no longer
+  // carries a flat `mit` bonus — the ranges below say everything.
+  const ARMOR_SUB = { light: { dex: false }, medium: { dex: true }, heavy: { dex: false } };
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
-  const armorSubEva = () => { const a = armorSub(); return a ? (a.eva || 0) : 0; };
-  const armorSubMit = () => { const a = armorSub(); return a ? (a.mit || 0) : 0; };
-  // A worn armor piece's own evasion stat (on top of the flat subtype bonus above).
-  const armorEvasion = () => (player.armor ? (GEAR[player.armor.key].evasion || 0) : 0);
+  // Only medium armour converts DEX into AC, and only up to tier + plus of it.
+  const armorDexCap = () => {
+    const a = armorSub();
+    if (!a || !a.dex || !player.armor) return 0;
+    return gearTier(player.armor.key) + (player.armor.plus || 0);
+  };
+  const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
+  const armorSubMit = () => 0;   // mitigation lives entirely in the item's defMin/defMax now
+  // Armour grants no flat AC — see ARMOR_SUB. Medium's contribution is the DEX it
+  // unlocks; light and heavy pay you in INT/MP and mitigation instead.
+  const armorAC = () => 0;
   // Passive haste from worn enchants, tiered by the item bearing it. There are two
   // independent kinds and an enchant carries exactly one: `haste` quickens the
   // weapon, `walkHaste` quickens the feet. Kit that speeds your swing does nothing
@@ -485,8 +575,10 @@
   // Display damage/def hide the +X until identified (combat still uses the real gDmg*/gDef).
   const dDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + dispPlus(inst);
   const dDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + dispPlus(inst);
-  const dDefMin = (inst) => baseDefMin(inst.key) + dispPlus(inst);
-  const dDefMax = (inst) => baseDefMax(inst.key) + dispPlus(inst);
+  // Mirror gDefMin/gDefMax exactly, but with the plus hidden until identified —
+  // the pack must never quote a range the item does not actually roll.
+  const dDefMin = (inst) => baseDefMin(inst.key) + Math.floor((dispPlus(inst) + 1) / 2);
+  const dDefMax = (inst) => { const b = baseDefMax(inst.key); return Math.min(b * 2, b + dispPlus(inst)); };
   const dDef = (inst) => dDefMax(inst);
   // "3" if the block is fixed, "1–3" if it's a range — for gear labels.
   const defRange = (lo, hi) => (lo === hi ? "" + lo : lo + "–" + hi);
@@ -839,9 +931,11 @@
   }
   // Each turn, a chance to notice hidden traps on adjacent tiles (Luck helps).
   function searchForTraps() {
-    // Notice radius = 1 + LCK/5 tiles. Per-turn chance = 10%·(INT/10) + LCK% = INT + LCK (in %).
-    const radius = 1 + Math.floor(eff("LCK") / 5);
-    const chance = (eff("INT") + eff("LCK")) / 100;
+    // Notice radius grows with the LCK modifier; per-turn chance is 3% per point of
+    // INT + LCK modifier. The ×3 is what keeps a +1 modifier worth roughly what 3–4
+    // raw points of the old stat scale bought.
+    const radius = 1 + Math.max(0, Math.floor(mod("LCK") / 2));
+    const chance = Math.max(0, mod("INT") + mod("LCK")) * 3 / 100;
     if (chance <= 0) return;
     for (const t of traps) {
       if (t.revealed || t.sprung) continue;
@@ -1435,6 +1529,7 @@
     monsters = [];
     items = [];
     traps = [];
+    decoys = [];
     turns = 0;
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
 
@@ -1578,6 +1673,7 @@
     monsters = [];
     items = [];
     traps = [];
+    decoys = [];
     turns = 0;
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
     bossActive = false;
@@ -1926,6 +2022,7 @@
     // A Horror is worth NOTHING. It exists to price out staying, so paying XP for
     // one would invert the mechanic exactly: farming Horrors would become the most
     // efficient grind in the game, on a floor the player was supposed to leave.
+    blinkKillCredit();
     if (target.horror) { horrorDeadAt = turns; xp = 0; }
     else if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
@@ -1935,6 +2032,14 @@
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
+  // Blink rank 2+: every kill takes turns off its cooldown, so a mage who is
+  // actually fighting gets the escape back sooner than one who is running.
+  function blinkKillCredit() {
+    const st = player.skills && player.skills.blink, cur = st && st.cd > 0 ? skillCur("blink") : null;
+    if (!cur || !cur.killCd) return;
+    st.cd = Math.max(0, st.cd - cur.killCd);
+    if (st.cd === 0) log("Blink is ready again.", "hit");
+  }
   const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread"];
   const maelonBoonCount = () => (player.boons ? MAELON_KEYS.filter((k) => player.boons.has(k)).length : 0);
   // Kill-counter-driven boons: Maelon's Compost Pile (every 5), Kethara's Gift of
@@ -2007,7 +2112,7 @@
     for (const e of enchants) {
       if (target.hp <= 0) break;
       const def = LOOT.enchants[e] || {};
-      const proc = (def.proc != null ? def.proc : 1) + eff("LCK") / 100;   // LCK: flat +% to all proc effects
+      const proc = (def.proc != null ? def.proc : 1) + Math.max(0, mod("LCK")) * 3 / 100;   // LCK: +3% per modifier point to all procs
       if (Math.random() >= proc) continue;
       const fx = def.effect || {};
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
@@ -2049,6 +2154,7 @@
     if (attacker === player) {
       bump(player, target.x, target.y);
       const surprise = !target.aware;                 // ambush: asleep, or wandering past you
+      target.magicSleep = 0;                          // a blow always breaks a magical sleep
       startHunting(target);                           // it knows now
       makeNoise(target.x, target.y);                  // and so does whatever is next door
       // Striking from invisibility spends it — you land the ambush, then you're
@@ -2066,7 +2172,7 @@
       // and it is the reliable answer to the genuinely slippery foes (a bee at
       // eva 25) that a fair roll almost never lands on.
       const pinned = isDoor(target.x, target.y);
-      if (!surprise && !pinned && !rollHit(playerAcc(), target.eva != null ? target.eva : MON_EVA)) {
+      if (!surprise && !pinned && !rollHit(playerToHit(), target.ac != null ? target.ac : MON_AC)) {
         floatText(target.x, target.y, "miss", "#cfe6b0");
         log("The " + monName(target) + " evades your blow.");
         return;
@@ -2100,11 +2206,12 @@
         log(pre + monName(target) + (pinned && !surprise ? " cannot dodge. (-" : ". (-") + dmg + ")", "hit");
         // weapon enchants proc on a connecting hit (power = weapon damage)
         if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon), null, player.weapon);
+        applyBurningSensation(target);
       }
     } else {
       bump(attacker, player.x, player.y);
-      const acc = attacker.acc != null ? attacker.acc : MON_ACC;
-      if (!rollHit(acc, playerEva())) {                // player evades (DEX)
+      const acc = attacker.toHit != null ? attacker.toHit : MON_TOHIT;
+      if (!rollHit(acc, playerAC())) {                 // it rolls against your AC
         floatText(player.x, player.y, "miss", "#cfe6b0");
         log("You evade the " + monName(attacker) + ".");
         return;
@@ -2133,7 +2240,7 @@
       }
       // Maelon's Endless Dread: a wounding blow risks the attacker fleeing in terror.
       if (attacker.hp > 0 && player.boons && player.boons.has("dread")) {
-        const fearChance = ((eff("VIT") + eff("RES") + eff("LCK")) / 3) / 100;
+        const fearChance = Math.max(0, mod("VIT") + mod("RES") + mod("LCK")) / 100;
         if (Math.random() < fearChance) {
           attacker.fleeing = (attacker.fleeing || 0) + 10;
           floatText(attacker.x, attacker.y, "flees!", "#e0a848");
@@ -2337,8 +2444,13 @@
       player.xp -= threshold;
       player.level++;
       const cls = DATA.classes[player.cls] || DATA.classes.warrior;
-      player.stats[cls.main] += 2;             // main +2
-      player.stats[cls.secondary] += 1;        // secondary +1
+      // Main +1 every 2 levels, secondary +1 every 3. It was +2 and +1 EVERY level,
+      // which is a fine curve for raw stats read directly but not for D&D modifiers:
+      // a main stat reached 53 by level 20, a +21 modifier, and nothing about that is
+      // bounded the way (score − 10) / 2 assumes. At this rate a main stat gains 10
+      // points over 20 levels and its modifier tops out around +7.
+      if (player.level % 2 === 0) player.stats[cls.main] += 1;
+      if (player.level % 3 === 0) player.stats[cls.secondary] += 1;
       // No free skill point here — skill points now come only from Potions of
       // Insight (1 guaranteed per floor, 3 more on a boss kill).
       const lu = cls.levelUp || {};            // flat per-level set (hp/mp/accuracy/evasion)
@@ -2355,8 +2467,12 @@
       const extra = [];
       if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
       if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
-      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + (extra.length ? " · " + extra.join(", ") : ""), "hit");
-      const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra);
+      const statGain = [];
+      if (player.level % 2 === 0) statGain.push("+1 " + cls.main);
+      if (player.level % 3 === 0) statGain.push("+1 " + cls.secondary);
+      if (proficiency() > 2 + Math.floor((player.level - 2) / 4)) statGain.push("proficiency " + sgnNum(proficiency()));
+      const gains = statGain.concat(extra);
+      log("Level " + player.level + (gains.length ? "!  " + gains.join(", ") : "!"), "hit");
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
       threshold = xpToNext();
@@ -2578,17 +2694,17 @@
   // Early-game HP regen multiplier, indexed by CHARACTER level (not depth). The
   // first floors are where a bad fight is unrecoverable: potions are scarce, the
   // pack is empty, and a level-1 character healing at the level-20 rate spends
-  // most of the floor walking in circles waiting to be whole. It tapers by 50
+  // most of the floor walking in circles waiting to be whole. It tapers by 25
   // points a level and is gone by level 4, so it props up the opening rather than
   // changing the run's economy.
-  const EARLY_REGEN = [2.5, 2.0, 1.5];   // L1 ×2.5, L2 ×2.0, L3 ×1.5, L4+ ×1
+  const EARLY_REGEN = [1.75, 1.5, 1.25];   // L1 ×1.75, L2 ×1.5, L3 ×1.25, L4+ ×1
   const earlyRegenMult = () => EARLY_REGEN[player.level - 1] || 1;
   function regenTick() {
     const cls = DATA.classes[player.cls] || {};
     let changed = false, healed = 0;
     // HP: heals to full over regenTurns, sped by Vitality.
     if (player.hp < player.maxHp) {
-      const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - eff("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2));
+      const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - mod("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2) * 5);
       player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult();
       while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
       if (player.hp >= player.maxHp) player.regenAcc = 0;
@@ -2596,8 +2712,10 @@
     } else player.regenAcc = 0;
     // MP: heals to full over mpRegenTurns, sped by Intelligence.
     if (player.maxMp > 0 && player.mp < player.maxMp) {
-      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - eff("INT") * (cls.intRegen != null ? cls.intRegen : 2));
-      player.mpRegenAcc = (player.mpRegenAcc || 0) + player.maxMp / effMp;
+      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - mod("INT") * (cls.intRegen != null ? cls.intRegen : 2) * 5);
+      // Deep Well: a flat multiplier on MP regen. Ranks replace each other rather
+      // than stacking, which falls out of passiveMod reading only the active rank.
+      player.mpRegenAcc = (player.mpRegenAcc || 0) + (player.maxMp / effMp) * (1 + passiveMod("mpRegen"));
       while (player.mpRegenAcc >= 1 && player.mp < player.maxMp) { player.mpRegenAcc -= 1; player.mp++; changed = true; }
       if (player.mp >= player.maxMp) player.mpRegenAcc = 0;
     } else player.mpRegenAcc = 0;
@@ -2608,7 +2726,7 @@
   // on top of (not instead of) passive regen above.
   function healQueueTick() {
     if (!player.healPending || player.hp >= player.maxHp) { if (player.hp >= player.maxHp) player.healPending = 0; return; }
-    const amt = Math.min(player.healPending, Math.max(1, eff("VIT")), player.maxHp - player.hp);
+    const amt = Math.min(player.healPending, Math.max(1, 2 + mod("VIT") * 2), player.maxHp - player.hp);
     if (amt <= 0) return;
     player.hp += amt; player.healPending -= amt;
     floatText(player.x, player.y, "+" + amt, "#8ed69a");
@@ -2803,6 +2921,7 @@
     for (const m of monsters) {
       if (m.hp <= 0 || m.type === "healing_node") continue;
       if (m.state === HUNTING || m.state === FLEEING) continue;
+      if (m.magicSleep > 0) continue;                 // a spell holds it under; noise won't reach it
       if (cheb(m.x, m.y, x, y) > radius) continue;
       if (m.state === SLEEPING) floatText(m.x, m.y, "?", "#e0d0a0");
       setState(m, WANDERING);
@@ -2831,6 +2950,15 @@
     return Math.random() * Math.max(1, cheb(m.x, m.y, player.x, player.y)) < WAKE_ACUITY;
   }
   function actSleeping(m) {
+    // Magically slept: it does not get a notice roll at all until the spell runs out.
+    // Without this, Sleep was useless — the sleeper rolled to notice on the very turn
+    // it was cast, and WAKE_ACUITY makes that a certainty inside three tiles, which is
+    // exactly where you would ever cast it.
+    if (m.magicSleep > 0) {
+      m.magicSleep--;
+      if (Math.random() < 0.5) floatText(m.x, m.y, "z", "#cfe6ff");
+      return;
+    }
     if (noticesPlayer(m)) {
       startHunting(m);
       floatText(m.x, m.y, "!", "#ffd98a");
@@ -2858,6 +2986,10 @@
     // reach the stairs — it does not buy escape, which is the whole point of it.
     if (canSee(m) || m.horror) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
     else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
+    // A decoy beside it is more interesting than you are. Only adjacency is checked:
+    // an image that pulled monsters across the room would be a wall, not a feint.
+    const near = nearestDecoy(m.x, m.y, 1);
+    if (near) { strikeDecoy(m, near); return; }
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -3048,6 +3180,41 @@
     }
   }
 
+  function nearestDecoy(x, y, within) {
+    let best = null, bd = Infinity;
+    for (const dc of decoys) {
+      const d = cheb(x, y, dc.x, dc.y);
+      if (d <= within && d < bd) { bd = d; best = dc; }
+    }
+    return best;
+  }
+  // A monster swings at an image. It always shatters — the point of a decoy is to
+  // buy exactly one attack that was not aimed at you, and a decoy with hit points
+  // would just be a pet.
+  function strikeDecoy(m, dc) {
+    bump(m, dc.x, dc.y);
+    decoys = decoys.filter((x) => x !== dc);
+    spawnBurst(dc.x, dc.y, "#9ad0ff");
+    floatText(dc.x, dc.y, "shatters", "#9ad0ff");
+    log("The " + monName(m) + " strikes an image of you — it bursts like glass.");
+  }
+  // Decoys age out, and the roaming ones drift a tile at a time.
+  function decoyTick() {
+    if (!decoys.length) return;
+    const alive = [];
+    for (const dc of decoys) {
+      if (--dc.turns <= 0) { spawnBurst(dc.x, dc.y, "#6a7a8a"); continue; }
+      if (dc.roam && Math.random() < 0.5) {
+        const [dx, dy] = DIRS8[randInt(0, DIRS8.length - 1)];
+        const nx = dc.x + dx, ny = dc.y + dy;
+        if (passable(nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny) && !decoyAt(nx, ny) && !(nx === player.x && ny === player.y)) {
+          dc.x = nx; dc.y = ny;
+        }
+      }
+      alive.push(dc);
+    }
+    decoys = alive;
+  }
   // One monster action (its burn tick, stun, and AI move/attack). Returns after
   // acting; the caller checks `dead`.
   // Drop `count` monsters of `type` on free floor within `radius` tiles of (cx,cy).
@@ -3130,9 +3297,9 @@
   // A lightweight monster-vs-monster strike (Anger of Kethara only) — no crits,
   // affixes, or identify progress; just a hit-chance roll and flat damage.
   function monsterVsMonster(attacker, target) {
-    const acc = attacker.acc != null ? attacker.acc : MON_ACC;
-    const eva = target.eva != null ? target.eva : MON_EVA;
-    if (!rollHit(acc, eva)) { floatText(target.x, target.y, "miss", "#cfe6b0"); return; }
+    const acc = attacker.toHit != null ? attacker.toHit : MON_TOHIT;
+    const ac = target.ac != null ? target.ac : MON_AC;
+    if (!rollHit(acc, ac)) { floatText(target.x, target.y, "miss", "#cfe6b0"); return; }
     let dmg = randInt(attacker.atkMin, attacker.atkMax);
     dmg = Math.round(dmg * 1.5);   // berserk hits harder
     target.hp -= dmg;
@@ -3242,6 +3409,7 @@
     regenTick();
     healQueueTick();
     searchForTraps();
+    decoyTick();
     maybeReinforce();
     maybeHorror();
     updateHotbar();
@@ -3340,6 +3508,20 @@
         const m = monsterAt(tx, ty);
         if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
         executeThrowSkill(pendingSkill, tx, ty);
+        return;
+      }
+      // ToneTum: three want a monster, Blink wants a tile.
+      if (pk === "bolt" || pk === "sleepcast" || pk === "madnesscast") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
+        if (pk === "bolt") executeMagicMissile(pendingSkill, tx, ty);
+        else if (pk === "sleepcast") executeSleep(pendingSkill, tx, ty);
+        else executeMadness(pendingSkill, tx, ty);
+        return;
+      }
+      if (pk === "blinkcast") {
+        if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); return; }
+        executeBlink(pendingSkill, tx, ty);
         return;
       }
     }
@@ -4122,6 +4304,20 @@
       }
     }
 
+    // Mirror Image decoys: the player's own sprite, translucent and faintly blue, so
+    // it is obvious at a glance which one is you — a decoy you cannot tell apart from
+    // yourself is a UI bug, not a mind game.
+    for (const dc of decoys) {
+      if (!inBounds(dc.x, dc.y) || !visible[dc.y][dc.x]) continue;
+      const dx = SX(dc.x), dy = SY(dc.y);
+      ctx.save();
+      ctx.globalAlpha = dc.turns <= 5 ? 0.25 : 0.5;    // fading as it runs out
+      if (!drawSpriteFit(SPRITES.player, dx, dy, 1)) drawGlyphInto(ctx, dx, dy, tile, "@", "#9ad0ff");
+      ctx.restore();
+      ctx.strokeStyle = "rgba(154,208,255,0.55)"; ctx.lineWidth = Math.max(1, tile * 0.04);
+      ctx.strokeRect(dx + 1, dy + 1, tile - 2, tile - 2);
+    }
+
     // player, with a torch glow (glide + lunge + flash)
     const [pbx, pby] = bumpOffset(player, now);
     const px = SX(player.rx + pbx), py = SY(player.ry + pby);
@@ -4748,7 +4944,7 @@
       // the rest pools into a heal-over-time queue that ticks up to VIT more per
       // turn (see healQueueTick), so a big potion doesn't instantly top you off.
       const total = Math.round(player.maxHp * (0.9 + Math.random() * 0.6));
-      const cap = Math.max(1, eff("VIT"));
+      const cap = Math.max(1, 2 + mod("VIT") * 2);
       const now = Math.min(total, cap, player.maxHp - player.hp);
       player.hp += now;
       const queued = Math.max(0, total - now);
@@ -4939,7 +5135,7 @@
         name: n.name, icon: n.icon || "✦", desc: n.desc || "",
         kind: n.kind || "passive", when: n.when || null,
         max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
-        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0,
+        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0, innate: !!n.innate,
         // The tier gate always applies; an authored minLevel can only ask for MORE,
         // never less — a node cannot buy its way out of the row it sits in.
         minLevel: Math.max(n.minLevel || 0, tierLevel(n.y || 0)),
@@ -5068,7 +5264,7 @@
     const st = player.skills.unarmed_master; if (!st || st.rank < 1) return 0;
     const d = classSkills().unarmed_master; if (!d) return 0;
     const r = d.ranks[st.rank - 1];
-    return (r && r.statScale) ? Math.floor((eff("DEX") + eff("VIT")) / 2) : 0;
+    return (r && r.statScale) ? Math.max(0, mod("DEX") + mod("VIT")) * 2 : 0;
   }
 
   function learnSkill(key) {
@@ -5090,7 +5286,10 @@
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
     else if (d.kind === "sol") executeSpeedOfLight(key);
-    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" || d.kind === "smite" || d.kind === "throwmon") beginTargetedSkill(key);
+    else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
+    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
+             d.kind === "smite" || d.kind === "throwmon" ||
+             d.kind === "bolt" || d.kind === "sleepcast" || d.kind === "blinkcast" || d.kind === "madnesscast") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -5162,7 +5361,7 @@
     m.stun = Math.max(m.stun || 0, 25);
     floatText(m.x, m.y, "◉", "#b491d6");
     log("Kethara's Eye fixes upon the " + monName(m) + " — it cannot move.", "hit");
-    player.skills[key].cd = Math.max(0, 100 - eff("RES"));
+    player.skills[key].cd = Math.max(0, 100 - mod("RES") * 10);
     updateHotbar();
     worldTurn();
   }
@@ -5175,10 +5374,153 @@
     m.berserk = ANGER_TURNS; startHunting(m);
     floatText(m.x, m.y, "😡", "#e0685a");
     log("Kethara's Anger consumes the " + monName(m) + " — it turns on everything nearby.", "hit");
-    player.skills[key].cd = Math.max(0, 100 - eff("RES"));
+    player.skills[key].cd = Math.max(0, 100 - mod("RES") * 10);
     updateHotbar();
     worldTurn();
   }
+  // ---- ToneTum's spellbook ---------------------------------------------------
+  // Every cast here shares one shape: check MP and cooldown, spend, resolve, set the
+  // cooldown from the CURRENT rank, then take a world turn. `cur` is the active rank's
+  // data straight out of data.js, so costs and cooldowns are authored, never hardcoded.
+  const SLEEP_TURNS = 10;   // plus the INT modifier — long enough to walk away, or to line up the ambush
+  function castCheck(key) {
+    const st = player.skills[key], cur = skillCur(key), d = skillDef(key);
+    if (!st || !cur || !d) return null;
+    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return null; }
+    const cost = cur.mp || 0;
+    if (player.mp < cost) { log("Not enough MP for " + d.name + " (need " + cost + ")."); return null; }
+    return { st, cur, d, cost };
+  }
+  function payCast(key, c) { player.mp -= c.cost; player.skills[key].cd = c.cur.cd || 0; }
+
+  // Burning Sensation — a passive, so it hangs off any connecting blow rather than
+  // being cast. Reuses the same burn DOT the fire enchant uses.
+  function applyBurningSensation(target) {
+    if (!target || target.hp <= 0) return;
+    const r = passiveRank("burning_sensation");
+    if (!r || !r.burnDmg) return;
+    addDot(target, { tag: "burn", dmg: r.burnDmg, rounds: r.burnTurns || 3, icon: "🔥", color: "#ff8f4a" });
+    floatText(target.x, target.y, "🔥", "#ff8f4a");
+  }
+  // The active rank's data for a learned passive (null if unlearned).
+  function passiveRank(key) {
+    const st = player.skills[key], d = skillDef(key);
+    if (!st || st.rank < 1 || !d) return null;
+    return d.ranks[st.rank - 1] || null;
+  }
+
+  // Magic Missile — the mage's answer to "I have no weapon worth swinging".
+  function executeMagicMissile(key, tx, ty) {
+    pendingSkill = null;
+    const m = monsterAt(tx, ty);
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    spawnProjectile(player.x, player.y, tx, ty, "#9ad0ff");
+    const dmg = randInt(1, 4) + player.level;
+    m.hp -= dmg; flash(m);
+    floatText(m.x, m.y, "✦-" + dmg, "#9ad0ff");
+    log("A bolt of force strikes the " + monName(m) + ". (-" + dmg + ")", "hit");
+    startHunting(m); makeNoise(m.x, m.y);
+    if (m.hp <= 0) killMonster(m, "is unmade");
+    else applyBurningSensation(m);
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Sleep — drops a weakened foe where it stands. A sleeper is `unaware`, so the
+  // ambush rule already gives your next blow on it a guaranteed hit.
+  function executeSleep(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const centre = monsterAt(tx, ty);
+    if (!centre || centre.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    // The threshold is raw INT, not its modifier: this is "how much mind you can
+    // push on", and it wants to grow with the score the player actually reads.
+    const thr = Math.max(1, Math.floor(eff("INT") * (c.cur.thr || 0.5)));
+    const area = c.cur.area || 0;
+    const targets = [centre];
+    if (area) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const m2 = monsterAt(tx + dx, ty + dy);
+      if (m2 && m2.hp > 0) targets.push(m2);
+    }
+    let slept = 0;
+    for (const m of targets) {
+      if (m.boss) { floatText(m.x, m.y, "resists", "#cfe6b0"); continue; }
+      if (m.hp > thr) { floatText(m.x, m.y, "too strong", "#cfe6b0"); continue; }
+      setState(m, SLEEPING); m.target = null;
+      m.magicSleep = SLEEP_TURNS + Math.max(0, mod("INT"));
+      floatText(m.x, m.y, "💤", "#cfe6ff"); slept++;
+    }
+    log(slept ? "Sleep takes " + slept + (slept === 1 ? " foe." : " foes.") : "Nothing here is weak enough to sleep (needs " + thr + " HP or less).", slept ? "hit" : "");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Blink — teleport to any tile you can see.
+  function executeBlink(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx] || !passable(tx, ty) || monsterAt(tx, ty) || shuns(tx, ty)) {
+      log("You cannot blink there."); updateHotbar(); return;
+    }
+    payCast(key, c);
+    spawnBurst(player.x, player.y, "#9ad0ff");
+    player.x = tx; player.y = ty;
+    computeFOV(); snapPlayer();
+    spawnBurst(tx, ty, "#9ad0ff");
+    log("You step through the space between.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Madness — the mage's own berserk. Same effect as Kethara's Anger, its own cost,
+  // cooldown and duration, all read from the rank.
+  function executeMadness(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    m.berserk = Math.max(1, mod("INT"));
+    startHunting(m);
+    floatText(m.x, m.y, "😵", "#e0685a");
+    log("The " + monName(m) + " loses its mind — it turns on whatever is nearest.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Mirror Image — decoys the monsters would rather hit. They are not monsters and
+  // not the player: a third, very small kind of thing on the board, which is why they
+  // live in their own list rather than being bolted onto `monsters`.
+  function executeMirrorImage(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const spots = [];
+    for (const [dx, dy] of DIRS8) {
+      const x = player.x + dx, y = player.y + dy;
+      if (passable(x, y) && !shuns(x, y) && !monsterAt(x, y) && !decoyAt(x, y)) spots.push({ x, y });
+    }
+    if (!spots.length) { log("No room beside you for an image."); updateHotbar(); return; }
+    payCast(key, c);
+    const n = Math.min(c.cur.n || 1, spots.length);
+    for (let i = 0; i < n; i++) {
+      const s = spots[randInt(0, spots.length - 1)];
+      spots.splice(spots.indexOf(s), 1);
+      decoys.push({ x: s.x, y: s.y, turns: DECOY_TURNS, roam: !!c.cur.roam });
+    }
+    if (c.cur.invis) { player.invisible = Math.max(player.invisible || 0, c.cur.invis); }
+    log("The air folds — " + (n === 1 ? "an image steps out beside you." : n + " images step out beside you.") +
+        (c.cur.invis ? " You go unseen." : ""), "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
   function beginRush(key) {
     pendingSkill = pendingSkill === key ? null : key;
     const d = skillDef(key);
@@ -5251,7 +5593,7 @@
     const cost = 5;
     if (player.mp < cost) { log("Not enough MP for Smite (need " + cost + ")."); updateHotbar(); return; }
     player.mp -= cost;
-    const bonus = Math.round(eff("STR") * (cur.strMult || 1));
+    const bonus = Math.round(mod("STR") * 3 * (cur.strMult || 1));
     if (cheb(player.x, player.y, tx, ty) > 1) spawnProjectile(player.x, player.y, tx, ty, "#f0a838");
     log("You call down a Smite!", "hit");
     attack(player, target, bonus);
@@ -5288,13 +5630,13 @@
     let dealt = 0;
     if (cur.dealDmg) {
       const before = target.hp;
-      attack(player, target, eff("DEX"));
+      attack(player, target, mod("DEX") * 3);
       dealt += Math.max(0, before - target.hp);
       if (dead) return;
     }
     if (cur.chain && hitOther && hitOther.hp > 0) {
       const before2 = hitOther.hp;
-      attack(player, hitOther, eff("DEX"));
+      attack(player, hitOther, mod("DEX") * 3);
       dealt += Math.max(0, before2 - hitOther.hp);
       if (dead) return;
     }
@@ -5317,8 +5659,8 @@
       if (m.boss) tags.push("BOSS");
       if (m.ranged) tags.push("ranged");
       if (m.charge) tags.push("charges");
-      if ((m.eva != null ? m.eva : MON_EVA) >= 12) tags.push("evasive");
-      if ((m.acc != null ? m.acc : MON_ACC) >= 12) tags.push("accurate");
+      if ((m.ac != null ? m.ac : MON_AC) >= 15) tags.push("evasive");
+      if ((m.toHit != null ? m.toHit : MON_TOHIT) >= 4) tags.push("accurate");
       if (m.state === SLEEPING) tags.push("asleep");
       else if (!m.aware) tags.push("unaware");
       log(monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp + (tags.length ? " (" + tags.join(", ") + ")" : ""));
@@ -5377,32 +5719,37 @@
       }
     }
   }
+  const sgnNum = (n) => (n >= 0 ? "+" : "") + n;
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    // The modifier is what every formula actually reads, so it is what the screen
+    // leads with — the raw score is shown beside it, not instead of it.
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
       const g = equipStat(k);
-      const val = player.stats[k] + (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
+      const m = mod(k);
+      const val = `${m >= 0 ? "+" : ""}${m}<span style="color:var(--ink-dim);font-size:11px"> (${eff(k)})</span>` +
+        (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
       return `<div class="cstat"><span>${k}<small>${effDesc[k]}</small></span><b>${val}</b></div>`;
     }).join("");
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
     // Accuracy/Evasion, spelled out as chance-to-hit / chance-to-evade against a
     // baseline foe (monster defaults), plus the exact formula behind them.
-    const accPct = Math.round(hitChance(playerAcc(), MON_EVA) * 100);
-    const evaPct = Math.round((1 - hitChance(MON_ACC, playerEva())) * 100);
+    const accPct = Math.round(hitChance(playerToHit(), MON_AC) * 100);
+    const evaPct = Math.round((1 - hitChance(MON_TOHIT, playerAC())) * 100);
     const sgn = (n) => (n >= 0 ? "+" : "") + n + "%";
     const walkHasteTxt = sgn(Math.round(walkHaste() * 100));
     const atkHasteTxt = sgn(Math.round(atkHaste() * 100));
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
-      `<div class="cline cformula">crit% = 5 + DEX + LCK×0.5 + skills · crit dmg% = 125 + LCK×2 + skills</div>` +
-      `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
-      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 45) — about 1% per point of lead, always helping, never becoming certainty</div>` +
+      `<div class="cline cformula">every stat acts through its modifier, ⌊(score − 10) ÷ 2⌋ · crit% = 5 + DEX mod + LCK mod×2 + skills · crit dmg% = 125 + LCK mod×5</div>` +
+      `<div class="cline">To hit <b>${sgnNum(playerToHit())}</b> (~${accPct}% against an average foe) · Armour Class <b>${playerAC()}</b> (~${evaPct}% to be missed)</div>` +
+      `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = proficiency (${sgnNum(proficiency())} at your level) + DEX mod + weapon</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
-      `<div class="cline cformula">incoming dmg ×(1 − RES ÷ (RES + 100)), then armor block subtracted</div>` +
+      `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
@@ -5757,7 +6104,8 @@
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
       return {
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
-        acc: playerAcc(), eva: playerEva(), lvlHp: player.lvlHp, level: player.level, xp: player.xp,
+        acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(), prof: proficiency(),
+        lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
         skillsAll: Object.keys(player.skills || {}),
@@ -5766,7 +6114,7 @@
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
-        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
+        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponToHit: weaponToHit(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex, stun: player.stun || 0,
         camX, camY, panX, panY,
@@ -5777,7 +6125,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -5844,6 +6192,7 @@
       }));
     },
     turns: () => turns,
+    decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },
     horrorState: () => {

@@ -60,7 +60,7 @@
       { f: "speed", type: "num", step: "0.1" },
       { f: "walkSpeed", label: "walk spd", type: "num", step: "0.1" },
       { f: "attackSpeed", label: "atk spd", type: "num", step: "0.1" },
-      { f: "acc", type: "num" }, { f: "eva", type: "num" },
+      { f: "toHit", label: "to-hit", type: "num" }, { f: "ac", label: "AC", type: "num" },
       { f: "range", type: "num" }, { f: "minFloor", type: "num" },
       { f: "charge", type: "bool" }, { f: "ranged", type: "bool" }, { f: "flying", type: "bool" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
@@ -71,24 +71,26 @@
       { f: "sub", label: "subtype", type: "select", opts: ["", "dagger", "sword", "axe", "spear", "bow", "light", "medium", "heavy"] },
       { f: "name", type: "text", cls: "name" },
       { f: "dmgMin", label: "dmg min", type: "num" }, { f: "dmgMax", label: "dmg max", type: "num" },
-      { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "speed", type: "num", step: "0.1" }, { f: "toHit", label: "to-hit", type: "num" },
       { f: "range", type: "num" },
       { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
-    // Armor's own column set: no weapon-only damage columns, plus an evasion stat
-    // (on top of the flat light/medium/heavy subtype bonus the engine already applies).
+    // Armour's own column set. There is no AC column: armour grants no flat AC.
+    // The SUBTYPE decides what a piece is for — light pays in INT/MP, medium turns
+    // DEX into AC (up to tier + plus of it), heavy just soaks. Mitigation is the
+    // min/max range rolled on every hit taken.
     armor: [
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
       { f: "sub", label: "subtype", type: "select", opts: ["", "dagger", "sword", "axe", "spear", "bow", "light", "medium", "heavy"] },
       { f: "name", type: "text", cls: "name" },
-      { f: "speed", type: "num", step: "0.1" }, { f: "accuracy", label: "acc", type: "num" },
+      { f: "speed", type: "num", step: "0.1" }, { f: "toHit", label: "to-hit", type: "num" },
       { f: "range", type: "num" },
-      { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
-      { f: "evasion", type: "num" },
+      { f: "defMin", label: "mit min", type: "num" }, { f: "defMax", label: "mit max", type: "num" },
+      { f: "int", label: "INT (light)", type: "num" }, { f: "mp", label: "MP (light)", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
@@ -104,6 +106,7 @@
       { f: "__key", label: "key", type: "key" },
       { f: "name", type: "text", cls: "name" },
       { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
+      { f: "toHit", label: "to-hit", type: "num" }, { f: "ac", label: "AC", type: "num" },
       // Which hand-laid floor this boss is fought on. Boss floors are not rolled
       // like ordinary ones — see the "Boss arenas" note in the formula reference.
       { f: "arena", type: "select", opts: ["", "hall", "ring"] },
@@ -238,6 +241,10 @@
       n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
       if (!n.reqAny.length) delete n.reqAny;
       if (!(n.minLevel > 0)) delete n.minLevel;
+      // An innate skill is known from level 0 and costs no point — the class simply
+      // has it (ToneTum's Magic Missile). Kept as a real boolean so a round-trip
+      // through the editor cannot quietly turn it into a skill you must buy.
+      if (n.innate) n.innate = true; else delete n.innate;
     }
     return nodes;
   }
@@ -758,8 +765,6 @@
     const lg = document.createElement("div"); lg.className = "cform";
     lg.appendChild(classField(o, "HP", "levelUp.hp", "num"));
     lg.appendChild(classField(o, "MP", "levelUp.mp", "num"));
-    lg.appendChild(classField(o, "accuracy", "levelUp.accuracy", "num"));
-    lg.appendChild(classField(o, "evasion", "levelUp.evasion", "num"));
     wrap.appendChild(lg);
     const lnote = document.createElement("p"); lnote.className = "hint";
     lnote.textContent = "Added each level. Levels no longer grant crit — a crit is a flat 5% base for 125% damage, moved only by DEX, LCK and skills.";
@@ -867,6 +872,12 @@
     rp.value = cell.reqPoints || "";
     rp.oninput = () => { const v = parseInt(rp.value, 10); if (v > 0) cell.reqPoints = v; else delete cell.reqPoints; };
     wire.appendChild(rp);
+    const inn = document.createElement("label"); inn.className = "sinnate";
+    const innCb = document.createElement("input"); innCb.type = "checkbox"; innCb.checked = !!cell.innate;
+    innCb.title = "known from level 0 and costs no skill point — the class simply has it";
+    innCb.onchange = () => { if (innCb.checked) cell.innate = true; else delete cell.innate; };
+    inn.appendChild(innCb); inn.appendChild(document.createTextNode("innate"));
+    wire.appendChild(inn);
     const ml = document.createElement("input"); ml.type = "number"; ml.min = "0"; ml.placeholder = "extra min lv";
     ml.title = "an EXTRA character-level gate on top of this row's tier gate (tier " + (y + 1) + " already needs level " + (tierLevel(y) || 1) + "). It can only ask for more, never less — leave it blank unless one skill in the row should come later than its neighbours.";
     ml.value = cell.minLevel || "";
@@ -1021,21 +1032,21 @@
     {
       title: "Core stats",
       rows: [
-        { name: "Effective stat", formula: "eff(stat) = player.stats[stat] + gear affix bonus", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
-        { name: "STR → damage", formula: "strBonus = max(0, floor((eff(STR) − weapon's STR requirement) / 4))", note: "Flat bonus added to every weapon hit. A weapon with no STR requirement (or being unarmed) always grants the full bonus." },
+        { name: "Ability modifier", formula: "mod(stat) = floor((eff(stat) − 10) / 2)", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
+        { name: "STR → damage", formula: "strBonus = mod(STR)", note: "Flat bonus added to every weapon hit. It no longer subtracts the weapon's STR requirement — stat requirements already hard-gate equipping, so the damage formula was charging for the same thing twice." },
         { name: "Stat requirements", formula: "every stat in an item's `req` (Gear tab) must be met by eff(stat) or it can't be equipped at all", note: "A hard gate, not a soft penalty — e.g. Chain Mail's req.STR 15 blocks equipping below 15 STR outright." },
-        { name: "VIT → HP", formula: "+1 max HP per point", note: "Via computeMaxHp() below." },
-        { name: "DEX → acc/eva/crit", formula: "+1 accuracy, +1 evasion, +1% crit chance per point", note: "" },
-        { name: "INT → MP", formula: "+1 max MP per point", note: "Via computeMaxMp() below." },
-        { name: "RES → damage taken", formula: "incoming damage cut by RES / (RES + 100)", note: "Applied before armor — see Defense & Mitigation. A curve, not a straight −1%/point: it approaches total immunity without ever arriving." },
-        { name: "LCK → luck", formula: "+1% enchant proc chance, +0.5% crit chance, +2% crit damage per point", note: "" },
+        { name: "VIT → HP", formula: "+mod(VIT) max HP per CHARACTER LEVEL", note: "Applied per level the way 5e adds CON to every hit die — otherwise a +2 modifier would be worth 2 HP for the whole run." },
+        { name: "DEX → to-hit/AC/crit", formula: "+mod(DEX) to-hit, +mod(DEX) AC (capped by armour subtype), +mod(DEX)% crit chance", note: "Light armour lets the whole modifier through, medium caps it at +2, heavy takes none." },
+        { name: "INT → MP", formula: "+mod(INT) max MP per CHARACTER LEVEL", note: "Same shape as VIT → HP." },
+        { name: "RES → damage taken", formula: "incoming damage cut by m / (m + 10), m = mod(RES)", note: "Applied before armor. +2 cuts 17%, +5 cuts 33%, +10 cuts 50%; total immunity stays unreachable however high RES climbs." },
+        { name: "LCK → luck", formula: "+3% enchant proc, +2% crit chance, +5% crit damage per point of mod(LCK)", note: "" },
       ],
     },
     {
       title: "Health & mana",
       rows: [
-        { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + eff(VIT) + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
-        { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + eff(INT) + flat per-level MP gained", note: "" },
+        { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + mod(VIT) × level + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
+        { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + mod(INT) × level + flat per-level MP gained", note: "" },
         { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen) × early-level multiplier; +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT. The early-level multiplier is ×2.5 at character level 1, ×2 at 2, ×1.5 at 3 and ×1 from 4 on: the opening floors are where an unlucky fight is unrecoverable." },
         { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − eff(INT) × class.intRegen); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT." },
       ],
@@ -1043,16 +1054,16 @@
     {
       title: "Accuracy & evasion",
       rows: [
-        { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
-        { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
-        { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 45)", note: "50% at even acc/eva, then roughly 1 percentage point per point of lead — over normal leads the tanh is within a point of a straight 1%/point, and only bends beyond about 20. A 45-point lead is worth 84%, a 90-point lead 89%. It never reaches certainty, which is what leaves room for a monster's eva column to keep mattering at high level: the old flat 3%/point hit its 95% cap at a 15-point lead, so eva 25 and eva 40 played identically from mid-run on." },
+        { name: "To hit", formula: "toHit = proficiency + mod(DEX) + weapon's to-hit + boon acc + passive skill acc", note: "Proficiency is 5e's: +2, rising by one every four levels (+2 at 1–4, +3 at 5–8, … +6 at 17+). There is no per-level accuracy any more — on a d20, +2 a level is +10 percentage points a level." },
+        { name: "Armour Class", formula: "AC = 10 + min(mod(DEX), armour's tier + plus) + boon eva + passive skill eva — MEDIUM armour only", note: "Armour grants no flat AC. Only medium turns DEX into AC, and only up to tier + plus of it: a tier-1 jerkin caps you at +1 however nimble you are, and each upgrade scroll widens what your DEX is allowed to do. Spending past your own modifier is wasted. Light and heavy give no AC at all — they pay in INT/MP and in mitigation." },
+        { name: "Hit roll", formula: "a hit is d20 + attacker's to-hit ≥ defender's AC", note: "A natural 1 always misses and a natural 20 always hits, so every fight stays 5–95%. One point of to-hit or AC is worth exactly 5 percentage points, which is the whole reason ability modifiers can be small: mod(DEX) spanning −1…+2 is a 15-point swing here, where on the old tanh curve it was worth 3." },
       ],
     },
     {
       title: "Critical hits",
       rows: [
-        { name: "Crit chance", formula: "critChance = (5% base + Ourn's Perfectly Timed Blow (+1%/character level) + eff(DEX) + eff(LCK) × 0.5) / 100", note: "Levels give no crit of their own." },
-        { name: "Crit damage", formula: "critMult = (125% base + eff(LCK) × 2) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
+        { name: "Crit chance", formula: "critChance = (5% base + Ourn's Perfectly Timed Blow (+1%/character level) + mod(DEX) + mod(LCK) × 2) / 100", note: "Levels give no crit of their own." },
+        { name: "Crit damage", formula: "critMult = (125% base + mod(LCK) × 5) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
       ],
     },
     {
@@ -1060,7 +1071,7 @@
       rows: [
         { name: "Weapon roll", formula: "random(weapon's dmg min, weapon's dmg max)", note: "Unarmed: 2–3, boosted by Brynn's Unarmed Master while no weapon is equipped." },
         { name: "Total damage", formula: "total = weapon roll + strBonus + skill bonus (Smite/Rush/etc.) + flat passive bonus (Sword Master, etc.)", note: "" },
-        { name: "Surprise attack", formula: "no damage bonus — guaranteed hit (no accuracy/evasion roll) against a target that hasn't noticed you", note: "Purely a free hit, not extra damage — flags 'aware' true on the target either way." },
+        { name: "Surprise attack", formula: "no damage bonus — guaranteed hit (no d20 roll) against a target that hasn't noticed you", note: "Purely a free hit, not extra damage — flags 'aware' true on the target either way." },
         { name: "Critical hit", formula: "total × critMult", note: "" },
       ],
     },
@@ -1068,15 +1079,15 @@
       title: "Defense & mitigation — a monster hitting you",
       rows: [
         { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },
-        { name: "RES reduction", formula: "raw × (1 − eff(RES) / (eff(RES) + 100))", note: "Applied FIRST, as a % of the raw hit. 50 RES cuts a third, 100 RES cuts half; immunity is unreachable." },
-        { name: "Armor block", formula: "− random(armor's def min, def max) − armor subtype mitigation − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Armor subtype mitigation: light +0, medium +1, heavy +3, added on top of the item's own def range. Final damage is floored at 1 no matter how much is mitigated." },
+        { name: "RES reduction", formula: "raw × (1 − m / (m + 10)), m = mod(RES)", note: "Applied FIRST, as a % of the raw hit. +2 cuts 17%, +5 a third, +10 a half; immunity is unreachable." },
+        { name: "Armour block", formula: "− random(armour's mit min, mit max) − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Subtypes no longer carry a flat bonus — mitigation is entirely the item's own range, which is where the three armour identities live. Final damage is floored at 1 no matter how much is mitigated." },
       ],
     },
     {
       title: "Weapon / armor upgrades (+X)",
       rows: [
         { name: "Weapon +X", formula: "dmg min += (tier − 1) × plus,  dmg max += tier × 2 × plus", note: "Higher-tier gear scales much harder per point of +X." },
-        { name: "Armor +X", formula: "def min += (tier − 1) × plus,  def max += tier × 2 × plus", note: "Same shape as the weapon formula." },
+        { name: "Armour +X", formula: "mit min += floor((plus + 1) / 2),  mit max = min(2 × base max, base max + plus)", note: "The OPPOSITE shape to a weapon's. A weapon's +X opens its top end; armour's raises the floor fast and the ceiling slowly, and the ceiling can at most double. Upgrading armour should make it dependable, not spiky — a +3 tier-1 robe is a reliable 2–4, not a wild 0–8." },
       ],
     },
     {
@@ -1123,6 +1134,15 @@
       ],
     },
     {
+      title: "Armour: three identities",
+      rows: [
+        { name: "Light", formula: "+INT and +MP, thin mitigation, no AC", note: "A caster's robe. INT bonus equals its tier; MP runs 5/8/12/17/23 by tier plus one per point of plus. Grass armor, Cloth armor, Refined robe, Mages robe, Threads of fate." },
+        { name: "Medium", formula: "AC = 10 + min(mod(DEX), tier + plus), mid mitigation", note: "The only armour where AC is a live stat, and the only place upgrade scrolls buy AC — each +1 opens one more point of your own DEX. Padded jerkin, Studded leather, Scale hauberk, Elven mail, Windwoven coat." },
+        { name: "Heavy", formula: "no AC, no DEX, the largest mitigation ranges", note: "You get hit; it barely matters. Rusted mail, Chainmail, Banded plate, Knight\'s plate, Adamant bulwark." },
+        { name: "Mitigation by tier", formula: "light 0–2 / 0–4 / 1–7 / 2–11 / 3–17 · medium 1–3 / 2–6 / 3–10 / 5–16 / 7–24 · heavy 2–5 / 4–9 / 6–15 / 9–23 / 13–34", note: "Exponential with widening gaps, so a tier jump is felt more than an upgrade scroll." },
+      ],
+    },
+    {
       title: "Boss arenas",
       rows: [
         { name: "Layout", formula: "the boss's `arena`: \"ring\" or \"hall\" (blank = hall)", note: "Boss floors are hand-laid, not rolled like ordinary floors. \"ring\": 4–5 chambers on a circle joined rim to rim in a closed loop, boss in the chamber opposite the entrance, so the fight can be kited round rather than cornered. \"hall\": an antechamber and a short corridor into one great pillared room, boss at its centre." },
@@ -1145,7 +1165,7 @@
       title: "Experience & leveling",
       rows: [
         { name: "XP to next level", formula: "threshold = current level × 6", note: "So reaching level L costs 3 × L × (L−1) XP in total: 6 to reach level 2, 270 for level 10, 1140 for level 20. Quadratic, the same shape Shattered Pixel Dungeon uses." },
-        { name: "On level up", formula: "main stat +2, secondary stat +1, plus the class's own flat levelUp gains (hp/mp/accuracy/evasion)", note: "Levels can chain in one XP grant if enough XP is banked at once." },
+        { name: "On level up", formula: "main stat +1 every 2 levels, secondary +1 every 3, plus the class's flat levelUp gains (hp/mp)", note: "Levels can chain in one XP grant if enough XP is banked at once. It was +2/+1 EVERY level, which drove a main stat to 53 by level 20 — a +21 modifier, nothing like the bounded thing (score − 10) / 2 assumes. Accuracy comes from the proficiency bonus now, not from levelUp." },
         { name: "Monster XP", formula: "ceil(monster's minFloor / 2)", note: "1 XP for a floor 1–2 monster, 2 for floor 3–4, 3 for floor 5+." },
         { name: "Boss XP", formula: "15 + round(boss's max HP × 0.4)", note: "" },
       ],

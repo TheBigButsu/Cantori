@@ -503,3 +503,175 @@ A backstop remains for a future arena that gets this wrong: if the boss is someh
 unreachable, carve a corridor to it. Unlike the terrain check it can actually
 repair the floor, because carving is always available where removing terrain is
 not. It does not fire on either arena today — measured 0 strandings in 1500.
+
+## D&D-style ability modifiers — DONE (partly)
+
+Stats no longer feed formulas raw. Everything reads the **modifier**,
+`floor((score − 10) / 2)`, and stat blocks are the 5e **standard array**
+(15/14/13/12/10/8), so a starting character's modifiers run −1 … +2 and 10 is the
+do-nothing middle.
+
+| Class | STR | INT | VIT | DEX | RES | LCK |
+|---|---|---|---|---|---|---|
+| Chadwick (warrior) | 15 | 8 | 14 | 12 | 13 | 10 |
+| Brynn (monk) | 12 | 8 | 14 | 15 | 13 | 10 |
+| ToneTum (mage) | 8 | 15 | 10 | 12 | 14 | 13 |
+| *Bard (not built yet)* | *12* | *14* | *15* | *10* | *8* | *13* |
+
+This was not a substitution. The old formulas read raw stats of 3–60 directly, so
+each needed its own scale chosen for a range that now spans four points:
+
+| | Old | New |
+|---|---|---|
+| STR → damage | `floor((STR − weapon req) / 4)` | `mod(STR)` — the requirement already hard-gates equipping |
+| VIT → HP | `+1 per point` | `+1 per point of modifier`, flat |
+| INT → MP | `+1 per point` | `+1 per point of modifier`, flat |
+| DEX → acc/eva | `+1 each per point` | `+mod(DEX)` each |
+| RES → damage taken | `RES / (RES + 100)` | `m / (m + 10)`, m = mod(RES) — +2 cuts 17%, +10 cuts 50% |
+| LCK → crit | `+0.5%/point`, `+2% crit dmg` | `+2%/mod point`, `+5% crit dmg` |
+| LCK → enchant procs | `+1%/point` | `+3%/mod point` |
+
+**One thing tried and rejected:** applying VIT per level, the way 5e adds CON to
+every hit die. That is linear in D&D because stats barely move there (an ASI every
+four levels, hard cap 20). Here a class's main stat gains **+2 every level**, so VIT
+reaches 33 by level 20, its modifier +11, and `mod × level` goes quadratic — **333
+max HP at level 20** against 20 at level 1. Modifiers are flat bonuses; per-level
+growth stays the `levelUp` set's job.
+
+### RESOLVED: stat growth, and the whole to-hit system — see below
+
+The two "still open" notes in this section are settled; the sections that follow
+supersede them. Kept here because the reasoning still explains *why*.
+
+### (superseded) How stats should grow
+
+The level-up rule is untouched — **+2 main, +1 secondary, every level**. That is not
+a D&D curve, and it is the next domino. It means a main stat reaches 53 by level 20
+(modifier +21), so modifiers are not the bounded ±5 things they are in 5e; they are
+just a slower-growing version of the old raw stats. If the intent is genuinely
+D&D-shaped, level-ups want to become an ASI: +2 to one stat every 4 levels, capped
+at 20, which holds every modifier at +5 or under for the whole run.
+
+### (superseded) Accuracy and evasion were on the wrong scale for this
+
+See the note in the editor's formula reference. `mod(DEX)` spans **−1 … +2 across
+every class in the game** — a 3-point total spread. On the current hit curve
+(`50% + 45% × tanh(lead / 45)`) 3 points of lead is worth **3 percentage points**.
+The same 3 points on a d20 is **15**. Meanwhile weapon accuracy spans −15 … +9 and
+monster evasion 0 … 30, so weapon choice and level decide whether you hit and DEX is
+a rounding error.
+
+Making DEX matter means moving three things together, which is the deferred monster
+pass: `HIT_SCALE` down to about **9** (so a point of modifier is worth ~5 points,
+like a d20), monster `eva` re-authored onto an AC-like **10–20** band instead of
+0–30, and weapon accuracy onto a proficiency-like **±3** instead of ±15. Doing only
+the first makes the game unplayable: at scale 9, a Snake at eva 30 against a level-1
+accuracy of 17 is a **10%** hit.
+
+## d20 to-hit and Armour Class — DONE
+
+The tanh hit curve is gone. A hit is now **`d20 + to-hit ≥ the target's AC`**, with a
+natural 1 always missing and a natural 20 always hitting, so every exchange stays
+between 5% and 95%.
+
+This had to follow the ability modifiers. On the old curve, `mod(DEX)` spanning
+−1…+2 was worth **3 percentage points** across the entire stat; on a d20 the same
+spread is **15**, which is the whole reason 5e's modifiers can be small numbers.
+
+- **To hit** = proficiency + `mod(DEX)` + the weapon's `toHit` + boons + passives.
+  Proficiency is 5e's: **+2, rising by one every four levels** (+2 at 1–4, +3 at
+  5–8, … +6 at 17+). There is no per-level accuracy any more — `levelUp.accuracy`
+  and `levelUp.evasion` are removed from every class, because +2 to-hit a level is
+  +10 percentage points a level and would cap out by about level 6.
+- **AC** = 10 + `min(mod(DEX), subtype cap)` + the armour's `ac` + boons + passives.
+  Light armour lets the whole DEX modifier through, **medium caps it at +2, heavy
+  takes none** — which is what stops plate being strictly best. Heavy buys that back
+  with flat mitigation (light +0, medium +1, heavy +3 damage soaked), which is this
+  game's own addition on top of AC.
+
+Monsters carry `toHit` and `ac` instead of `acc` and `eva`, converted from the old
+columns as `AC = 10 + eva/4` and `toHit = acc/4`, which lands them in a 10–18 AC
+band and a +0…+5 to-hit band. Weapons' `accuracy` became `toHit` at a third of its
+old value (dagger +3, sword +2, big axe −5). Armour got explicit AC on the new
+scale (cloth/Shitty +1, leather +2, chain +3, plate +4). Bosses were given an
+authored ladder rather than defaulting: Piper AC 14/+5, Golem 16/+6, Mummy 15/+7,
+Cultist 16/+8, Demigod 17/+9.
+
+## Stat growth — DONE
+
+**Main stat +1 every 2 levels, secondary +1 every 3.** It was +2 and +1 *every*
+level, which drove a main stat to 53 by level 20 — a +21 modifier, nothing like the
+bounded thing `(score − 10) / 2` assumes. At this rate a main stat gains 10 points
+over 20 levels and its modifier tops out near +7. HP and MP still rise every level
+through the `levelUp` set; only the stats slowed down.
+
+## Armour: three identities, not three points on one axis — DONE
+
+Armour was the weakest drop in the game: every piece was "more AC, more soak", so a
+new one was interesting only if the number was bigger. The three subtypes are now
+three different answers to *how do I not die*.
+
+- **Light** — a caster's robe. Grants **INT (= its tier) and MP** outright, thin
+  mitigation, and **no AC at all**. *Grass armor, Cloth armor, Refined robe, Mages
+  robe, Threads of fate.*
+- **Medium** — the only armour that turns DEX into AC, and so the only place AC is a
+  live stat. It lets through **tier + plus** points of your DEX modifier: a tier-1
+  jerkin caps you at +1 however nimble you are, and **each upgrade scroll widens what
+  your DEX is allowed to do**. Spending past your own modifier is wasted — the cap
+  never invents DEX you do not have. *Padded jerkin, Studded leather, Scale hauberk,
+  Elven mail, Windwoven coat.*
+- **Heavy** — no AC, no DEX, the largest mitigation ranges in the game. You get hit;
+  it barely matters. *Rusted mail, Chainmail, Banded plate, Knight's plate, Adamant
+  bulwark.*
+
+Mitigation is the item's own min–max roll (no subtype bonus any more), exponential
+with widening gaps so a **tier** jump is felt more than an upgrade scroll:
+
+| | t1 | t2 | t3 | t4 | t5 |
+|---|---|---|---|---|---|
+| light | 0–2 | 0–4 | 1–7 | 2–11 | 3–17 |
+| medium | 1–3 | 2–6 | 3–10 | 5–16 | 7–24 |
+| heavy | 2–5 | 4–9 | 6–15 | 9–23 | 13–34 |
+
+**Armour's `+X` runs the opposite way to a weapon's.** A weapon's plus opens its top
+end; armour's raises the floor fast and the ceiling slowly, and the ceiling can at
+most double: `min += floor((plus+1)/2)`, `max = min(2 × base max, base max + plus)`.
+Upgrading armour should make it *dependable*, not spiky — a +3 tier-1 robe is a
+reliable 2–4, not a wild 0–8. Light tier 1 therefore runs 0–2 / 1–3 / 1–4 / 2–4
+across +0…+3.
+
+## ToneTum's spellbook — DONE
+
+Seven skills, all authored in `data.js` — costs, cooldowns, thresholds and durations
+are rank data, never hardcoded.
+
+**Magic Missile** is **innate**: known from level 0, costs no skill point. 5 MP for
+1–4 damage plus one per character level. A new node flag, `innate`, carries this (and
+the editor learned it in the same commit — rule 2 caught it the first time round).
+
+**Tier 1** — *Burning Sensation* (passive; every connecting blow or bolt sets a burn,
+1/3 turns rising to 4/6), *Sleep* (10 MP; drops a foe at or below INT ÷ 2 HP, then
+INT, then a 5-tile cross), *Deep Well* (passive; +10/25/50/100% MP regen, ranks
+replacing rather than stacking, the top two gated at character level 5 and 10).
+
+**Tier 2** — *Blink* (teleport anywhere in sight; ranks cut the cost 20 → 15 → 10 MP
+and make kills burn the cooldown down), *Mirror Image*, *Madness* (berserk for
+INT-modifier turns, cooldown 250 → 100).
+
+### Two things that needed engine work
+
+**Sleep had to hold.** The first build was useless: the sleeper got its ordinary
+notice roll on the very turn the spell landed, and `WAKE_ACUITY` makes that a
+certainty within three tiles — exactly where you would ever cast it. Magical sleep is
+now its own state (`magicSleep`, 10 turns + the INT modifier) during which the monster
+gets no notice roll at all and noise cannot reach it. A blow still breaks it
+instantly, which is the point: a sleeper is `unaware`, so the existing ambush rule
+already makes your next strike on it a guaranteed hit.
+
+**Mirror Image needed a third kind of thing on the board.** Decoys are not monsters
+(they never act, hold no HP worth tracking and give no XP) and not the player, so they
+live in their own `decoys` list. A hunting monster adjacent to one strikes it instead
+of you and the image shatters — always, on one hit. Only *adjacency* is checked: an
+image that pulled monsters across the room would be a wall, not a feint. They are
+drawn as the player's own sprite at half alpha with a blue outline, because a decoy
+you cannot tell from yourself is a UI bug rather than a mind game.
