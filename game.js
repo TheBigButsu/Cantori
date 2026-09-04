@@ -2206,7 +2206,6 @@
         log(pre + monName(target) + (pinned && !surprise ? " cannot dodge. (-" : ". (-") + dmg + ")", "hit");
         // weapon enchants proc on a connecting hit (power = weapon damage)
         if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon), null, player.weapon);
-        applyBurningSensation(target);
       }
     } else {
       bump(attacker, player.x, player.y);
@@ -2216,10 +2215,15 @@
         log("You evade the " + monName(attacker) + ".");
         return;
       }
-      let dmg = randInt(attacker.atkMin, attacker.atkMax) + bonus;
+      let dmg = randInt(attacker.atkMin, attacker.atkMax);
       // RES applies first, as a % reduction of the raw hit; armor (and other
       // flat mitigation) then reduces whatever's left.
       dmg = Math.max(1, Math.round(dmg * (1 - resReduction())) - armorBlock());
+      // A charge's momentum is added AFTER mitigation, so it always lands: +1 for
+      // every tile crossed, guaranteed. It used to go in with the base damage and
+      // was simply eaten — a bear that thundered four squares still hit for 1
+      // against any real armour, which made its signature move read as a whiff.
+      dmg += bonus;
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
@@ -3243,9 +3247,14 @@
       for (const dot of m.dots.slice()) {
         m.hp -= dot.dmg; flash(m); floatText(m.x, m.y, dot.icon + "-" + dot.dmg, dot.color);
         // Poison has no fixed duration — its own stack decays by 1 each tick,
-        // fading out once spent. Burn (and anything else) still runs on rounds.
+        // fading out once spent. A `decay` dot (ToneTum's Burning Sensation) runs on
+        // rounds AND cools by 1 a turn, to a floor of 1: it hits hardest the moment
+        // it lands. Everything else burns at a flat rate for its rounds.
         if (dot.tag === "poison") { if (--dot.dmg <= 0) m.dots = m.dots.filter((x) => x !== dot); }
-        else if (--dot.rounds <= 0) m.dots = m.dots.filter((x) => x !== dot);
+        else {
+          if (dot.decay) dot.dmg = Math.max(1, dot.dmg - 1);
+          if (--dot.rounds <= 0) m.dots = m.dots.filter((x) => x !== dot);
+        }
         if (m.hp <= 0) { killMonster(m, dot.tag === "poison" ? "succumbs to poison" : "burns away"); return; }
       }
     }
@@ -3511,11 +3520,12 @@
         return;
       }
       // ToneTum: three want a monster, Blink wants a tile.
-      if (pk === "bolt" || pk === "sleepcast" || pk === "madnesscast") {
+      if (pk === "bolt" || pk === "sleepcast" || pk === "madnesscast" || pk === "burncast") {
         const m = monsterAt(tx, ty);
         if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
         if (pk === "bolt") executeMagicMissile(pendingSkill, tx, ty);
         else if (pk === "sleepcast") executeSleep(pendingSkill, tx, ty);
+        else if (pk === "burncast") executeBurningSensation(pendingSkill, tx, ty);
         else executeMadness(pendingSkill, tx, ty);
         return;
       }
@@ -5289,7 +5299,8 @@
     else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
     else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
              d.kind === "smite" || d.kind === "throwmon" ||
-             d.kind === "bolt" || d.kind === "sleepcast" || d.kind === "blinkcast" || d.kind === "madnesscast") beginTargetedSkill(key);
+             d.kind === "bolt" || d.kind === "sleepcast" || d.kind === "blinkcast" ||
+             d.kind === "madnesscast" || d.kind === "burncast") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -5393,14 +5404,24 @@
   }
   function payCast(key, c) { player.mp -= c.cost; player.skills[key].cd = c.cur.cd || 0; }
 
-  // Burning Sensation — a passive, so it hangs off any connecting blow rather than
-  // being cast. Reuses the same burn DOT the fire enchant uses.
-  function applyBurningSensation(target) {
-    if (!target || target.hp <= 0) return;
-    const r = passiveRank("burning_sensation");
-    if (!r || !r.burnDmg) return;
-    addDot(target, { tag: "burn", dmg: r.burnDmg, rounds: r.burnTurns || 3, icon: "🔥", color: "#ff8f4a" });
-    floatText(target.x, target.y, "🔥", "#ff8f4a");
+  // Burning Sensation — a cast, not a rider on every blow. It opens at the INT
+  // modifier and cools by 1 a turn, so its whole value is front-loaded: it is worth
+  // spending on something you expect to still be alive next turn.
+  function executeBurningSensation(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    const dmg = Math.max(1, mod("INT") + (c.cur.dmgBonus || 0));
+    addDot(m, { tag: "burn", dmg, rounds: dmg + (c.cur.turnBonus || 0), decay: true, icon: "🔥", color: "#ff8f4a" });
+    spawnProjectile(player.x, player.y, tx, ty, "#ff8f4a");
+    floatText(m.x, m.y, "🔥" + dmg, "#ff8f4a");
+    log("The " + monName(m) + " catches light. (" + dmg + " a turn, cooling)", "hit");
+    startHunting(m); makeNoise(m.x, m.y);
+    updateHUD(); updateHotbar();
+    worldTurn();
   }
   // The active rank's data for a learned passive (null if unlearned).
   function passiveRank(key) {
@@ -5424,7 +5445,6 @@
     log("A bolt of force strikes the " + monName(m) + ". (-" + dmg + ")", "hit");
     startHunting(m); makeNoise(m.x, m.y);
     if (m.hp <= 0) killMonster(m, "is unmade");
-    else applyBurningSensation(m);
     updateHUD(); updateHotbar();
     worldTurn();
   }

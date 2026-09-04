@@ -61,7 +61,7 @@ window.CantoriBosses = function (deps) {
     const d = cheb(m.x, m.y, player.x, player.y);
     // Signature attack: telegraph a straight line, then send an exploding rat down it.
     if ((m.beamCd | 0) <= 0 && see && d >= 2 && lineOfSight(m.x, m.y, player.x, player.y)) {
-      piperCastBeam(m); m.beamCd = 7; return;
+      piperCastBeam(m); m.beamCd = 12; return;
     }
     if (m.beamCd > 0) m.beamCd--;
     if (d === 1) { attack(m, player); return; }

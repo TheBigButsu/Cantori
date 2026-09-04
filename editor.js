@@ -121,7 +121,7 @@
   // Blank templates when adding a row.
   const TEMPLATES = {
     monsters: { name: "New Monster", hp: 5, atkMin: 1, atkMax: 2, glyph: "?", color: "#c0c0c0" },
-    gear: { cat: "weapon", name: "New Gear", dmgMin: 1, dmgMax: 3, speed: 1, accuracy: 0, tier: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
+    gear: { cat: "weapon", name: "New Gear", dmgMin: 1, dmgMax: 3, speed: 1, toHit: 0, tier: 1, req: { STR: 0 }, glyph: "/", color: "#cccccc" },
     consumables: { cat: "potion", name: "New Item", effect: "heal", glyph: "!", color: "#cccccc" },
     bosses: { name: "New Boss", hp: 40, atkMin: 4, atkMax: 6 },
     boons: { name: "New Boon", desc: "", icon: "✦", color: "#f0c14b" },
@@ -419,7 +419,7 @@
   // to scan without wading through the rest.
   const GEAR_GROUPS = [
     { stateKey: "gear_weapon", heading: "weapons", addBase: "weapon", match: (cat) => cat === "weapon", template: Object.assign({}, TEMPLATES.gear, { cat: "weapon" }) },
-    { stateKey: "gear_armor", heading: "armor", addBase: "armor", match: (cat) => cat === "armor", spec: SPECS.armor, template: Object.assign({}, TEMPLATES.gear, { cat: "armor", dmgMin: undefined, dmgMax: undefined, defMin: 1, defMax: 3, evasion: 0 }) },
+    { stateKey: "gear_armor", heading: "armor", addBase: "armor", match: (cat) => cat === "armor", spec: SPECS.armor, template: Object.assign({}, TEMPLATES.gear, { cat: "armor", sub: "medium", dmgMin: undefined, dmgMax: undefined, toHit: undefined, defMin: 1, defMax: 3 }) },
     { stateKey: "gear_jewelry", heading: "rings & necklaces", addBase: "ring", addLabel: "ring/necklace", match: (cat) => cat === "ring" || cat === "necklace", template: Object.assign({}, TEMPLATES.gear, { cat: "ring", dmgMin: undefined, dmgMax: undefined }) },
     { stateKey: "gear_trinket", heading: "trinkets", addBase: "trinket", match: (cat) => cat === "trinket", template: Object.assign({}, TEMPLATES.gear, { cat: "trinket", dmgMin: undefined, dmgMax: undefined }) },
   ];
@@ -1047,12 +1047,12 @@
       rows: [
         { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + mod(VIT) × level + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
         { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + mod(INT) × level + flat per-level MP gained", note: "" },
-        { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen) × early-level multiplier; +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT. The early-level multiplier is ×2.5 at character level 1, ×2 at 2, ×1.5 at 3 and ×1 from 4 on: the opening floors are where an unlucky fight is unrecoverable." },
-        { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − eff(INT) × class.intRegen); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT." },
+        { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − mod(VIT) × class.vitRegen × 5) × early-level multiplier; +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2. The ×5 is what keeps a small modifier worth roughly what a raw stat used to be. The early-level multiplier is ×1.75 at character level 1, ×1.5 at 2, ×1.25 at 3 and ×1 from 4 on: the opening floors are where an unlucky fight is unrecoverable." },
+        { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − mod(INT) × class.intRegen × 5) × (1 + Deep Well); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT. ToneTum's Deep Well multiplies the whole thing by +10/25/50/100%." },
       ],
     },
     {
-      title: "Accuracy & evasion",
+      title: "To hit & Armour Class",
       rows: [
         { name: "To hit", formula: "toHit = proficiency + mod(DEX) + weapon's to-hit + boon acc + passive skill acc", note: "Proficiency is 5e's: +2, rising by one every four levels (+2 at 1–4, +3 at 5–8, … +6 at 17+). There is no per-level accuracy any more — on a d20, +2 a level is +10 percentage points a level." },
         { name: "Armour Class", formula: "AC = 10 + min(mod(DEX), armour's tier + plus) + boon eva + passive skill eva — MEDIUM armour only", note: "Armour grants no flat AC. Only medium turns DEX into AC, and only up to tier + plus of it: a tier-1 jerkin caps you at +1 however nimble you are, and each upgrade scroll widens what your DEX is allowed to do. Spending past your own modifier is wasted. Light and heavy give no AC at all — they pay in INT/MP and in mitigation." },
@@ -1686,8 +1686,8 @@
   }
   function tableHint(coll) {
     return ({
-      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
-      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range) plus its own evasion stat; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype ALSO nudges evasion on top of the item's own value: light +3, medium 0, heavy −3. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank to-hit / AC / range / charge / ranged use engine defaults (to-hit +3, AC 11). Sprite = assets/tiles/<key>.png.",
+      gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and to-hit (added to the d20 attack roll); ARMOR uses mit min/max (each hit blocks a random amount in that range) and, if LIGHT, its INT and MP columns; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armour grants NO flat AC — the subtype IS the identity: light pays in INT/MP, MEDIUM is the only one that turns DEX into AC (up to tier + plus of it), heavy just soaks. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab. `arena` picks the hand-laid floor it is fought on — \"ring\" is 4–5 chambers in a closed loop with the boss opposite the way in, \"hall\" is an antechamber leading to one great pillared room. Blank means hall.",
       boons: "After each boss, the player is offered 3 of these at random and picks 1 (lasts the run). name / icon / color / description are all editable here. The EFFECT of each boon is wired in code by its key — guild (on-hit proc +level%), kethara (grant a purple armor), maelon (heal on kill), ourn (grants the Ourn's Blink freeze skill). Renaming/retuning text is safe; a brand-new key will show and be pickable but has no effect until it's coded.",

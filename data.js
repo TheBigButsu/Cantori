@@ -1786,30 +1786,38 @@ window.CANTORI_DATA = {
           "y": 0,
           "name": "Burning Sensation",
           "icon": "🔥",
-          "kind": "passive",
-          "desc": "Your bolts and blows leave the target alight.",
+          "kind": "burncast",
+          "desc": "Set a foe alight. It burns for your INT modifier a turn and cools by 1 each turn after — all its bite is in the first few turns.",
           "levels": [
-            "Sets the target burning (1 damage a turn for 3 turns)",
-            "Burn deals 2 a turn",
-            "Burn lasts 4 turns",
-            "Burn deals 4 a turn for 6 turns"
+            "7 MP · burns for INT modifier a turn, cooling by 1 · 20 turn cooldown",
+            "+1 burn damage a turn",
+            "+1 burn damage a turn, and it lasts 1 turn longer",
+            "+3 burn damage a turn, and it lasts 3 turns longer"
           ],
           "ranks": [
             {
-              "burnDmg": 1,
-              "burnTurns": 3
+              "mp": 7,
+              "cd": 20,
+              "dmgBonus": 0,
+              "turnBonus": 0
             },
             {
-              "burnDmg": 2,
-              "burnTurns": 3
+              "mp": 7,
+              "cd": 20,
+              "dmgBonus": 1,
+              "turnBonus": 0
             },
             {
-              "burnDmg": 2,
-              "burnTurns": 4
+              "mp": 7,
+              "cd": 20,
+              "dmgBonus": 1,
+              "turnBonus": 1
             },
             {
-              "burnDmg": 4,
-              "burnTurns": 6
+              "mp": 7,
+              "cd": 20,
+              "dmgBonus": 3,
+              "turnBonus": 3
             }
           ],
           "req": []

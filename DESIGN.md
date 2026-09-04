@@ -675,3 +675,54 @@ of you and the image shatters — always, on one hit. Only *adjacency* is checke
 image that pulled monsters across the room would be a wall, not a feint. They are
 drawn as the player's own sprite at half alpha with a blue outline, because a decoy
 you cannot tell from yourself is a UI bug rather than a mind game.
+
+## Burning Sensation is a spell now — DONE
+
+The passive version was a tax on every attack: it did its work whether or not you
+wanted it, so it never asked for a decision. As a cast it does. **7 MP, 20-turn
+cooldown**, and it sets a burn whose damage *starts* at your INT modifier and drops
+by one every turn until it goes out — so it runs for exactly as many turns as its
+opening tick, and the total is the triangular number of that opening tick.
+
+| INT mod | opening tick | turns | total |
+|---|---|---|---|
+| +2 | 2 | 2 | 3 |
+| +3 | 3 | 3 | 6 |
+| +4 | 4 | 4 | 10 |
+
+Ranks add to both ends: rank 2 gives +1 damage, rank 3 also +1 turn, rank 4 gives +3
+and +3. At rank 4 with a +4 modifier that is a 7-damage opening tick running 10 turns
+for 31 total — a real opener against something slow, still worthless against something
+that reaches you in two steps.
+
+The decay needed a new DOT flag rather than a new DOT type. Burns already ran off
+`rounds`; `decay: true` simply subtracts one from `dmg` on each tick (floored at 1, so
+a rank-4 burn's tail is a long 1-a-turn drip rather than a sudden nothing). Poison
+still counts *down its damage* as its clock, which is why the tick handles the two
+shapes separately.
+
+One consequence worth knowing at the table: casting spends a world turn, so the burn
+ticks once immediately. A 3-damage burn is first *seen* at 2. The 3 was dealt.
+
+## Charge damage lands after mitigation — DONE
+
+The bear's charge added its per-square bonus to the raw roll and then let armour eat
+the sum, which meant the whole mechanic quietly vanished against anything armoured:
+against tier-3 Banded plate **every single charge landed for exactly 1**. The bonus is
+now added *after* resistance and armour block:
+
+```
+dmg = max(1, round(roll × (1 − res)) − armourBlock) + bonus
+```
+
+Momentum is momentum — a bear that crossed five squares hits harder than one that
+crossed one, and plate does not care how it was run into. Same fight, after: charges
+average 4.5 instead of 1.0. This applies to any charger, not just the bear; it is the
+shared `attack()` path.
+
+## Piper beam cooldown 7 → 12
+
+Worth recording because the request was to slow "the summon skill": the Piper's two
+vermin summons are **one-shot events**, not cooldowns — one on first sight, one at
+half HP via `piperPhaseShift`. The beam is the only recurring ability it has, and that
+is what moved.
