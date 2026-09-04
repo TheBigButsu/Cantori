@@ -104,6 +104,9 @@
       { f: "__key", label: "key", type: "key" },
       { f: "name", type: "text", cls: "name" },
       { f: "hp", type: "num" }, { f: "atkMin", type: "num" }, { f: "atkMax", type: "num" },
+      // Which hand-laid floor this boss is fought on. Boss floors are not rolled
+      // like ordinary ones — see the "Boss arenas" note in the formula reference.
+      { f: "arena", type: "select", opts: ["", "hall", "ring"] },
     ],
     boons: [
       { f: "__key", label: "key", type: "key" },
@@ -1120,6 +1123,15 @@
       ],
     },
     {
+      title: "Boss arenas",
+      rows: [
+        { name: "Layout", formula: "the boss's `arena`: \"ring\" or \"hall\" (blank = hall)", note: "Boss floors are hand-laid, not rolled like ordinary floors. \"ring\": 4–5 chambers on a circle joined rim to rim in a closed loop, boss in the chamber opposite the entrance, so the fight can be kited round rather than cornered. \"hall\": an antechamber and a short corridor into one great pillared room, boss at its centre." },
+        { name: "Why hand-laid", formula: "connectivity is a property of the shape", note: "The ordinary generator drops obstacle trees in any room over 20 tiles, and a boss room was 70–170 — so it earned 15–30 pillars, and about 1 boss floor in 200 came out with the boss sealed in a 1-tile pocket. That is an unwinnable run, since the exit only opens when the boss dies. Boss floors no longer run the tree pass at all." },
+        { name: "Hall pillars", formula: "single tiles on a 3-tile lattice, ~15% skipped", note: "Isolated pillars with two clear tiles either side; the floor stays one connected mesh whichever are dropped, so a colonnade can never wall the boss in." },
+        { name: "No traps or thorn vaults", formula: "both skipped on a boss floor", note: "" },
+      ],
+    },
+    {
       title: "The floor's patience (the Horror)",
       rows: [
         { name: "Grace period", formula: "1000 turns on a floor", note: "A warning lands at 900 turns. The turn count resets on every new floor, so this is per-floor, not per-run. The player watches it drain on the TIME bar in the bottom-left vitals stack, which turns red at the warning." },
@@ -1657,7 +1669,7 @@
       monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank acc/eva/range/charge/ranged use engine defaults. Sprite = assets/tiles/<key>.png.",
       gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and acc; ARMOR uses def min/max (each hit blocks a random amount in that range) plus its own evasion stat; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armor subtype ALSO nudges evasion on top of the item's own value: light +3, medium 0, heavy −3. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
-      bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab.",
+      bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab. `arena` picks the hand-laid floor it is fought on — \"ring\" is 4–5 chambers in a closed loop with the boss opposite the way in, \"hall\" is an antechamber leading to one great pillared room. Blank means hall.",
       boons: "After each boss, the player is offered 3 of these at random and picks 1 (lasts the run). name / icon / color / description are all editable here. The EFFECT of each boon is wired in code by its key — guild (on-hit proc +level%), kethara (grant a purple armor), maelon (heal on kill), ourn (grants the Ourn's Blink freeze skill). Renaming/retuning text is safe; a brand-new key will show and be pickable but has no effect until it's coded.",
     })[coll] || "";
   }

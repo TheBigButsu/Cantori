@@ -972,12 +972,14 @@ window.CANTORI_DATA = {
   },
   "bosses": {
     "piper": {
+      "arena": "ring",
       "name": "The Pied Piper",
       "atkMin": 6,
       "atkMax": 10,
       "hp": 200
     },
     "golem": {
+      "arena": "hall",
       "name": "Stone Golem",
       "atkMin": 1,
       "hp": 400,

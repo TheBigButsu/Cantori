@@ -461,3 +461,45 @@ The underlying data is untouched. Nodes still carry `x`/`y`; `y` is the tier (it
 level gate) and `x` is now just the order cells appear in the row. The editor's
 authoring grid is unchanged, and so is every prerequisite in `data.js`. Only tiers
 that hold at least one skill are drawn — an empty tier is not information.
+
+## Boss arenas — DONE
+
+Boss floors are **built, not rolled**. Each boss names its layout (`arena` on the
+bosses table); anything unset gets the hall.
+
+- **`ring`** (the Piper) — 4–5 chambers on a circle, joined rim to rim in a closed
+  loop, with the boss in the chamber opposite the one you walk in from. Every room
+  has two ways out, so the fight can be kited round the ring rather than fought in
+  a corner.
+- **`hall`** (the Golem) — an antechamber and a short corridor into one great
+  pillared room, boss at its centre, rubble scattered for texture.
+
+### The bug this fixes
+
+About **1 boss floor in 200** generated with the boss sealed inside a 1-tile pocket
+of obstacle trees — an unwinnable run, because the exit only opens when the boss
+dies. `tests/smoke.js` caught it as an intermittent `boss is unreachable on foot`,
+failing roughly one run in five.
+
+The cause was `placeTrees`, which drops `1 + (area − 21)/5` pillars into any room
+over 20 tiles. Boss rooms were 70–170 tiles, so they earned **15–30 pillars**, and
+occasionally those closed a ring around the boss. Measured before the fix: 7
+strandings in 1500 boss floors, every sample showing the boss with 7–8 wall
+neighbours in a pocket of 1–2 tiles.
+
+The existing terrain safety net could not catch it. It only ran `if
+(paintedCells.length)` — so it never fired at all in a biome with no `terrain`
+block, which is three of the five — and its only remedy was `unpaintTerrain()`,
+which removes water and rubble but never a tree.
+
+The fix is structural rather than another check: **boss floors do not run the tree
+pass at all**, and both arenas are laid out so connectivity is a property of the
+shape. The ring is a closed loop. The hall's colonnade sits on a 3-tile lattice of
+*single* tiles, so every pillar is an island with two clear tiles around it and the
+floor stays one connected mesh whichever pillars are dropped. Thorn vaults and
+traps are skipped on boss floors too.
+
+A backstop remains for a future arena that gets this wrong: if the boss is somehow
+unreachable, carve a corridor to it. Unlike the terrain check it can actually
+repair the floor, because carving is always available where removing terrain is
+not. It does not fire on either arena today — measured 0 strandings in 1500.

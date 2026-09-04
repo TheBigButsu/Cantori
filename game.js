@@ -1338,6 +1338,92 @@
     if (!allRoomsReachable(rooms, anchor.x, anchor.y)) unpaintTerrain();   // never ship a severed floor
   }
 
+  // ---- Boss arenas ----------------------------------------------------------
+  // A boss floor is BUILT, not rolled. The ordinary generator scatters rooms at
+  // random and then drops obstacle trees in anything over 20 tiles — and a boss
+  // room is 70–170 tiles, so it earned 15–30 pillars. About 1 boss floor in 200
+  // came out with the boss sealed inside a 1-tile pocket of them, which is an
+  // unwinnable run: the exit only opens when the boss dies. The old safety net
+  // could not catch it, because it only ran when the biome had painted terrain
+  // and its only remedy was to remove that terrain — never a tree.
+  //
+  // These layouts are laid out by hand instead, so connectivity is a property of
+  // the shape rather than something to re-check afterwards, and no boss floor
+  // runs placeTrees at all. Which layout a boss fights on is authored per boss
+  // (`arena` on the bosses table); anything unset gets the hall.
+  const ARENA_DEFAULT = "hall";
+
+  // "ring" — 4–5 chambers on a circle, joined rim to rim in a closed loop, boss in
+  // the chamber opposite the one you walk in from. Every room has two ways out, so
+  // the fight can be kited around the ring rather than cornered in one box.
+  function buildRingArena(rooms) {
+    const n = randInt(4, 5);
+    const cx = Math.floor(MAP_W / 2), cy = Math.floor(MAP_H / 2);
+    const R = n === 4 ? 13 : 14;                 // 5 chambers need a wider circle to stay clear of each other
+    const a0 = Math.random() * Math.PI * 2;      // spin it, so the ring isn't always axis-aligned
+    const ring = [];
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i * 2 * Math.PI) / n;
+      const w = randInt(8, 10), h = randInt(7, 9);
+      const x = Math.max(2, Math.min(MAP_W - w - 3, Math.round(cx + Math.cos(a) * R - w / 2)));
+      const y = Math.max(2, Math.min(MAP_H - h - 3, Math.round(cy + Math.sin(a) * R - h / 2)));
+      const room = { x, y, w, h };
+      carveRoom(room); ring.push(room);
+    }
+    // Close the loop first, on the ring's own order — the array is reordered below
+    // so the caller's "rooms[0] is the start, last is the boss" contract holds.
+    for (let i = 0; i < ring.length; i++) carveCorridor(roomCenter(ring[i]), roomCenter(ring[(i + 1) % ring.length]));
+    const bossAt = Math.round(n / 2);            // as near opposite the entrance as the ring allows
+    const ordered = ring.filter((_, i) => i !== bossAt);
+    ordered.push(ring[bossAt]);
+    for (const r of ordered) rooms.push(r);
+  }
+
+  // "hall" — an antechamber, a short corridor, then one great pillared room with
+  // the boss at its centre. The colonnade sits on a 3-tile lattice of SINGLE tiles,
+  // which is what makes it safe: every pillar is isolated with two clear tiles on
+  // each side, so the floor stays one connected mesh no matter which are dropped.
+  function buildHallArena(rooms) {
+    const hw = 29, hh = 21;
+    const hx = Math.floor((MAP_W - hw) / 2), hy = Math.floor((MAP_H - hh) / 2);
+    const hall = { x: hx, y: hy, w: hw, h: hh };
+    const side = randInt(0, 3);
+    const aw = randInt(6, 8), ah = randInt(5, 6);
+    let ante;
+    if (side === 0) ante = { x: randInt(hx + 2, hx + hw - aw - 2), y: 2, w: aw, h: ah };
+    else if (side === 1) ante = { x: randInt(hx + 2, hx + hw - aw - 2), y: MAP_H - ah - 3, w: aw, h: ah };
+    else if (side === 2) ante = { x: 2, y: randInt(hy + 2, hy + hh - ah - 2), w: aw, h: ah };
+    else ante = { x: MAP_W - aw - 3, y: randInt(hy + 2, hy + hh - ah - 2), w: aw, h: ah };
+    carveRoom(ante); carveRoom(hall);
+    carveCorridor(roomCenter(ante), roomCenter(hall));
+    const mid = roomCenter(hall);
+    // Centre the lattice in the room rather than starting it 3 in from one corner,
+    // which left a wider bare apron at one end than the other and read as an
+    // accident. STEP is the whole safety argument: pillars are single tiles three
+    // apart, so each is an island with two clear tiles all round it.
+    const STEP = 3, MARGIN = 3;
+    const span = (len) => {
+      const n = Math.floor((len - 2 * MARGIN) / STEP) + 1;
+      return { n, start: Math.floor((len - (n - 1) * STEP - 1) / 2) };
+    };
+    const cols = span(hw), rowsL = span(hh);
+    for (let iy = 0; iy < rowsL.n; iy++) {
+      for (let ix = 0; ix < cols.n; ix++) {
+        const py = hy + rowsL.start + iy * STEP, px = hx + cols.start + ix * STEP;
+        if (Math.random() < 0.15) continue;                    // gaps, so it reads as ruin rather than graph paper
+        if (Math.abs(px - mid.x) <= 1 && Math.abs(py - mid.y) <= 1) continue;   // leave the boss its footing
+        map[py][px] = WALL;
+      }
+    }
+    rooms.push(ante); rooms.push(hall);      // hall is last → bossRoom, per generateLevel
+  }
+
+  function buildArena(rooms) {
+    const b = DATA.bosses[biome.boss] || {};
+    if ((b.arena || ARENA_DEFAULT) === "ring") buildRingArena(rooms);
+    else buildHallArena(rooms);
+  }
+
   function generateLevel() {
     map = blankGrid(WALL);
     explored = blankGrid(false);
@@ -1352,24 +1438,25 @@
     turns = 0;
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
 
+    // The biome (and so which boss, and so which arena) has to be known before the
+    // layout is built, not after it.
+    biomeIndex = biomeOf(depth);
+    biome = DATA.biomes[biomeIndex];
+
     const rooms = [];
     const attachEdges = [];   // [roomIdx, partnerIdx, doorTile] for attached rooms (doorway, no hall)
-    // Boss floors get bigger, more open "arena" chambers and much more total
-    // room area relative to hallway — the fight (and the boon-choice drop
-    // after it) should read as open room combat, not a corridor skirmish.
     const bossFloor = isBossDepth(depth);
     // Keep the TOTAL room area about the same as before — the same chambers spread
     // across a big floor, joined by 1-wide winding hallways (or a shared doorway).
-    const roomTarget = bossFloor ? 620 : 290;   // ~15% less than the old 340, matching the smaller map
+    const roomTarget = 290;   // ~15% less than the old 340, matching the smaller map
     let roomArea = 0, guard = 0;
-    while (roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
+    while (!bossFloor && roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
       // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
       // but kept to the familiar chamber size (~24–60 tiles) — bigger, arena-scale
       // on a boss floor.
-      let w, h;
-      if (bossFloor) { w = randInt(9, 14); h = randInt(8, 12); } else { w = randInt(5, 9); h = randInt(4, 8); }
+      let w = randInt(5, 9), h = randInt(4, 8);
       if (Math.random() < 0.4) { const t = w; w = h; h = t; }
-      if (w * h > (bossFloor ? 170 : 60)) continue;
+      if (w * h > 60) continue;
       // A fraction of rooms are "attached": placed flush against another with just
       // a doorway between (no hallway). Kept under ~half so most rooms are still
       // joined by hallways; the rest are separate.
@@ -1385,13 +1472,14 @@
       if (rooms.some((r) => overlaps(r, room, 3))) continue;   // ≥3 apart so a 1-wide hall + walls fit between
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
-    connectRooms(rooms, attachEdges);
-    thinCorridors(rooms);   // narrow any hallway blob left by overlapping/converging paths
-    sealDeadEndStubs(rooms);   // no doorway should invite exploration into a 1-tile dead end
+    // A boss floor is a hand-laid arena instead: connectivity comes from the shape.
+    if (bossFloor) buildArena(rooms);
+    else {
+      connectRooms(rooms, attachEdges);
+      thinCorridors(rooms);   // narrow any hallway blob left by overlapping/converging paths
+      sealDeadEndStubs(rooms);   // no doorway should invite exploration into a 1-tile dead end
+    }
     lastRooms = rooms; lastAttach = attachEdges.length;
-
-    biomeIndex = biomeOf(depth);
-    biome = DATA.biomes[biomeIndex];
     // Exactly 2 Scrolls of Upgrade guaranteed per biome (not per floor): pick 2 of
     // its 5 floors, once, the first time we see this biome — re-rolled on entering
     // the next one.
@@ -1415,7 +1503,10 @@
 
     // seal a room or two behind thorns and hide good loot inside; those rooms are
     // "restricted", so torches (below) are kept out of them
-    const restricted = makeThornVaults(rooms, last);
+    // No thorn vaults on an arena, and — the whole point of this — no obstacle
+    // trees. Trees are what used to entomb the boss; the arenas place their own
+    // pillars in patterns that provably cannot enclose anything.
+    const restricted = bossFloor ? new Set() : makeThornVaults(rooms, last);
 
     if (isBossDepth(depth)) {
       // The 5th floor: a boss guards the last room; the exit opens on its defeat.
@@ -1429,7 +1520,7 @@
       spawnMonsters(rooms);
     }
     spawnItems(rooms);
-    placeTrees(rooms, restricted);                     // obstacle trees in the larger rooms
+    if (!bossFloor) placeTrees(rooms, restricted);      // obstacle trees in the larger rooms
     fixOpenCorners(rooms);   // trees are wall tiles too — re-sweep for any new diagonal touches
     // Last line of defence (CLAUDE.md rule 5). Deep water blocks movement, and doors,
     // thorn vaults and trees all land AFTER the terrain paint — so a pool that was
@@ -1441,6 +1532,19 @@
       const goal = bossActive ? (monsters.find((m) => DATA.bosses[m.type]) || monsters[0]) : findStairs();
       const reach = floodReach(player.x, player.y, false);
       if (!goal || !reach.has(goal.y * MAP_W + goal.x)) unpaintTerrain();
+    }
+    // And a hard backstop on the one floor where being cut off is unwinnable rather
+    // than merely annoying: a boss floor's exit does not exist until the boss dies.
+    // The arenas are built so this cannot trigger — it is here so that a future
+    // arena, or a terrain block over one, cannot quietly reintroduce the bug. Unlike
+    // the check above it can actually repair the floor, because carving is always
+    // available where removing terrain is not.
+    if (bossFloor) {
+      const boss = monsters.find((m) => DATA.bosses[m.type]) || monsters[0];
+      if (boss && !floodReach(player.x, player.y, false).has(boss.y * MAP_W + boss.x)) {
+        carveCorridor({ x: player.x, y: player.y }, { x: boss.x, y: boss.y });
+        fixOpenCorners(rooms);
+      }
     }
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
