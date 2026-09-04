@@ -241,6 +241,10 @@
       n.reqAny = (n.reqAny || []).map(toRef).filter(Boolean);
       if (!n.reqAny.length) delete n.reqAny;
       if (!(n.minLevel > 0)) delete n.minLevel;
+      // An innate skill is known from level 0 and costs no point — the class simply
+      // has it (ToneTum's Magic Missile). Kept as a real boolean so a round-trip
+      // through the editor cannot quietly turn it into a skill you must buy.
+      if (n.innate) n.innate = true; else delete n.innate;
     }
     return nodes;
   }
@@ -868,6 +872,12 @@
     rp.value = cell.reqPoints || "";
     rp.oninput = () => { const v = parseInt(rp.value, 10); if (v > 0) cell.reqPoints = v; else delete cell.reqPoints; };
     wire.appendChild(rp);
+    const inn = document.createElement("label"); inn.className = "sinnate";
+    const innCb = document.createElement("input"); innCb.type = "checkbox"; innCb.checked = !!cell.innate;
+    innCb.title = "known from level 0 and costs no skill point — the class simply has it";
+    innCb.onchange = () => { if (innCb.checked) cell.innate = true; else delete cell.innate; };
+    inn.appendChild(innCb); inn.appendChild(document.createTextNode("innate"));
+    wire.appendChild(inn);
     const ml = document.createElement("input"); ml.type = "number"; ml.min = "0"; ml.placeholder = "extra min lv";
     ml.title = "an EXTRA character-level gate on top of this row's tier gate (tier " + (y + 1) + " already needs level " + (tierLevel(y) || 1) + "). It can only ask for more, never less — leave it blank unless one skill in the row should come later than its neighbours.";
     ml.value = cell.minLevel || "";

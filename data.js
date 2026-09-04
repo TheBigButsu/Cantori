@@ -1760,7 +1760,255 @@ window.CANTORI_DATA = {
         "hp": 3,
         "mp": 4
       },
-      "skillTree": [],
+      "skillTree": [
+        {
+          "id": "magic_missile",
+          "x": 4,
+          "y": 0,
+          "name": "Magic Missile",
+          "icon": "✦",
+          "kind": "bolt",
+          "innate": true,
+          "desc": "A bolt of force, always at hand. 1–4 damage plus 1 for every character level, for 5 MP.",
+          "levels": [
+            "5 MP · 1–4 damage +1 per character level · known from the start"
+          ],
+          "ranks": [
+            {
+              "mp": 5
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "burning_sensation",
+          "x": 0,
+          "y": 0,
+          "name": "Burning Sensation",
+          "icon": "🔥",
+          "kind": "passive",
+          "desc": "Your bolts and blows leave the target alight.",
+          "levels": [
+            "Sets the target burning (1 damage a turn for 3 turns)",
+            "Burn deals 2 a turn",
+            "Burn lasts 4 turns",
+            "Burn deals 4 a turn for 6 turns"
+          ],
+          "ranks": [
+            {
+              "burnDmg": 1,
+              "burnTurns": 3
+            },
+            {
+              "burnDmg": 2,
+              "burnTurns": 3
+            },
+            {
+              "burnDmg": 2,
+              "burnTurns": 4
+            },
+            {
+              "burnDmg": 4,
+              "burnTurns": 6
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "sleep",
+          "x": 1,
+          "y": 0,
+          "name": "Sleep",
+          "icon": "💤",
+          "kind": "sleepcast",
+          "desc": "Tap a foe. If it is weak enough it drops where it stands — and a sleeper takes the full ambush hit when you strike it.",
+          "levels": [
+            "10 MP · sleeps a target at or below INT ÷ 2 HP · 150 turn cooldown",
+            "Sleeps a target at or below INT HP",
+            "Cooldown 100 turns",
+            "Catches a 5-tile cross — the target and each neighbour"
+          ],
+          "ranks": [
+            {
+              "mp": 10,
+              "cd": 150,
+              "thr": 0.5,
+              "area": 0
+            },
+            {
+              "mp": 10,
+              "cd": 150,
+              "thr": 1,
+              "area": 0
+            },
+            {
+              "mp": 10,
+              "cd": 100,
+              "thr": 1,
+              "area": 0
+            },
+            {
+              "mp": 10,
+              "cd": 100,
+              "thr": 1,
+              "area": 1
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "mp_recovery",
+          "x": 2,
+          "y": 0,
+          "name": "Deep Well",
+          "icon": "🌀",
+          "kind": "passive",
+          "desc": "Mana returns to you faster. Each rank replaces the last, it does not stack on it.",
+          "levels": [
+            "+10% MP regeneration",
+            "+25% MP regeneration",
+            "+50% MP regeneration (character level 5)",
+            "+100% MP regeneration (character level 10)"
+          ],
+          "ranks": [
+            {
+              "mpRegen": 0.1
+            },
+            {
+              "mpRegen": 0.25
+            },
+            {
+              "mpRegen": 0.5,
+              "minLevel": 5
+            },
+            {
+              "mpRegen": 1.0,
+              "minLevel": 10
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "blink",
+          "x": 0,
+          "y": 1,
+          "name": "Blink",
+          "icon": "➹",
+          "kind": "blinkcast",
+          "desc": "Step through the space between. Tap any tile you can see.",
+          "levels": [
+            "20 MP · teleport anywhere in line of sight · 250 turn cooldown",
+            "Every kill takes 10 turns off the cooldown",
+            "Costs 15 MP",
+            "Costs 10 MP, and every kill takes 20 turns off"
+          ],
+          "ranks": [
+            {
+              "mp": 20,
+              "cd": 250,
+              "killCd": 0
+            },
+            {
+              "mp": 20,
+              "cd": 250,
+              "killCd": 10
+            },
+            {
+              "mp": 15,
+              "cd": 250,
+              "killCd": 10
+            },
+            {
+              "mp": 10,
+              "cd": 250,
+              "killCd": 20
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "mirror_image",
+          "x": 1,
+          "y": 1,
+          "name": "Mirror Image",
+          "icon": "👥",
+          "kind": "mirrorcast",
+          "desc": "Cast copies of yourself. Monsters would rather hit them than you.",
+          "levels": [
+            "30 MP · one still image beside you · 200 turn cooldown",
+            "Two images",
+            "Two images, and they wander",
+            "Two wandering images, and you go unseen for 2 turns"
+          ],
+          "ranks": [
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 1,
+              "roam": false,
+              "invis": 0
+            },
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 2,
+              "roam": false,
+              "invis": 0
+            },
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 2,
+              "roam": true,
+              "invis": 0
+            },
+            {
+              "mp": 30,
+              "cd": 200,
+              "n": 2,
+              "roam": true,
+              "invis": 2
+            }
+          ],
+          "req": []
+        },
+        {
+          "id": "madness",
+          "x": 2,
+          "y": 1,
+          "name": "Madness",
+          "icon": "😵",
+          "kind": "madnesscast",
+          "desc": "Tap a foe. It turns on whatever is nearest — which need not be you.",
+          "levels": [
+            "15 MP · berserk for INT-modifier turns · 250 turn cooldown",
+            "Cooldown 200 turns",
+            "Cooldown 150 turns (character level 10)",
+            "Cooldown 100 turns (character level 15)"
+          ],
+          "ranks": [
+            {
+              "mp": 15,
+              "cd": 250
+            },
+            {
+              "mp": 15,
+              "cd": 200
+            },
+            {
+              "mp": 15,
+              "cd": 150,
+              "minLevel": 10
+            },
+            {
+              "mp": 15,
+              "cd": 100,
+              "minLevel": 15
+            }
+          ],
+          "req": []
+        }
+      ],
       "icon": "✨",
       "baseHp": 15,
       "baseMp": 20,

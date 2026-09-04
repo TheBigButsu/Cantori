@@ -246,7 +246,9 @@
     _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
     player.skills = {};
     const sk = treeSkills(key).skills;
-    for (const k of Object.keys(sk)) player.skills[k] = { rank: 0, cd: 0 };
+    // An innate skill is known from level 0 and never costs a point — the class
+    // simply has it, the way ToneTum always has Magic Missile.
+    for (const k of Object.keys(sk)) player.skills[k] = { rank: sk[k].innate ? 1 : 0, cd: 0 };
     if (c.start) {                             // starting kit (plain white), already equipped
       if (c.start.weapon && GEAR[c.start.weapon]) player.weapon = mkBase(c.start.weapon);
       if (c.start.armor && GEAR[c.start.armor]) player.armor = mkBase(c.start.armor);
@@ -262,6 +264,12 @@
   let traps = [];
   let walkPath = [];
   let activeWalls = [];   // Kethara's Wall of Faith: temporary wall tiles awaiting reversion
+  // Mirror Image decoys. Not monsters (they never act on the monster list, hold no
+  // HP worth tracking and give no XP) and not the player — a third small kind of
+  // thing, so they get their own list rather than being bolted onto `monsters`.
+  let decoys = [];
+  const DECOY_TURNS = 30;
+  const decoyAt = (x, y) => decoys.find((dc) => dc.x === x && dc.y === y) || null;
   let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
   let biomeScrollFloors = null;   // Set of 2 floor-in-biome numbers (1-5) that guarantee a Scroll of Upgrade this biome
   let bossRoom = null;            // the room the current floor's boss occupies (its exit opens on the nearest wall, not the death tile)
@@ -1521,6 +1529,7 @@
     monsters = [];
     items = [];
     traps = [];
+    decoys = [];
     turns = 0;
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
 
@@ -1664,6 +1673,7 @@
     monsters = [];
     items = [];
     traps = [];
+    decoys = [];
     turns = 0;
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
     bossActive = false;
@@ -2012,6 +2022,7 @@
     // A Horror is worth NOTHING. It exists to price out staying, so paying XP for
     // one would invert the mechanic exactly: farming Horrors would become the most
     // efficient grind in the game, on a floor the player was supposed to leave.
+    blinkKillCredit();
     if (target.horror) { horrorDeadAt = turns; xp = 0; }
     else if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
@@ -2021,6 +2032,14 @@
     if (target.boss && !monsters.some((m) => m.boss)) onBossDefeated(target.x, target.y);
   }
 
+  // Blink rank 2+: every kill takes turns off its cooldown, so a mage who is
+  // actually fighting gets the escape back sooner than one who is running.
+  function blinkKillCredit() {
+    const st = player.skills && player.skills.blink, cur = st && st.cd > 0 ? skillCur("blink") : null;
+    if (!cur || !cur.killCd) return;
+    st.cd = Math.max(0, st.cd - cur.killCd);
+    if (st.cd === 0) log("Blink is ready again.", "hit");
+  }
   const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread"];
   const maelonBoonCount = () => (player.boons ? MAELON_KEYS.filter((k) => player.boons.has(k)).length : 0);
   // Kill-counter-driven boons: Maelon's Compost Pile (every 5), Kethara's Gift of
@@ -2135,6 +2154,7 @@
     if (attacker === player) {
       bump(player, target.x, target.y);
       const surprise = !target.aware;                 // ambush: asleep, or wandering past you
+      target.magicSleep = 0;                          // a blow always breaks a magical sleep
       startHunting(target);                           // it knows now
       makeNoise(target.x, target.y);                  // and so does whatever is next door
       // Striking from invisibility spends it — you land the ambush, then you're
@@ -2186,6 +2206,7 @@
         log(pre + monName(target) + (pinned && !surprise ? " cannot dodge. (-" : ". (-") + dmg + ")", "hit");
         // weapon enchants proc on a connecting hit (power = weapon damage)
         if (player.weapon) procEnchants(player.weapon.enchants, target, itemPower(player.weapon), null, player.weapon);
+        applyBurningSensation(target);
       }
     } else {
       bump(attacker, player.x, player.y);
@@ -2692,7 +2713,9 @@
     // MP: heals to full over mpRegenTurns, sped by Intelligence.
     if (player.maxMp > 0 && player.mp < player.maxMp) {
       const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - mod("INT") * (cls.intRegen != null ? cls.intRegen : 2) * 5);
-      player.mpRegenAcc = (player.mpRegenAcc || 0) + player.maxMp / effMp;
+      // Deep Well: a flat multiplier on MP regen. Ranks replace each other rather
+      // than stacking, which falls out of passiveMod reading only the active rank.
+      player.mpRegenAcc = (player.mpRegenAcc || 0) + (player.maxMp / effMp) * (1 + passiveMod("mpRegen"));
       while (player.mpRegenAcc >= 1 && player.mp < player.maxMp) { player.mpRegenAcc -= 1; player.mp++; changed = true; }
       if (player.mp >= player.maxMp) player.mpRegenAcc = 0;
     } else player.mpRegenAcc = 0;
@@ -2898,6 +2921,7 @@
     for (const m of monsters) {
       if (m.hp <= 0 || m.type === "healing_node") continue;
       if (m.state === HUNTING || m.state === FLEEING) continue;
+      if (m.magicSleep > 0) continue;                 // a spell holds it under; noise won't reach it
       if (cheb(m.x, m.y, x, y) > radius) continue;
       if (m.state === SLEEPING) floatText(m.x, m.y, "?", "#e0d0a0");
       setState(m, WANDERING);
@@ -2926,6 +2950,15 @@
     return Math.random() * Math.max(1, cheb(m.x, m.y, player.x, player.y)) < WAKE_ACUITY;
   }
   function actSleeping(m) {
+    // Magically slept: it does not get a notice roll at all until the spell runs out.
+    // Without this, Sleep was useless — the sleeper rolled to notice on the very turn
+    // it was cast, and WAKE_ACUITY makes that a certainty inside three tiles, which is
+    // exactly where you would ever cast it.
+    if (m.magicSleep > 0) {
+      m.magicSleep--;
+      if (Math.random() < 0.5) floatText(m.x, m.y, "z", "#cfe6ff");
+      return;
+    }
     if (noticesPlayer(m)) {
       startHunting(m);
       floatText(m.x, m.y, "!", "#ffd98a");
@@ -2953,6 +2986,10 @@
     // reach the stairs — it does not buy escape, which is the whole point of it.
     if (canSee(m) || m.horror) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
     else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
+    // A decoy beside it is more interesting than you are. Only adjacency is checked:
+    // an image that pulled monsters across the room would be a wall, not a feint.
+    const near = nearestDecoy(m.x, m.y, 1);
+    if (near) { strikeDecoy(m, near); return; }
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -3143,6 +3180,41 @@
     }
   }
 
+  function nearestDecoy(x, y, within) {
+    let best = null, bd = Infinity;
+    for (const dc of decoys) {
+      const d = cheb(x, y, dc.x, dc.y);
+      if (d <= within && d < bd) { bd = d; best = dc; }
+    }
+    return best;
+  }
+  // A monster swings at an image. It always shatters — the point of a decoy is to
+  // buy exactly one attack that was not aimed at you, and a decoy with hit points
+  // would just be a pet.
+  function strikeDecoy(m, dc) {
+    bump(m, dc.x, dc.y);
+    decoys = decoys.filter((x) => x !== dc);
+    spawnBurst(dc.x, dc.y, "#9ad0ff");
+    floatText(dc.x, dc.y, "shatters", "#9ad0ff");
+    log("The " + monName(m) + " strikes an image of you — it bursts like glass.");
+  }
+  // Decoys age out, and the roaming ones drift a tile at a time.
+  function decoyTick() {
+    if (!decoys.length) return;
+    const alive = [];
+    for (const dc of decoys) {
+      if (--dc.turns <= 0) { spawnBurst(dc.x, dc.y, "#6a7a8a"); continue; }
+      if (dc.roam && Math.random() < 0.5) {
+        const [dx, dy] = DIRS8[randInt(0, DIRS8.length - 1)];
+        const nx = dc.x + dx, ny = dc.y + dy;
+        if (passable(nx, ny) && !shuns(nx, ny) && !monsterAt(nx, ny) && !decoyAt(nx, ny) && !(nx === player.x && ny === player.y)) {
+          dc.x = nx; dc.y = ny;
+        }
+      }
+      alive.push(dc);
+    }
+    decoys = alive;
+  }
   // One monster action (its burn tick, stun, and AI move/attack). Returns after
   // acting; the caller checks `dead`.
   // Drop `count` monsters of `type` on free floor within `radius` tiles of (cx,cy).
@@ -3337,6 +3409,7 @@
     regenTick();
     healQueueTick();
     searchForTraps();
+    decoyTick();
     maybeReinforce();
     maybeHorror();
     updateHotbar();
@@ -3435,6 +3508,20 @@
         const m = monsterAt(tx, ty);
         if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
         executeThrowSkill(pendingSkill, tx, ty);
+        return;
+      }
+      // ToneTum: three want a monster, Blink wants a tile.
+      if (pk === "bolt" || pk === "sleepcast" || pk === "madnesscast") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
+        if (pk === "bolt") executeMagicMissile(pendingSkill, tx, ty);
+        else if (pk === "sleepcast") executeSleep(pendingSkill, tx, ty);
+        else executeMadness(pendingSkill, tx, ty);
+        return;
+      }
+      if (pk === "blinkcast") {
+        if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); return; }
+        executeBlink(pendingSkill, tx, ty);
         return;
       }
     }
@@ -4215,6 +4302,20 @@
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText("z", px + tile * 0.80, py + tile * 0.18);
       }
+    }
+
+    // Mirror Image decoys: the player's own sprite, translucent and faintly blue, so
+    // it is obvious at a glance which one is you — a decoy you cannot tell apart from
+    // yourself is a UI bug, not a mind game.
+    for (const dc of decoys) {
+      if (!inBounds(dc.x, dc.y) || !visible[dc.y][dc.x]) continue;
+      const dx = SX(dc.x), dy = SY(dc.y);
+      ctx.save();
+      ctx.globalAlpha = dc.turns <= 5 ? 0.25 : 0.5;    // fading as it runs out
+      if (!drawSpriteFit(SPRITES.player, dx, dy, 1)) drawGlyphInto(ctx, dx, dy, tile, "@", "#9ad0ff");
+      ctx.restore();
+      ctx.strokeStyle = "rgba(154,208,255,0.55)"; ctx.lineWidth = Math.max(1, tile * 0.04);
+      ctx.strokeRect(dx + 1, dy + 1, tile - 2, tile - 2);
     }
 
     // player, with a torch glow (glide + lunge + flash)
@@ -5034,7 +5135,7 @@
         name: n.name, icon: n.icon || "✦", desc: n.desc || "",
         kind: n.kind || "passive", when: n.when || null,
         max: n.ranks.length, ranks: n.ranks, levels: n.levels || [],
-        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0,
+        req: n.req || [], reqAny: n.reqAny || [], reqPoints: n.reqPoints || 0, innate: !!n.innate,
         // The tier gate always applies; an authored minLevel can only ask for MORE,
         // never less — a node cannot buy its way out of the row it sits in.
         minLevel: Math.max(n.minLevel || 0, tierLevel(n.y || 0)),
@@ -5185,7 +5286,10 @@
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
     else if (d.kind === "sol") executeSpeedOfLight(key);
-    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" || d.kind === "smite" || d.kind === "throwmon") beginTargetedSkill(key);
+    else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
+    else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
+             d.kind === "smite" || d.kind === "throwmon" ||
+             d.kind === "bolt" || d.kind === "sleepcast" || d.kind === "blinkcast" || d.kind === "madnesscast") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -5274,6 +5378,149 @@
     updateHotbar();
     worldTurn();
   }
+  // ---- ToneTum's spellbook ---------------------------------------------------
+  // Every cast here shares one shape: check MP and cooldown, spend, resolve, set the
+  // cooldown from the CURRENT rank, then take a world turn. `cur` is the active rank's
+  // data straight out of data.js, so costs and cooldowns are authored, never hardcoded.
+  const SLEEP_TURNS = 10;   // plus the INT modifier — long enough to walk away, or to line up the ambush
+  function castCheck(key) {
+    const st = player.skills[key], cur = skillCur(key), d = skillDef(key);
+    if (!st || !cur || !d) return null;
+    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return null; }
+    const cost = cur.mp || 0;
+    if (player.mp < cost) { log("Not enough MP for " + d.name + " (need " + cost + ")."); return null; }
+    return { st, cur, d, cost };
+  }
+  function payCast(key, c) { player.mp -= c.cost; player.skills[key].cd = c.cur.cd || 0; }
+
+  // Burning Sensation — a passive, so it hangs off any connecting blow rather than
+  // being cast. Reuses the same burn DOT the fire enchant uses.
+  function applyBurningSensation(target) {
+    if (!target || target.hp <= 0) return;
+    const r = passiveRank("burning_sensation");
+    if (!r || !r.burnDmg) return;
+    addDot(target, { tag: "burn", dmg: r.burnDmg, rounds: r.burnTurns || 3, icon: "🔥", color: "#ff8f4a" });
+    floatText(target.x, target.y, "🔥", "#ff8f4a");
+  }
+  // The active rank's data for a learned passive (null if unlearned).
+  function passiveRank(key) {
+    const st = player.skills[key], d = skillDef(key);
+    if (!st || st.rank < 1 || !d) return null;
+    return d.ranks[st.rank - 1] || null;
+  }
+
+  // Magic Missile — the mage's answer to "I have no weapon worth swinging".
+  function executeMagicMissile(key, tx, ty) {
+    pendingSkill = null;
+    const m = monsterAt(tx, ty);
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    spawnProjectile(player.x, player.y, tx, ty, "#9ad0ff");
+    const dmg = randInt(1, 4) + player.level;
+    m.hp -= dmg; flash(m);
+    floatText(m.x, m.y, "✦-" + dmg, "#9ad0ff");
+    log("A bolt of force strikes the " + monName(m) + ". (-" + dmg + ")", "hit");
+    startHunting(m); makeNoise(m.x, m.y);
+    if (m.hp <= 0) killMonster(m, "is unmade");
+    else applyBurningSensation(m);
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Sleep — drops a weakened foe where it stands. A sleeper is `unaware`, so the
+  // ambush rule already gives your next blow on it a guaranteed hit.
+  function executeSleep(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const centre = monsterAt(tx, ty);
+    if (!centre || centre.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    // The threshold is raw INT, not its modifier: this is "how much mind you can
+    // push on", and it wants to grow with the score the player actually reads.
+    const thr = Math.max(1, Math.floor(eff("INT") * (c.cur.thr || 0.5)));
+    const area = c.cur.area || 0;
+    const targets = [centre];
+    if (area) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const m2 = monsterAt(tx + dx, ty + dy);
+      if (m2 && m2.hp > 0) targets.push(m2);
+    }
+    let slept = 0;
+    for (const m of targets) {
+      if (m.boss) { floatText(m.x, m.y, "resists", "#cfe6b0"); continue; }
+      if (m.hp > thr) { floatText(m.x, m.y, "too strong", "#cfe6b0"); continue; }
+      setState(m, SLEEPING); m.target = null;
+      m.magicSleep = SLEEP_TURNS + Math.max(0, mod("INT"));
+      floatText(m.x, m.y, "💤", "#cfe6ff"); slept++;
+    }
+    log(slept ? "Sleep takes " + slept + (slept === 1 ? " foe." : " foes.") : "Nothing here is weak enough to sleep (needs " + thr + " HP or less).", slept ? "hit" : "");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Blink — teleport to any tile you can see.
+  function executeBlink(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx] || !passable(tx, ty) || monsterAt(tx, ty) || shuns(tx, ty)) {
+      log("You cannot blink there."); updateHotbar(); return;
+    }
+    payCast(key, c);
+    spawnBurst(player.x, player.y, "#9ad0ff");
+    player.x = tx; player.y = ty;
+    computeFOV(); snapPlayer();
+    spawnBurst(tx, ty, "#9ad0ff");
+    log("You step through the space between.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Madness — the mage's own berserk. Same effect as Kethara's Anger, its own cost,
+  // cooldown and duration, all read from the rank.
+  function executeMadness(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    payCast(key, c);
+    m.berserk = Math.max(1, mod("INT"));
+    startHunting(m);
+    floatText(m.x, m.y, "😵", "#e0685a");
+    log("The " + monName(m) + " loses its mind — it turns on whatever is nearest.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // Mirror Image — decoys the monsters would rather hit. They are not monsters and
+  // not the player: a third, very small kind of thing on the board, which is why they
+  // live in their own list rather than being bolted onto `monsters`.
+  function executeMirrorImage(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const spots = [];
+    for (const [dx, dy] of DIRS8) {
+      const x = player.x + dx, y = player.y + dy;
+      if (passable(x, y) && !shuns(x, y) && !monsterAt(x, y) && !decoyAt(x, y)) spots.push({ x, y });
+    }
+    if (!spots.length) { log("No room beside you for an image."); updateHotbar(); return; }
+    payCast(key, c);
+    const n = Math.min(c.cur.n || 1, spots.length);
+    for (let i = 0; i < n; i++) {
+      const s = spots[randInt(0, spots.length - 1)];
+      spots.splice(spots.indexOf(s), 1);
+      decoys.push({ x: s.x, y: s.y, turns: DECOY_TURNS, roam: !!c.cur.roam });
+    }
+    if (c.cur.invis) { player.invisible = Math.max(player.invisible || 0, c.cur.invis); }
+    log("The air folds — " + (n === 1 ? "an image steps out beside you." : n + " images step out beside you.") +
+        (c.cur.invis ? " You go unseen." : ""), "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
   function beginRush(key) {
     pendingSkill = pendingSkill === key ? null : key;
     const d = skillDef(key);
@@ -5878,7 +6125,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -5945,6 +6192,7 @@
       }));
     },
     turns: () => turns,
+    decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },
     horrorState: () => {

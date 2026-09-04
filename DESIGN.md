@@ -639,3 +639,39 @@ most double: `min += floor((plus+1)/2)`, `max = min(2 × base max, base max + pl
 Upgrading armour should make it *dependable*, not spiky — a +3 tier-1 robe is a
 reliable 2–4, not a wild 0–8. Light tier 1 therefore runs 0–2 / 1–3 / 1–4 / 2–4
 across +0…+3.
+
+## ToneTum's spellbook — DONE
+
+Seven skills, all authored in `data.js` — costs, cooldowns, thresholds and durations
+are rank data, never hardcoded.
+
+**Magic Missile** is **innate**: known from level 0, costs no skill point. 5 MP for
+1–4 damage plus one per character level. A new node flag, `innate`, carries this (and
+the editor learned it in the same commit — rule 2 caught it the first time round).
+
+**Tier 1** — *Burning Sensation* (passive; every connecting blow or bolt sets a burn,
+1/3 turns rising to 4/6), *Sleep* (10 MP; drops a foe at or below INT ÷ 2 HP, then
+INT, then a 5-tile cross), *Deep Well* (passive; +10/25/50/100% MP regen, ranks
+replacing rather than stacking, the top two gated at character level 5 and 10).
+
+**Tier 2** — *Blink* (teleport anywhere in sight; ranks cut the cost 20 → 15 → 10 MP
+and make kills burn the cooldown down), *Mirror Image*, *Madness* (berserk for
+INT-modifier turns, cooldown 250 → 100).
+
+### Two things that needed engine work
+
+**Sleep had to hold.** The first build was useless: the sleeper got its ordinary
+notice roll on the very turn the spell landed, and `WAKE_ACUITY` makes that a
+certainty within three tiles — exactly where you would ever cast it. Magical sleep is
+now its own state (`magicSleep`, 10 turns + the INT modifier) during which the monster
+gets no notice roll at all and noise cannot reach it. A blow still breaks it
+instantly, which is the point: a sleeper is `unaware`, so the existing ambush rule
+already makes your next strike on it a guaranteed hit.
+
+**Mirror Image needed a third kind of thing on the board.** Decoys are not monsters
+(they never act, hold no HP worth tracking and give no XP) and not the player, so they
+live in their own `decoys` list. A hunting monster adjacent to one strikes it instead
+of you and the image shatters — always, on one hit. Only *adjacency* is checked: an
+image that pulled monsters across the room would be a wall, not a feint. They are
+drawn as the player's own sprite at half alpha with a blue outline, because a decoy
+you cannot tell from yourself is a UI bug rather than a mind game.
