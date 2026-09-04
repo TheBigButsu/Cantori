@@ -1021,21 +1021,21 @@
     {
       title: "Core stats",
       rows: [
-        { name: "Effective stat", formula: "eff(stat) = player.stats[stat] + gear affix bonus", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
-        { name: "STR → damage", formula: "strBonus = max(0, floor((eff(STR) − weapon's STR requirement) / 4))", note: "Flat bonus added to every weapon hit. A weapon with no STR requirement (or being unarmed) always grants the full bonus." },
+        { name: "Ability modifier", formula: "mod(stat) = floor((eff(stat) − 10) / 2)", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
+        { name: "STR → damage", formula: "strBonus = mod(STR)", note: "Flat bonus added to every weapon hit. It no longer subtracts the weapon's STR requirement — stat requirements already hard-gate equipping, so the damage formula was charging for the same thing twice." },
         { name: "Stat requirements", formula: "every stat in an item's `req` (Gear tab) must be met by eff(stat) or it can't be equipped at all", note: "A hard gate, not a soft penalty — e.g. Chain Mail's req.STR 15 blocks equipping below 15 STR outright." },
-        { name: "VIT → HP", formula: "+1 max HP per point", note: "Via computeMaxHp() below." },
-        { name: "DEX → acc/eva/crit", formula: "+1 accuracy, +1 evasion, +1% crit chance per point", note: "" },
-        { name: "INT → MP", formula: "+1 max MP per point", note: "Via computeMaxMp() below." },
-        { name: "RES → damage taken", formula: "incoming damage cut by RES / (RES + 100)", note: "Applied before armor — see Defense & Mitigation. A curve, not a straight −1%/point: it approaches total immunity without ever arriving." },
-        { name: "LCK → luck", formula: "+1% enchant proc chance, +0.5% crit chance, +2% crit damage per point", note: "" },
+        { name: "VIT → HP", formula: "+mod(VIT) max HP per CHARACTER LEVEL", note: "Applied per level the way 5e adds CON to every hit die — otherwise a +2 modifier would be worth 2 HP for the whole run." },
+        { name: "DEX → acc/eva/crit", formula: "+mod(DEX) accuracy, +mod(DEX) evasion, +mod(DEX)% crit chance", note: "" },
+        { name: "INT → MP", formula: "+mod(INT) max MP per CHARACTER LEVEL", note: "Same shape as VIT → HP." },
+        { name: "RES → damage taken", formula: "incoming damage cut by m / (m + 10), m = mod(RES)", note: "Applied before armor. +2 cuts 17%, +5 cuts 33%, +10 cuts 50%; total immunity stays unreachable however high RES climbs." },
+        { name: "LCK → luck", formula: "+3% enchant proc, +2% crit chance, +5% crit damage per point of mod(LCK)", note: "" },
       ],
     },
     {
       title: "Health & mana",
       rows: [
-        { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + eff(VIT) + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
-        { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + eff(INT) + flat per-level MP gained", note: "" },
+        { name: "Max HP", formula: "maxHP = class.baseHp (13 default) + mod(VIT) × level + flat per-level HP gained", note: "Recomputed after any gear/level/stat change." },
+        { name: "Max MP", formula: "maxMP = class.baseMp (0 default) + mod(INT) × level + flat per-level MP gained", note: "" },
         { name: "HP regen (per turn)", formula: "regenAcc += maxHP / (class.regenTurns − eff(VIT) × class.vitRegen) × early-level multiplier; +1 HP each time it crosses 1", note: "Default regenTurns 600, vitRegen 2 — so a full heal takes ~600 turns at 0 VIT, faster with more VIT. The early-level multiplier is ×2.5 at character level 1, ×2 at 2, ×1.5 at 3 and ×1 from 4 on: the opening floors are where an unlucky fight is unrecoverable." },
         { name: "MP regen (per turn)", formula: "mpRegenAcc += maxMP / (class.mpRegenTurns − eff(INT) × class.intRegen); +1 MP each time it crosses 1", note: "Same shape as HP regen, driven by INT instead of VIT." },
       ],
@@ -1043,16 +1043,16 @@
     {
       title: "Accuracy & evasion",
       rows: [
-        { name: "Accuracy", formula: "acc = 10 + eff(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "" },
-        { name: "Evasion", formula: "eva = −3 + eff(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
+        { name: "Accuracy", formula: "acc = 10 + mod(DEX) + weapon's own accuracy + per-level acc + boon acc + passive skill acc", note: "Note the scale mismatch this creates: mod(DEX) spans −1…+2 across every class, while weapon accuracy spans −15…+9 and monster evasion 0…30. Until the monster pass, weapon and level decide accuracy and DEX is a rounding error." },
+        { name: "Evasion", formula: "eva = −3 + mod(DEX) + per-level eva + boon eva + armor subtype eva + armor's own evasion + passive skill eva", note: "Armor subtype: light +3, medium 0, heavy −3 (on top of the armor item's own evasion stat)." },
         { name: "Hit chance", formula: "hitChance = 50% + 45% × tanh((attacker's acc − defender's eva) ÷ 45)", note: "50% at even acc/eva, then roughly 1 percentage point per point of lead — over normal leads the tanh is within a point of a straight 1%/point, and only bends beyond about 20. A 45-point lead is worth 84%, a 90-point lead 89%. It never reaches certainty, which is what leaves room for a monster's eva column to keep mattering at high level: the old flat 3%/point hit its 95% cap at a 15-point lead, so eva 25 and eva 40 played identically from mid-run on." },
       ],
     },
     {
       title: "Critical hits",
       rows: [
-        { name: "Crit chance", formula: "critChance = (5% base + Ourn's Perfectly Timed Blow (+1%/character level) + eff(DEX) + eff(LCK) × 0.5) / 100", note: "Levels give no crit of their own." },
-        { name: "Crit damage", formula: "critMult = (125% base + eff(LCK) × 2) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
+        { name: "Crit chance", formula: "critChance = (5% base + Ourn's Perfectly Timed Blow (+1%/character level) + mod(DEX) + mod(LCK) × 2) / 100", note: "Levels give no crit of their own." },
+        { name: "Crit damage", formula: "critMult = (125% base + mod(LCK) × 5) / 100", note: "The multiplier a critical hit's total damage is scaled by." },
       ],
     },
     {
@@ -1068,7 +1068,7 @@
       title: "Defense & mitigation — a monster hitting you",
       rows: [
         { name: "Raw hit", formula: "random(monster's atk min, monster's atk max) + bonus (e.g. a charge)", note: "" },
-        { name: "RES reduction", formula: "raw × (1 − eff(RES) / (eff(RES) + 100))", note: "Applied FIRST, as a % of the raw hit. 50 RES cuts a third, 100 RES cuts half; immunity is unreachable." },
+        { name: "RES reduction", formula: "raw × (1 − m / (m + 10)), m = mod(RES)", note: "Applied FIRST, as a % of the raw hit. +2 cuts 17%, +5 a third, +10 a half; immunity is unreachable." },
         { name: "Armor block", formula: "− random(armor's def min, def max) − armor subtype mitigation − Defense enchant bonus − Stone Skin roll", note: "Subtracted after RES. Armor subtype mitigation: light +0, medium +1, heavy +3, added on top of the item's own def range. Final damage is floored at 1 no matter how much is mitigated." },
       ],
     },

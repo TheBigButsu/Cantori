@@ -1216,12 +1216,12 @@ window.CANTORI_DATA = {
       "secondary": "VIT",
       "unlock": "start",
       "stats": {
-        "STR": 8,
-        "INT": 3,
-        "VIT": 7,
-        "DEX": 4,
-        "RES": 3,
-        "LCK": 4
+        "STR": 15,
+        "INT": 8,
+        "VIT": 14,
+        "DEX": 12,
+        "RES": 13,
+        "LCK": 10
       },
       "start": {
         "weapon": "Shitty_sword",
@@ -1499,12 +1499,12 @@ window.CANTORI_DATA = {
       "secondary": "VIT",
       "unlock": "start",
       "stats": {
-        "STR": 4,
-        "INT": 3,
-        "VIT": 7,
-        "DEX": 8,
-        "RES": 3,
-        "LCK": 4
+        "STR": 12,
+        "INT": 8,
+        "VIT": 14,
+        "DEX": 15,
+        "RES": 13,
+        "LCK": 10
       },
       "start": {
         "armor": "leather"
@@ -1602,26 +1602,38 @@ window.CANTORI_DATA = {
         }
       ]
     },
-    "adept": {
-      "name": "Adept",
+    "mage": {
+      "name": "ToneTum",
       "main": "INT",
       "secondary": "RES",
-      "unlock": "town",
+      "unlock": "start",
       "start": {
         "weapon": "dagger",
-        "armor": null
+        "armor": "cloth"
       },
-      "blurb": "Wands and enchantments over steel. (needs spells system)",
+      "blurb": "Frail, and the only thing on the floor that can kill from across the room.",
       "stats": {
-        "STR": 5,
-        "INT": 5,
-        "VIT": 5,
-        "DEX": 5,
-        "RES": 5,
-        "LCK": 5
+        "STR": 8,
+        "INT": 15,
+        "VIT": 10,
+        "DEX": 12,
+        "RES": 14,
+        "LCK": 13
       },
-      "levelUp": {},
-      "skillTree": []
+      "levelUp": {
+        "hp": 3,
+        "mp": 4,
+        "accuracy": 1,
+        "evasion": 1
+      },
+      "skillTree": [],
+      "icon": "✨",
+      "baseHp": 15,
+      "baseMp": 20,
+      "regenTurns": 350,
+      "vitRegen": 2,
+      "mpRegenTurns": 450,
+      "intRegen": 2
     }
   },
   "gods": {

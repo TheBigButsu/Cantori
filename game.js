@@ -86,15 +86,33 @@
   const SHOP_POTION_PRICE = 20;
   const sellPrice = (inst) => gearTier(inst.key) * 2;
 
-  // Stats → effects (INT / RES / LCK come later)
+  // Stats → effects, D&D style.
+  //
+  // A raw stat does nothing on its own; what every formula reads is its MODIFIER,
+  // floor((stat − 10) / 2). Stat blocks are the 5e standard array (15/14/13/12/10/8),
+  // so a starting character's modifiers run −1 … +2 and 10 is the do-nothing middle.
+  //
+  // This is a much narrower range than the old raw-stat formulas assumed (they read
+  // stats of 3–60 directly), so every derived number below needed its own scale
+  // chosen rather than a straight substitution — a modifier of +2 has to buy what
+  // 14 raw points used to. The per-modifier constants are gathered here so they are
+  // one place to tune, not six.
+  const abilityMod = (raw) => Math.floor((raw - 10) / 2);
+  const mod = (statKey) => abilityMod(eff(statKey));
   const UNARMED_MIN = 2, UNARMED_MAX = 3;
-  const HP_BASE = 13, HP_PER_VIT = 1;     // 1 point of VIT = 1 HP (warrior: 13 + VIT ≈ 20)
-  const ACC_BASE = 10, EVA_BASE = -3;     // DEX → accuracy & evasion. EVA_BASE tuned so a
-  // fresh level-1 warrior (DEX 4, starting light armor +3 eva) evades a baseline monster
-  // (MON_ACC 12) about 25% of the time — the spec's "default base player evasion = 25%".
+  const HP_BASE = 13;
+  const HP_PER_VIT_MOD = 1;   // max HP per point of VIT modifier
+  const MP_PER_INT_MOD = 1;   // max MP per point of INT modifier
+  const RES_MOD_SCALE = 10;   // damage cut = m / (m + 10): +2 → 17%, +5 → 33%, never 100%
+  const CRIT_PER_LCK_MOD = 2; // percentage points of crit chance per point of LCK modifier
+  const CRITDMG_PER_LCK_MOD = 5;
+  const ACC_BASE = 10, EVA_BASE = -3;     // DEX modifier → accuracy & evasion
   const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
-  const strBonus = () => Math.max(0, Math.floor((eff("STR") - weaponStrReq()) / 4)); // STR vs weapon req → damage
+  // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
+  // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
+  // weapon you do not meet, so there is nothing left for the damage formula to gate.
+  const strBonus = () => mod("STR");
   // Stat requirements (e.g. armor/weapon req.STR) gate whether a piece can be
   // equipped at all — met once every listed stat is at or above its threshold.
   const gearReqUnmet = (inst) => {
@@ -104,11 +122,20 @@
     return null;
   };
   // maxHp = VIT-based health + flat per-level HP from the class's levelUp set
-  const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseHp != null ? cls.baseHp : HP_BASE) + eff("VIT") * HP_PER_VIT + (player.lvlHp || 0); };
-  // maxMp = INT-based mana (1 point of INT = 1 MP) + flat per-level MP from the class's levelUp set
-  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return (cls.baseMp != null ? cls.baseMp : 0) + eff("INT") + (player.lvlMp || 0); };
-  const playerAcc = () => ACC_BASE + eff("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX + weapon + level + skills + boons
-  const playerEva = () => EVA_BASE + eff("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + armorEvasion() + passiveMod("eva");     // DEX + level + armor weight/item + skills + boons
+  // maxHp = class base + the VIT modifier as a FLAT bonus + the flat per-level HP
+  // from the class's levelUp set.
+  //
+  // 5e adds CON to every hit die, and applying the modifier per level that way was
+  // the first thing tried here — but it does not survive this game's level-ups. D&D
+  // stats barely move (an ASI every four levels, hard cap 20), so CON × level is
+  // linear there. Here a class's main stat gains +2 EVERY level, so VIT reaches 33
+  // by level 20, the modifier reaches +11, and mod × level is quadratic: 333 max HP
+  // at level 20 against 20 at level 1. A modifier is a flat bonus, exactly as it
+  // reads, and the per-level growth stays the levelUp set's job.
+  const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(1, (cls.baseHp != null ? cls.baseHp : HP_BASE) + mod("VIT") * HP_PER_VIT_MOD + (player.lvlHp || 0)); };
+  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + (player.lvlMp || 0)); };
+  const playerAcc = () => ACC_BASE + mod("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX mod + weapon + level + skills + boons
+  const playerEva = () => EVA_BASE + mod("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + armorEvasion() + passiveMod("eva");     // DEX mod + level + armor weight/item + skills + boons
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -120,10 +147,9 @@
   // longer quietly multiply your damage), and a crit is now a good roll rather
   // than a different attack.
   const BASE_CRIT = 5, BASE_CRIT_DMG = 125;
-  const CRIT_PER_LCK = 0.5;
   const timedBlowBonus = () => (player.boons && player.boons.has("timed_blow")) ? player.level : 0;
-  const critChance = () => (BASE_CRIT + timedBlowBonus() + eff("DEX") + eff("LCK") * CRIT_PER_LCK) / 100;
-  const critMult = () => (BASE_CRIT_DMG + eff("LCK") * 2) / 100;
+  const critChance = () => (BASE_CRIT + timedBlowBonus() + mod("DEX") + mod("LCK") * CRIT_PER_LCK_MOD) / 100;
+  const critMult = () => (BASE_CRIT_DMG + mod("LCK") * CRITDMG_PER_LCK_MOD) / 100;
   // To-hit is difference-based and still easy to read: 50% at even acc/eva, and
   // every point of lead pushes it toward — but never all the way to — certainty.
   //
@@ -145,18 +171,16 @@
   const hitChance = (acc, eva) => 0.5 + 0.45 * Math.tanh((acc - eva) / HIT_SCALE);
   const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
   // RES cuts a percentage off every incoming hit, on a curve that approaches but
-  // never reaches immunity. It was a flat 1 − RES/100, which made 100 RES literal
-  // invulnerability — and RES climbs on its own, from a class's secondary stat,
-  // Kethara's Gift of the Faithful, and gear affixes, so that was a wall the run
-  // could simply walk into.
-  const RES_SCALE = 100;   // RES equal to this halves incoming damage
-  const resReduction = () => { const r = Math.max(0, eff("RES")); return r / (r + RES_SCALE); };
+  // never reaches immunity — m / (m + 10) on the RES MODIFIER, so +2 is 17%, +5 is
+  // 33%, +10 is 50%, and total immunity stays unreachable however high RES climbs
+  // from a class's secondary stat, Kethara's Gift of the Faithful, and gear affixes.
+  const resReduction = () => { const m = Math.max(0, mod("RES")); return m / (m + RES_MOD_SCALE); };
 
   const player = {
     x: 0, y: 0, hp: 20, maxHp: 20, atkMin: UNARMED_MIN, atkMax: UNARMED_MAX,
     atkBonus: 0, weapon: null, armor: null, ring1: null, ring2: null, trinket: null, necklace: null,
     inv: [], gold: 0, xp: 0, level: 1,
-    cls: "warrior", stats: { STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 },
+    cls: "warrior", stats: { STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
@@ -174,7 +198,9 @@
   function applyClass(key) {
     const c = DATA.classes[key] || DATA.classes.warrior;
     player.cls = key;
-    player.stats = Object.assign({ STR: 5, INT: 5, VIT: 5, DEX: 5, RES: 5, LCK: 5 }, c.stats || {});
+    // 10 is the do-nothing middle of the D&D scale — a stat a class never authored
+    // should contribute exactly nothing, not a +5 nobody asked for.
+    player.stats = Object.assign({ STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 }, c.stats || {});
     player.statPoints = 0; player.atkBonus = 0;
     player.atkMin = UNARMED_MIN; player.atkMax = UNARMED_MAX;
     player.weapon = null; player.armor = null;
@@ -398,7 +424,7 @@
   // between level/2 and (level + floor + VIT)/2.
   const stoneSkinActive = () => !!(player.stoneSkin && player.stoneSkin.turns > 0);
   const stoneSkinLo = () => (stoneSkinActive() ? Math.floor(player.level / 2) : 0);
-  const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + eff("VIT")) / 2) : 0);
+  const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + mod("VIT") * 3) / 2) : 0);
   const stoneSkinRoll = () => (stoneSkinActive() ? randInt(Math.min(stoneSkinLo(), stoneSkinHi()), Math.max(stoneSkinLo(), stoneSkinHi())) : 0);
   const armorFlat = () => armorSubMit() + wornDefense();          // flat, always-on mitigation
   const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi();          // top-end block (display/peek)
@@ -839,9 +865,11 @@
   }
   // Each turn, a chance to notice hidden traps on adjacent tiles (Luck helps).
   function searchForTraps() {
-    // Notice radius = 1 + LCK/5 tiles. Per-turn chance = 10%·(INT/10) + LCK% = INT + LCK (in %).
-    const radius = 1 + Math.floor(eff("LCK") / 5);
-    const chance = (eff("INT") + eff("LCK")) / 100;
+    // Notice radius grows with the LCK modifier; per-turn chance is 3% per point of
+    // INT + LCK modifier. The ×3 is what keeps a +1 modifier worth roughly what 3–4
+    // raw points of the old stat scale bought.
+    const radius = 1 + Math.max(0, Math.floor(mod("LCK") / 2));
+    const chance = Math.max(0, mod("INT") + mod("LCK")) * 3 / 100;
     if (chance <= 0) return;
     for (const t of traps) {
       if (t.revealed || t.sprung) continue;
@@ -2007,7 +2035,7 @@
     for (const e of enchants) {
       if (target.hp <= 0) break;
       const def = LOOT.enchants[e] || {};
-      const proc = (def.proc != null ? def.proc : 1) + eff("LCK") / 100;   // LCK: flat +% to all proc effects
+      const proc = (def.proc != null ? def.proc : 1) + Math.max(0, mod("LCK")) * 3 / 100;   // LCK: +3% per modifier point to all procs
       if (Math.random() >= proc) continue;
       const fx = def.effect || {};
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
@@ -2133,7 +2161,7 @@
       }
       // Maelon's Endless Dread: a wounding blow risks the attacker fleeing in terror.
       if (attacker.hp > 0 && player.boons && player.boons.has("dread")) {
-        const fearChance = ((eff("VIT") + eff("RES") + eff("LCK")) / 3) / 100;
+        const fearChance = Math.max(0, mod("VIT") + mod("RES") + mod("LCK")) / 100;
         if (Math.random() < fearChance) {
           attacker.fleeing = (attacker.fleeing || 0) + 10;
           floatText(attacker.x, attacker.y, "flees!", "#e0a848");
@@ -2578,17 +2606,17 @@
   // Early-game HP regen multiplier, indexed by CHARACTER level (not depth). The
   // first floors are where a bad fight is unrecoverable: potions are scarce, the
   // pack is empty, and a level-1 character healing at the level-20 rate spends
-  // most of the floor walking in circles waiting to be whole. It tapers by 50
+  // most of the floor walking in circles waiting to be whole. It tapers by 25
   // points a level and is gone by level 4, so it props up the opening rather than
   // changing the run's economy.
-  const EARLY_REGEN = [2.5, 2.0, 1.5];   // L1 ×2.5, L2 ×2.0, L3 ×1.5, L4+ ×1
+  const EARLY_REGEN = [1.75, 1.5, 1.25];   // L1 ×1.75, L2 ×1.5, L3 ×1.25, L4+ ×1
   const earlyRegenMult = () => EARLY_REGEN[player.level - 1] || 1;
   function regenTick() {
     const cls = DATA.classes[player.cls] || {};
     let changed = false, healed = 0;
     // HP: heals to full over regenTurns, sped by Vitality.
     if (player.hp < player.maxHp) {
-      const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - eff("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2));
+      const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - mod("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2) * 5);
       player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult();
       while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
       if (player.hp >= player.maxHp) player.regenAcc = 0;
@@ -2596,7 +2624,7 @@
     } else player.regenAcc = 0;
     // MP: heals to full over mpRegenTurns, sped by Intelligence.
     if (player.maxMp > 0 && player.mp < player.maxMp) {
-      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - eff("INT") * (cls.intRegen != null ? cls.intRegen : 2));
+      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - mod("INT") * (cls.intRegen != null ? cls.intRegen : 2) * 5);
       player.mpRegenAcc = (player.mpRegenAcc || 0) + player.maxMp / effMp;
       while (player.mpRegenAcc >= 1 && player.mp < player.maxMp) { player.mpRegenAcc -= 1; player.mp++; changed = true; }
       if (player.mp >= player.maxMp) player.mpRegenAcc = 0;
@@ -2608,7 +2636,7 @@
   // on top of (not instead of) passive regen above.
   function healQueueTick() {
     if (!player.healPending || player.hp >= player.maxHp) { if (player.hp >= player.maxHp) player.healPending = 0; return; }
-    const amt = Math.min(player.healPending, Math.max(1, eff("VIT")), player.maxHp - player.hp);
+    const amt = Math.min(player.healPending, Math.max(1, 2 + mod("VIT") * 2), player.maxHp - player.hp);
     if (amt <= 0) return;
     player.hp += amt; player.healPending -= amt;
     floatText(player.x, player.y, "+" + amt, "#8ed69a");
@@ -4748,7 +4776,7 @@
       // the rest pools into a heal-over-time queue that ticks up to VIT more per
       // turn (see healQueueTick), so a big potion doesn't instantly top you off.
       const total = Math.round(player.maxHp * (0.9 + Math.random() * 0.6));
-      const cap = Math.max(1, eff("VIT"));
+      const cap = Math.max(1, 2 + mod("VIT") * 2);
       const now = Math.min(total, cap, player.maxHp - player.hp);
       player.hp += now;
       const queued = Math.max(0, total - now);
@@ -5068,7 +5096,7 @@
     const st = player.skills.unarmed_master; if (!st || st.rank < 1) return 0;
     const d = classSkills().unarmed_master; if (!d) return 0;
     const r = d.ranks[st.rank - 1];
-    return (r && r.statScale) ? Math.floor((eff("DEX") + eff("VIT")) / 2) : 0;
+    return (r && r.statScale) ? Math.max(0, mod("DEX") + mod("VIT")) * 2 : 0;
   }
 
   function learnSkill(key) {
@@ -5162,7 +5190,7 @@
     m.stun = Math.max(m.stun || 0, 25);
     floatText(m.x, m.y, "◉", "#b491d6");
     log("Kethara's Eye fixes upon the " + monName(m) + " — it cannot move.", "hit");
-    player.skills[key].cd = Math.max(0, 100 - eff("RES"));
+    player.skills[key].cd = Math.max(0, 100 - mod("RES") * 10);
     updateHotbar();
     worldTurn();
   }
@@ -5175,7 +5203,7 @@
     m.berserk = ANGER_TURNS; startHunting(m);
     floatText(m.x, m.y, "😡", "#e0685a");
     log("Kethara's Anger consumes the " + monName(m) + " — it turns on everything nearby.", "hit");
-    player.skills[key].cd = Math.max(0, 100 - eff("RES"));
+    player.skills[key].cd = Math.max(0, 100 - mod("RES") * 10);
     updateHotbar();
     worldTurn();
   }
@@ -5251,7 +5279,7 @@
     const cost = 5;
     if (player.mp < cost) { log("Not enough MP for Smite (need " + cost + ")."); updateHotbar(); return; }
     player.mp -= cost;
-    const bonus = Math.round(eff("STR") * (cur.strMult || 1));
+    const bonus = Math.round(mod("STR") * 3 * (cur.strMult || 1));
     if (cheb(player.x, player.y, tx, ty) > 1) spawnProjectile(player.x, player.y, tx, ty, "#f0a838");
     log("You call down a Smite!", "hit");
     attack(player, target, bonus);
@@ -5288,13 +5316,13 @@
     let dealt = 0;
     if (cur.dealDmg) {
       const before = target.hp;
-      attack(player, target, eff("DEX"));
+      attack(player, target, mod("DEX") * 3);
       dealt += Math.max(0, before - target.hp);
       if (dead) return;
     }
     if (cur.chain && hitOther && hitOther.hp > 0) {
       const before2 = hitOther.hp;
-      attack(player, hitOther, eff("DEX"));
+      attack(player, hitOther, mod("DEX") * 3);
       dealt += Math.max(0, before2 - hitOther.hp);
       if (dead) return;
     }
@@ -5381,9 +5409,13 @@
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
     const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    // The modifier is what every formula actually reads, so it is what the screen
+    // leads with — the raw score is shown beside it, not instead of it.
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
       const g = equipStat(k);
-      const val = player.stats[k] + (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
+      const m = mod(k);
+      const val = `${m >= 0 ? "+" : ""}${m}<span style="color:var(--ink-dim);font-size:11px"> (${eff(k)})</span>` +
+        (g ? `<span style="color:#7ec98a;font-size:11px"> +${g}</span>` : "");
       return `<div class="cstat"><span>${k}<small>${effDesc[k]}</small></span><b>${val}</b></div>`;
     }).join("");
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
@@ -5397,12 +5429,12 @@
     return `<div class="cline"><b>${cname}</b> · Level ${player.level} · ${player.gold} gold</div>` +
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
-      `<div class="cline cformula">crit% = 5 + DEX + LCK×0.5 + skills · crit dmg% = 125 + LCK×2 + skills</div>` +
+      `<div class="cline cformula">every stat acts through its modifier, ⌊(score − 10) ÷ 2⌋ · crit% = 5 + DEX mod + LCK mod×2 + skills · crit dmg% = 125 + LCK mod×5</div>` +
       `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
       `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 45) — about 1% per point of lead, always helping, never becoming certainty</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
-      `<div class="cline cformula">incoming dmg ×(1 − RES ÷ (RES + 100)), then armor block subtracted</div>` +
+      `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }

@@ -503,3 +503,62 @@ A backstop remains for a future arena that gets this wrong: if the boss is someh
 unreachable, carve a corridor to it. Unlike the terrain check it can actually
 repair the floor, because carving is always available where removing terrain is
 not. It does not fire on either arena today — measured 0 strandings in 1500.
+
+## D&D-style ability modifiers — DONE (partly)
+
+Stats no longer feed formulas raw. Everything reads the **modifier**,
+`floor((score − 10) / 2)`, and stat blocks are the 5e **standard array**
+(15/14/13/12/10/8), so a starting character's modifiers run −1 … +2 and 10 is the
+do-nothing middle.
+
+| Class | STR | INT | VIT | DEX | RES | LCK |
+|---|---|---|---|---|---|---|
+| Chadwick (warrior) | 15 | 8 | 14 | 12 | 13 | 10 |
+| Brynn (monk) | 12 | 8 | 14 | 15 | 13 | 10 |
+| ToneTum (mage) | 8 | 15 | 10 | 12 | 14 | 13 |
+| *Bard (not built yet)* | *12* | *14* | *15* | *10* | *8* | *13* |
+
+This was not a substitution. The old formulas read raw stats of 3–60 directly, so
+each needed its own scale chosen for a range that now spans four points:
+
+| | Old | New |
+|---|---|---|
+| STR → damage | `floor((STR − weapon req) / 4)` | `mod(STR)` — the requirement already hard-gates equipping |
+| VIT → HP | `+1 per point` | `+1 per point of modifier`, flat |
+| INT → MP | `+1 per point` | `+1 per point of modifier`, flat |
+| DEX → acc/eva | `+1 each per point` | `+mod(DEX)` each |
+| RES → damage taken | `RES / (RES + 100)` | `m / (m + 10)`, m = mod(RES) — +2 cuts 17%, +10 cuts 50% |
+| LCK → crit | `+0.5%/point`, `+2% crit dmg` | `+2%/mod point`, `+5% crit dmg` |
+| LCK → enchant procs | `+1%/point` | `+3%/mod point` |
+
+**One thing tried and rejected:** applying VIT per level, the way 5e adds CON to
+every hit die. That is linear in D&D because stats barely move there (an ASI every
+four levels, hard cap 20). Here a class's main stat gains **+2 every level**, so VIT
+reaches 33 by level 20, its modifier +11, and `mod × level` goes quadratic — **333
+max HP at level 20** against 20 at level 1. Modifiers are flat bonuses; per-level
+growth stays the `levelUp` set's job.
+
+### Still open: how stats should grow
+
+The level-up rule is untouched — **+2 main, +1 secondary, every level**. That is not
+a D&D curve, and it is the next domino. It means a main stat reaches 53 by level 20
+(modifier +21), so modifiers are not the bounded ±5 things they are in 5e; they are
+just a slower-growing version of the old raw stats. If the intent is genuinely
+D&D-shaped, level-ups want to become an ASI: +2 to one stat every 4 levels, capped
+at 20, which holds every modifier at +5 or under for the whole run.
+
+### Still open: accuracy and evasion are on the wrong scale for this
+
+See the note in the editor's formula reference. `mod(DEX)` spans **−1 … +2 across
+every class in the game** — a 3-point total spread. On the current hit curve
+(`50% + 45% × tanh(lead / 45)`) 3 points of lead is worth **3 percentage points**.
+The same 3 points on a d20 is **15**. Meanwhile weapon accuracy spans −15 … +9 and
+monster evasion 0 … 30, so weapon choice and level decide whether you hit and DEX is
+a rounding error.
+
+Making DEX matter means moving three things together, which is the deferred monster
+pass: `HIT_SCALE` down to about **9** (so a point of modifier is worth ~5 points,
+like a d20), monster `eva` re-authored onto an AC-like **10–20** band instead of
+0–30, and weapon accuracy onto a proficiency-like **±3** instead of ±15. Doing only
+the first makes the game unplayable: at scale 9, a Snake at eva 30 against a level-1
+accuracy of 17 is a **10%** hit.
