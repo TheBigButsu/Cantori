@@ -23,6 +23,11 @@
   const MAP_H = 47;         // joined by narrow, winding 1-wide hallways between chambers
   const FOV_RADIUS = 8;     // max line of sight: you see 8 tiles out (walls/closed
                             // doors block); rooms reveal as you move into them
+  // What sight actually asks for. FOV_RADIUS stays the constant it always was —
+  // this is the one place the Hollow Bard's Blind gets to halve it, so nothing has
+  // to remember to check the status separately. Floored at 2: a blind player who
+  // cannot see the tile they are standing next to has no game left to play.
+  const fovRadius = () => (player && player.blind > 0 ? Math.max(2, Math.ceil(FOV_RADIUS / 2)) : FOV_RADIUS);
 
   const WALL = 0;
   const FLOOR = 1;
@@ -60,6 +65,13 @@
   let beenSeen = [];        // actually held in FOV at some point (not just mapped)
   let genStats = null;      // last level's room/corridor/floor fill breakdown
   let torches = [];            // decorative wall-mounted torches {x, y}
+  // Which of a level's obstacle pillars are drawn as sarcophagi. A set of tile keys,
+  // not a new tile constant: a sarcophagus IS a pillar — solid, sight-blocking,
+  // already correct in every predicate in CLAUDE.md rule 5 — and this is only how it
+  // is painted. A new TILE row would have bought the same look for the price of
+  // auditing passable/isWall/blocksSight/floodReach/fixOpenCorners and the travel
+  // pathing, which is the exact trade that rule warns about.
+  let sarcophagi = new Set();
   let depth = 1;
   let dead = false;
 
@@ -237,6 +249,8 @@
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
     player.healPending = 0;                    // queued heal-over-time from a potion
     player.stun = 0;                           // turns you're dazed (e.g. slammed into a wall) — actions are wasted
+    clearHexes();                              // the crypt's songs don't survive a death
+    player.burn = null; player.poison = 0;     // nor does anything still burning in you
     player.boons = new Set();                  // boons are earned fresh each run
     player.killCount = 0; player.secondChanceUsed = false;
     player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
@@ -554,8 +568,12 @@
   // variants, and the two now stack the same additive way on both sides.
   // Everything else — a potion, a scroll, equipping, a skill — remains a flat turn, so
   // consumables still cost real tempo no matter how fast you are.
-  const walkCost = () => 1 / (1 + walkHaste() + (metroMode() === "walk" ? 1 : 0));
-  const attackCost = () => 1 / (playerActSpeed() + (metroMode() === "attack" ? 1 : 0));
+  // A slime's aura is the other half of this: haste divides the cost, an aura
+  // multiplies it. They meet here rather than anywhere else so that every readout
+  // of "what does a step cost me" — the character sheet included — already has the
+  // slime in it.
+  const walkCost = () => (1 / (1 + walkHaste() + (metroMode() === "walk" ? 1 : 0))) * auraMult("auraWalk");
+  const attackCost = () => (1 / (playerActSpeed() + (metroMode() === "attack" ? 1 : 0))) * auraMult("auraAttack");
   // The "power" an item's enchant procs at: weapon top-end damage, armor defense,
   // or (for jewelry) its tier + plus.
   function itemPower(inst) {
@@ -708,7 +726,9 @@
       }
       const dir = axis === 0 ? Math.sign(dx) : Math.sign(dy);
       const remain = axis === 0 ? Math.abs(dx) : Math.abs(dy);
-      const len = Math.min(remain, randInt(3, 6));   // short legs → the 3-wide carve keeps straight runs ≤ ~8
+      // Leg length is what a "long hallway" biome actually buys: the path still
+      // bends after every leg, the legs are simply allowed to run further first.
+      const len = Math.min(remain, randInt(3, Math.max(3, layoutOf().hallLegMax)));
       for (let i = 0; i < len; i++) { if (axis === 0) x = clampX(x + dir); else y = clampY(y + dir); pts.push([x, y]); }
       last = axis;
     }
@@ -864,12 +884,19 @@
   // Rooms bigger than 20 tiles sprout obstacle trees (wall pillars) — one, plus
   // one more for every 5 tiles of area beyond 20 — placed on interior floor so
   // entrances stay clear. Skips thorn vaults, the player, items and monsters.
+  const PILLAR_CAP = 12;   // however big the room, this many pillars is texture; more is a maze
   function placeTrees(rooms, restricted) {
+    if (!rooms.length) return;
+    const anchor = roomCenter(rooms[0]);
+    const sarcPct = Number(layoutOf().sarcophagusPct) || 0;
     for (let i = 0; i < rooms.length; i++) {
       if (restricted.has(i)) continue;
       const r = rooms[i]; const area = r.w * r.h;
       if (area <= 20) continue;
-      const n = 1 + Math.floor((area - 21) / 5);
+      // One pillar, plus one per 5 tiles of area past 20 — capped, because the
+      // crypt's rooms are two to three times the old size and the uncapped formula
+      // turns a 12×10 hall into twenty obstacles.
+      const n = Math.min(PILLAR_CAP, 1 + Math.floor((area - 21) / 5));
       const cen = roomCenter(r);
       let placed = 0, guard = 0;
       while (placed < n && guard++ < 60) {
@@ -878,10 +905,33 @@
         if (x === cen.x && y === cen.y) continue;                 // keep the corridor target clear
         if (x === player.x && y === player.y) continue;
         if (itemAt(x, y) || monsterAt(x, y)) continue;
-        map[y][x] = WALL; placed++;                               // a tree / pillar (rendered per biome)
+        map[y][x] = WALL;                                         // a tree / pillar (rendered per biome)
+        // CLAUDE.md rule 5: a pillar is a tile that blocks movement, and this is the
+        // pass that used to entomb the boss on a boss floor. Same tentative-apply /
+        // revert the other generator passes use — it costs a flood fill per pillar
+        // and buys back a whole class of unwinnable floor, which matters far more now
+        // that rooms are big enough to want a dozen of them.
+        if (!allRoomsReachable(rooms, anchor.x, anchor.y)) { map[y][x] = FLOOR; continue; }
+        placed++;
+        if (sarcPct > 0 && Math.random() * 100 < sarcPct) sarcophagi.add(y * MAP_W + x);
       }
     }
   }
+
+  // How a biome's floors are SHAPED, as opposed to what stands on them. Every
+  // default here is exactly what the generator did before the block existed, so a
+  // biome that authors nothing generates the floors it always did.
+  //
+  //   roomSideMin/Max  the room size band. w is drawn from (min+1 … max) and h from
+  //                    (min … max−1), which is what makes rooms read as wider than
+  //                    tall before the 40% swap below flips some of them.
+  //   roomAreaMax      hard ceiling on w×h — the real control on "big open rooms".
+  //   attachPct        share of rooms placed flush against another with only a
+  //                    doorway between. 0 means every room is reached down a hall.
+  //   hallLegMax       longest straight run a corridor may take before it must bend.
+  //   sarcophagusPct   share of a room's pillars painted as sarcophagi.
+  const LAYOUT_DEFAULT = { roomSideMin: 4, roomSideMax: 9, roomAreaMax: 60, attachPct: 30, hallLegMax: 6, sarcophagusPct: 0 };
+  const layoutOf = (b) => Object.assign({}, LAYOUT_DEFAULT, (b || biome || {}).layout || {});
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
   const doorWordOne = () => (biome && biome.door === "bush" ? "bush" : "doorway");   // singular, for "wedged in the …"
@@ -1531,6 +1581,8 @@
     traps = [];
     decoys = [];
     turns = 0;
+    sarcophagi = new Set();
+    auraSig = "";                              // whatever field you stood in is a floor behind you
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
 
     // The biome (and so which boss, and so which arena) has to be known before the
@@ -1549,13 +1601,14 @@
       // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
       // but kept to the familiar chamber size (~24–60 tiles) — bigger, arena-scale
       // on a boss floor.
-      let w = randInt(5, 9), h = randInt(4, 8);
+      const L = layoutOf();
+      let w = randInt(L.roomSideMin + 1, L.roomSideMax), h = randInt(L.roomSideMin, L.roomSideMax - 1);
       if (Math.random() < 0.4) { const t = w; w = h; h = t; }
-      if (w * h > 60) continue;
+      if (w * h > L.roomAreaMax) continue;
       // A fraction of rooms are "attached": placed flush against another with just
       // a doorway between (no hallway). Kept under ~half so most rooms are still
       // joined by hallways; the rest are separate.
-      if (rooms.length && Math.random() < 0.3 && attachEdges.length < rooms.length * 0.5) {
+      if (rooms.length && Math.random() * 100 < L.attachPct && attachEdges.length < rooms.length * 0.5) {
         const res = placeAdjacent(rooms, w, h);
         if (!res) continue;
         carveRoom(res.rect); roomArea += w * h; rooms.push(res.rect);
@@ -1675,6 +1728,8 @@
     traps = [];
     decoys = [];
     turns = 0;
+    sarcophagi = new Set();
+    auraSig = "";
     horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
     bossActive = false;
     bossRoom = null;
@@ -1874,9 +1929,9 @@
   ];
   function castLight(cx, cy, row, start, end, xx, xy, yx, yy) {
     if (start < end) return;
-    const r2 = FOV_RADIUS * FOV_RADIUS;
+    const R = fovRadius(), r2 = R * R;
     let newStart = 0;
-    for (let i = row; i <= FOV_RADIUS; i++) {
+    for (let i = row; i <= R; i++) {
       let dx = -i - 1;
       const dy = -i;
       let blocked = false;
@@ -1896,7 +1951,7 @@
         if (blocked) {
           if (blocksSight(mx, my)) { newStart = rSlope; continue; }
           else { blocked = false; start = newStart; }
-        } else if (blocksSight(mx, my) && i < FOV_RADIUS) {
+        } else if (blocksSight(mx, my) && i < R) {
           blocked = true;
           castLight(cx, cy, i + 1, start, lSlope, xx, xy, yx, yy);
           newStart = rSlope;
@@ -1971,6 +2026,8 @@
     setBar("vMp", "vMpNum", player.mp != null ? player.mp : 100, player.maxMp != null ? player.maxMp : 100);
     updatePatienceBar();
 
+    updateStatusChips();
+
     // enemy counter (SPD-style): how many foes you can currently see
     const en = document.getElementById("enemies");
     if (en) {
@@ -1979,6 +2036,36 @@
       en.classList.toggle("active", n > 0);
     }
   }
+  // Everything currently ON the player, as a row of chips under the vitals bars.
+  // Hexes, stun and the two damage-over-times all read the same way here because
+  // they are the same kind of thing to the player: a reason this turn will not go
+  // the way they meant it to. Without this the crypt is a floor where your steps
+  // silently cost double and your blows silently miss.
+  function updateStatusChips() {
+    const row = document.getElementById("statuses");
+    if (!row) return;
+    const chips = [];
+    if (player.stun > 0) chips.push({ t: "💫 " + player.stun, c: "#e0a848", title: "Stunned — your next actions are wasted" });
+    for (const k of HEX_KEYS) {
+      if (!player[k]) continue;
+      chips.push({ t: HEXES[k].icon + " " + player[k], c: HEXES[k].color, title: HEXES[k].name + " — " + player[k] + " turns" });
+    }
+    if (player.burn) chips.push({ t: "🔥 " + player.burn.dmg, c: "#ff8f4a", title: "Burning — " + player.burn.dmg + " a turn, cooling, " + player.burn.rounds + " turns left" });
+    if (player.poison > 0) chips.push({ t: "☠ " + player.poison, c: "#9ad06a", title: "Poisoned — " + player.poison + " a turn, decaying" });
+    const wm = auraMult("auraWalk"), am = auraMult("auraAttack");
+    if (wm !== 1) chips.push({ t: "👣 ×" + round2(wm), c: "#e0685a", title: "An aura is making every step cost " + round2(wm) + "× as much time" });
+    if (am !== 1) chips.push({ t: "⚔ ×" + round2(am), c: "#c58fd6", title: "An aura is making every swing cost " + round2(am) + "× as much time" });
+    row.innerHTML = "";
+    row.hidden = !chips.length;
+    for (const ch of chips) {
+      const el = document.createElement("span");
+      el.className = "schip"; el.textContent = ch.t; el.title = ch.title;
+      el.style.color = ch.c; el.style.borderColor = ch.c;
+      row.appendChild(el);
+    }
+  }
+  const round2 = (n) => String(Math.round(n * 100) / 100);
+
   // The third vitals bar is the floor's welcome, draining as you spend it. It
   // replaces the Food placeholder, which sat pinned at 100/100 doing nothing.
   //
@@ -2014,6 +2101,9 @@
     monsters = monsters.filter((m) => m !== target);
     propDoorOpenAt(target.x, target.y);   // died on a door/bush? it's propped open now
     log("The " + monName(target) + " " + (verb || "dies") + ".", "hit");
+    // Whatever it does when it dies happens before the XP: a burst can kill the
+    // player, and a dead player should not be awarded the kill that killed them.
+    if (target.burstRadius) { deathBurst(target); if (dead) return; }
     // Regular monsters award XP by how deep they start appearing: ceil(minFloor / 2),
     // and minFloor is a DEPTH (see eligiblePool), so a depth-17 fiend is worth more
     // than a depth-1 rat instead of both landing in the same 1–3 band.
@@ -2102,6 +2192,227 @@
     else m.dots.push({ tag: "poison", dmg: amount, icon: "☠", color: "#9ad06a" });
   }
 
+  // ---- Auras: a field a monster simply HAS ---------------------------------
+  // The crypt's two slimes don't act on you, they stand near you: red doubles what
+  // a step costs, black makes a swing cost half again. Authored as three scalars on
+  // the row (auraRange, auraWalk, auraAttack), so a new one is a data edit.
+  //
+  // The rule that makes it fair rather than infuriating: an aura only bites from a
+  // slime you can currently SEE. An unexplained tax on your movement, arriving from
+  // a monster in an unlit room two corners away, is not a mechanic — it is a bug
+  // report. The renderer tints the affected tiles for the same reason.
+  function auraSources(field) {
+    const out = [];
+    if (!monsters || !visible.length) return out;
+    for (const m of monsters) {
+      if (m.hp <= 0 || !m.auraRange || !m[field]) continue;
+      if (!inBounds(m.x, m.y) || !visible[m.y] || !visible[m.y][m.x]) continue;
+      if (cheb(m.x, m.y, player.x, player.y) > m.auraRange) continue;
+      out.push(m);
+    }
+    return out;
+  }
+  // Multipliers compound. Standing inside two red slimes is worse than standing in
+  // one, which is the only reading that makes a pack of them frightening rather
+  // than redundant.
+  function auraMult(field) {
+    let mult = 1;
+    for (const m of auraSources(field)) mult *= Number(m[field]) || 1;
+    return mult;
+  }
+  // Every tile currently inside somebody's aura, for the renderer. Keyed by tile so
+  // two overlapping fields tint once, and carrying the strongest colour found.
+  function auraTiles() {
+    const out = new Map();
+    for (const field of ["auraWalk", "auraAttack"]) {
+      for (const m of auraSources(field)) {
+        const r = m.auraRange;
+        for (let y = m.y - r; y <= m.y + r; y++) for (let x = m.x - r; x <= m.x + r; x++) {
+          if (!inBounds(x, y) || !visible[y][x]) continue;
+          out.set(y * MAP_W + x, m.auraColor || m.color || "#8fd0a0");
+        }
+      }
+    }
+    return out;
+  }
+  // One log line when the mix of fields you are standing in changes — not one a
+  // turn, which is what a naive check produces and what makes the log useless.
+  let auraSig = "";
+  function auraLogTick() {
+    const names = auraSources("auraWalk").concat(auraSources("auraAttack"))
+      .map((m) => m.auraName || monName(m) + "'s aura");
+    const uniq = Array.from(new Set(names)).sort();
+    const sig = uniq.join("|");
+    if (sig === auraSig) return;
+    if (uniq.length) log("You are inside " + listPhrase(uniq) + ".", "hurt");
+    else if (auraSig) log("You step clear of the aura.");
+    auraSig = sig;
+  }
+  const listPhrase = (a) => (a.length <= 1 ? (a[0] || "") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]);
+
+  // ---- Hexes: the Hollow Bard's songs --------------------------------------
+  // Five ways to take the player's own turn away from them. Each is a plain turn
+  // counter on `player`, ticked in worldTurn beside the other timed effects — the
+  // same shape as `stun`, which is the one of these that already existed. Which of
+  // them a monster can sing is authored as a comma-separated pick-list on its row
+  // (`hexes`), with one roll to land (`hexChance`), so the bard is data and this is
+  // the behaviour behind it.
+  const HEX_FUMBLE = 0.5;         // hexed: a blow that CONNECTED still slides off, half the time
+  const HEXES = {
+    hex:     { name: "Hex",     icon: "✖", color: "#c58fd6", turns: () => depth,
+               msg: "A sour note follows you — your blows will not land true.",
+               over: "The sour note fades. Your aim is your own again." },
+    blind:   { name: "Blind",   icon: "◑", color: "#8a8fa0", turns: () => depth,
+               msg: "The song darkens the room — you can barely see.",
+               over: "The dark lifts — you can see the room again." },
+    vertigo: { name: "Vertigo", icon: "↻", color: "#e0b04a", turns: () => 3,
+               msg: "The floor tilts. You cannot tell which way you are going.",
+               over: "The floor steadies under you." },
+    charm:   { name: "Charmed", icon: "♥", color: "#e07a9a", turns: () => depth,
+               msg: "The love song takes you — you cannot bring yourself to strike the singer.",
+               over: "The song lets you go." },
+    berserk: { name: "Berserk", icon: "☠", color: "#e0685a", turns: () => randInt(3, 5),
+               msg: "The song turns to a war-drum — you attack whatever is nearest, and you do not choose.",
+               over: "The drumming stops. You have your hands back." },
+  };
+  const HEX_KEYS = Object.keys(HEXES);
+  const hexList = (m) => String(m && m.hexes || "").split(",").map((t) => t.trim()).filter((t) => HEXES[t]);
+  function clearHexes() {
+    for (const k of HEX_KEYS) player[k] = 0;
+    player.charmSrc = null;
+    auraSig = "";
+  }
+  function applyHex(kind, src) {
+    const h = HEXES[kind];
+    if (!h) return;
+    player[kind] = Math.max(player[kind] || 0, Math.max(1, h.turns()));
+    // Re-arm the watch at the HP the song took hold at, so the very blow that
+    // charmed you doesn't immediately count as the damage that breaks it.
+    if (kind === "charm") { player.charmSrc = src || null; charmHpMark = player.hp; }
+    floatText(player.x, player.y, h.icon, h.color);
+    log(h.msg, "hurt");
+  }
+  // "Until damaged" has to mean ANY damage — a trap, a burst, the brambles, a burn
+  // still ticking — not just the singer's next arrow. There is no one funnel every
+  // source of player damage passes through, so rather than remembering to break the
+  // charm at a dozen call sites (and missing the next one added), it watches the HP
+  // itself: one comparison at the end of each world turn.
+  let charmHpMark = null;
+  function charmWatch() {
+    if (!player.charm) { charmHpMark = null; return; }
+    if (charmHpMark != null && player.hp < charmHpMark) {
+      player.charm = 0; player.charmSrc = null;
+      log("The pain breaks the song's hold on you.", "hit");
+    }
+    charmHpMark = player.hp;
+  }
+  // Every hex is a turn counter, so one loop retires all five. Charmed drops its
+  // source with it — holding a reference to a monster that may already be dead and
+  // filtered off the list is how "you cannot strike it" outlives the thing itself.
+  function tickHexes() {
+    for (const k of HEX_KEYS) {
+      if (!player[k]) continue;
+      if (--player[k] > 0) continue;
+      player[k] = 0;
+      if (k === "charm") player.charmSrc = null;
+      log(HEXES[k].over);
+    }
+  }
+  // A hex rides a connecting blow — never a miss. The song has to reach you.
+  function rollHexes(attacker) {
+    if (dead) return;
+    const pool = hexList(attacker);
+    if (!pool.length) return;
+    const chance = (Number(attacker.hexChance) || 0) / 100;
+    if (chance <= 0 || Math.random() >= chance) return;
+    applyHex(pool[randInt(0, pool.length - 1)], attacker);
+  }
+
+  // ---- What burns and poisons the PLAYER ----------------------------------
+  // Monsters have carried both for a long time; until the crypt, nothing could put
+  // either on you. These are the mirror of the monster tick rather than a new idea:
+  // burn cools by 1 a turn to a floor of 1 and ends with its rounds, poison deals
+  // its whole stack and decays by 1, exactly as addPoison has always worked.
+  function burnPlayer(dmg) {
+    if (dmg <= 0) return;
+    const cur = player.burn;
+    if (cur && cur.dmg >= dmg) { cur.rounds = Math.max(cur.rounds, dmg); return; }
+    player.burn = { dmg, rounds: dmg };
+  }
+  function poisonPlayer(amount) {
+    if (amount <= 0) return;
+    player.poison = (player.poison || 0) + amount;
+  }
+  function playerDotTick() {
+    if (dead) return;
+    if (player.burn) {
+      const b = player.burn;
+      player.hp -= b.dmg; flash(player); floatText(player.x, player.y, "🔥-" + b.dmg, "#ff8f4a");
+      b.dmg = Math.max(1, b.dmg - 1);
+      if (--b.rounds <= 0) { player.burn = null; log("The flames on you gutter out."); }
+      if (player.hp <= 0) { updateHUD(); die(); return; }
+    }
+    if (player.poison > 0) {
+      player.hp -= player.poison; flash(player); floatText(player.x, player.y, "☠-" + player.poison, "#9ad06a");
+      if (--player.poison <= 0) { player.poison = 0; log("The poison works itself out of you."); }
+      if (player.hp <= 0) { updateHUD(); die(); return; }
+    }
+  }
+
+  // ---- Death bursts: the Hollow Acolyte ------------------------------------
+  // The acolyte does its real work dying. Everything inside the radius takes 1..the
+  // current depth, and takes that same blow four further ways: a burn and a poison
+  // at a share of it, mana torn off at a share of it, and a stun on top. Killing one
+  // beside you is a mistake; killing one in a crowd is a tactic.
+  //
+  // The damage is rolled per victim rather than once for the blast, so a burst into
+  // three bodies reads as three different wounds instead of one number stamped
+  // three times.
+  let bursting = false;   // a burst that kills another acolyte must not recurse forever
+  function deathBurst(src) {
+    if (bursting) return;
+    bursting = true;
+    const r = Math.max(1, src.burstRadius || 1);
+    const top = Number(src.burstDmg) > 0 ? Number(src.burstDmg) : depth;
+    const share = (dmg, pct) => Math.max(0, Math.round(dmg * (Number(pct) || 0) / 100));
+    spawnBurst(src.x, src.y, src.color || "#c58fd6");
+    flashScreen("#e0685a", 180);
+    log("The " + monName(src) + " bursts apart!", "hurt");
+    // The player first: a burst that kills you should not be adjudicated after the
+    // monsters it also killed have finished dying.
+    if (cheb(src.x, src.y, player.x, player.y) <= r) {
+      const dmg = randInt(1, Math.max(1, top));
+      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+      log("The blast catches you. (-" + dmg + ")", "hurt");
+      burnPlayer(share(dmg, src.burstBurn));
+      poisonPlayer(share(dmg, src.burstPoison));
+      const mp = share(dmg, src.burstMp);
+      if (mp > 0 && player.mp > 0) {
+        const lost = Math.min(player.mp, mp);
+        player.mp -= lost; floatText(player.x, player.y, "-" + lost + " MP", "#7ea8e0");
+      }
+      const st = randInt(Number(src.burstStunMin) || 0, Number(src.burstStunMax) || 0);
+      if (st > 0) { player.stun = (player.stun || 0) + st; floatText(player.x, player.y, "stunned", "#e0a848"); }
+      updateHUD();
+      if (player.hp <= 0) { bursting = false; die(); return; }
+    }
+    for (const m of monsters.slice()) {
+      if (m.hp <= 0 || m === src) continue;
+      if (cheb(src.x, src.y, m.x, m.y) > r) continue;
+      const dmg = randInt(1, Math.max(1, top));
+      m.hp -= dmg; flash(m); floatText(m.x, m.y, "-" + dmg, "#ffb07a");
+      const bd = share(dmg, src.burstBurn);
+      if (bd > 0) addDot(m, { tag: "burn", dmg: bd, rounds: bd, decay: true, icon: "🔥", color: "#ff8f4a" });
+      addPoison(m, share(dmg, src.burstPoison));
+      const st = randInt(Number(src.burstStunMin) || 0, Number(src.burstStunMax) || 0);
+      if (st > 0) m.stun = (m.stun || 0) + st;
+      if (m.hp <= 0) killMonster(m, "is torn apart by the blast");
+      else startHunting(m);
+    }
+    bursting = false;
+  }
+
+  // ---- Combat: strikes, kills, and what a kill pays ------------------------
   // Fire an item's enchants at a target. `power` is the source's primary number
   // (weapon atk on your strike, armor def when you retaliate). `item` is the
   // instance bearing the enchant, used to look up its tier for tierValues.
@@ -2177,6 +2488,15 @@
         log("The " + monName(target) + " evades your blow.");
         return;
       }
+      // A Hex doesn't spoil your aim, it spoils the blow. The roll has already
+      // connected — pinned and surprise blows included, because those are certain
+      // against the FOE's dodging and a hex is not the foe. That is the whole
+      // reason it sits after the roll instead of as a penalty to it.
+      if (player.hex > 0 && Math.random() < HEX_FUMBLE) {
+        floatText(target.x, target.y, "hexed", "#c58fd6");
+        log("Your blow slides off the " + monName(target) + " — the hex holds.", "hurt");
+        return;
+      }
       let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
@@ -2227,6 +2547,16 @@
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+      // A Love Song lasts "until damaged", and the singer's own next arrow is
+      // damage. Breaking it BEFORE the new hex is rolled is what lets the bard
+      // re-charm you on the same shot rather than immediately undoing itself.
+      // charmWatch() below would catch this at the end of the turn anyway; doing it
+      // HERE is what lets the bard re-charm you on the very shot that broke the last
+      // one, because rollHexes runs a few lines down and re-marks the watch.
+      if (player.charm > 0) {
+        player.charm = 0; player.charmSrc = null;
+        log("The pain breaks the song's hold on you.", "hit");
+      }
       updateHUD();
       const verb = bonus > 0 ? " charges you!" : attacker.ranged ? " strikes from afar." : " hits you.";
       log("The " + monName(attacker) + verb + " (-" + dmg + ")", "hurt");
@@ -2242,6 +2572,7 @@
           updateHUD();
         } else { die(); return; }
       }
+      rollHexes(attacker);   // the Hollow Bard's songs ride a connecting blow, never a miss
       // Maelon's Endless Dread: a wounding blow risks the attacker fleeing in terror.
       if (attacker.hp > 0 && player.boons && player.boons.has("dread")) {
         const fearChance = Math.max(0, mod("VIT") + mod("RES") + mod("LCK")) / 100;
@@ -2519,10 +2850,32 @@
   function playerAct(dx, dy) {
     if (dead || (dx === 0 && dy === 0)) return false;
     if (player.stun > 0) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return true; }
+    // Berserk takes the decision away entirely, so it is settled before the
+    // direction is even looked at. It outranks Charmed on purpose: rage beats love,
+    // and a berserk player WILL go for the singer if the singer is nearest.
+    if (player.berserk > 0 && !berserking) return berserkAct();
+    // Vertigo: the direction you chose is not the direction you go. Auto-travel is
+    // cancelled outright rather than randomised step by step — a path you cannot
+    // walk straight is not a path, and watching the game stagger you along one for
+    // twenty tiles is worse than being told to walk it yourself.
+    if (player.vertigo > 0) {
+      const d = DIRS8[randInt(0, DIRS8.length - 1)];
+      dx = d[0]; dy = d[1];
+      walkPath = [];
+      floatText(player.x, player.y, "↻", "#e0b04a");
+    }
     const nx = player.x + dx, ny = player.y + dy;
 
     const mon = monsterAt(nx, ny);
-    if (mon) { attack(player, mon); worldTurn(attackCost()); return true; }   // weapon speed (+haste, +Metrognome) → attack cost
+    if (mon) {
+      // Charmed: you may fight anything in the room except the one singing.
+      if (player.charm > 0 && mon === player.charmSrc) {
+        floatText(player.x, player.y, "♥", "#e07a9a");
+        log("You cannot bring yourself to strike the " + monName(mon) + ".", "hurt");
+        return false;                                    // no turn spent — you simply don't
+      }
+      attack(player, mon); worldTurn(attackCost()); return true;   // weapon speed (+haste, +Metrognome) → attack cost
+    }
 
     // Ranged weapon (spear/bow): if a foe stands along this direction within reach
     // and line of sight, loose a shot — so arrow-key play fires without a tap.
@@ -2533,6 +2886,7 @@
         if (!inBounds(tx, ty) || isWall(tx, ty)) break;
         const tgt = monsterAt(tx, ty);
         if (tgt && tgt.hp > 0 && lineOfSight(player.x, player.y, tx, ty)) {
+          if (player.charm > 0 && tgt === player.charmSrc) break;   // charmed: the bow won't point at the singer either
           spawnProjectile(player.x, player.y, tx, ty, "#ffe08a"); attack(player, tgt); worldTurn(attackCost());
           return true;
         }
@@ -2569,6 +2923,46 @@
       return true;
     }
     return false;
+  }
+
+  // Berserk: the same rule Kethara's Anger puts on a monster, pointed at the
+  // player. Whatever you pressed is discarded — you go at the nearest living thing
+  // and hit it, and that IS the cost of the effect.
+  //
+  // The approach is deliberately greedy rather than a proper path: rage is not
+  // clever, and a berserk player who solves a maze to reach the far side of the
+  // room reads as help. Walking into a wall still burns the turn.
+  let berserking = false;
+  function berserkAct() {
+    berserking = true;
+    try {
+      walkPath = [];
+      let best = null, bd = Infinity;
+      for (const m of monsters) {
+        if (m.hp <= 0) continue;
+        const d = cheb(m.x, m.y, player.x, player.y);
+        if (d < bd) { bd = d; best = m; }
+      }
+      floatText(player.x, player.y, "☠", "#e0685a");
+      if (!best) { log("You rage at empty air.", "hurt"); worldTurn(); return true; }
+      if (bd <= 1) { attack(player, best); worldTurn(attackCost()); return true; }
+      // Greedy step: of the eight neighbours, take a passable one that closes the
+      // gap, preferring the straightest. Nothing available means the rage spends
+      // itself on the wall in front of you.
+      let step = null, stepD = bd;
+      for (const [dx, dy] of DIRS8) {
+        const nx = player.x + dx, ny = player.y + dy;
+        if (!canStep(player.x, player.y, dx, dy) || monsterAt(nx, ny)) continue;
+        const d = cheb(nx, ny, best.x, best.y);
+        if (d < stepD) { stepD = d; step = [dx, dy]; }
+      }
+      if (!step) { log("You throw yourself at the wall.", "hurt"); worldTurn(); return true; }
+      // Hand the step back to playerAct rather than moving the player here: thorns,
+      // traps, pickups and the rest of what a step means all live there, and the
+      // `berserking` guard above is what stops it bouncing straight back to us.
+      if (!playerAct(step[0], step[1])) { worldTurn(); }
+      return true;
+    } finally { berserking = false; }
   }
 
   const INV_MAX = 25;                          // 5×5 grid of slots
@@ -3350,6 +3744,8 @@
     }
     if (player.hasteBuff > 0) player.hasteBuff = Math.max(0, player.hasteBuff - 1);   // Speed of Light: decays 1%/turn
     if (player.invisible > 0 && --player.invisible <= 0) log("The air around you settles — you're visible again.");
+    tickHexes();
+    playerDotTick(); if (dead) return;   // what is burning or poisoning YOU, before the monsters move
     if (pullZone) { pullZone.turns--; if (pullZone.turns <= 0) pullZone = null; }      // Faith's Pull: expires after 5 turns
     if (activeWalls.length) {                                                          // Wall of Faith: reverts after its life
       const stillUp = [];
@@ -3415,6 +3811,8 @@
       }
       if (dead) return;
     }
+    charmWatch();     // anything at all that hurt you this turn breaks a Love Song
+    auraLogTick();    // tell the player when the field they are standing in changes
     regenTick();
     healQueueTick();
     searchForTraps();
@@ -3690,7 +4088,7 @@
   function litBright(mx, my) {
     const dx = mx - player.x, dy = my - player.y;
     const d = Math.sqrt(dx * dx + dy * dy);
-    return Math.max(0.42, Math.min(1, 1 - (d / (FOV_RADIUS + 1)) * 0.6 + flick));
+    return Math.max(0.42, Math.min(1, 1 - (d / (fovRadius() + 1)) * 0.6 + flick));
   }
   let _font = null;
   function bodyFont() {
@@ -3824,6 +4222,23 @@
   }
   function drawChasm(px, py, b) { ctx.fillStyle = shade("#0c0c10", b); ctx.fillRect(px, py, tile, tile); }
   function drawRubble(px, py, b) { ctx.fillStyle = shade("#6f6a5e", b); ctx.fillRect(px, py, tile, tile); }
+  // A stone coffin standing where an obstacle pillar stands. Drawn rather than
+  // sprited because it has to sit in a room whose floor and wall art is the biome's,
+  // and a shaded box + a lid seam + a carved figure reads at 32px without a file.
+  function drawSarcophagus(px, py, b) {
+    const t = tile;
+    ctx.fillStyle = shade("#3a3630", b);                                  // shadow it sits in
+    ctx.fillRect(px, py, t, t);
+    ctx.fillStyle = shade("#8a8272", b);                                  // the box
+    ctx.fillRect(px + t * 0.14, py + t * 0.10, t * 0.72, t * 0.80);
+    ctx.fillStyle = shade("#a29881", b);                                  // the lid, offset a hair
+    ctx.fillRect(px + t * 0.18, py + t * 0.06, t * 0.64, t * 0.16);
+    ctx.fillStyle = shade("#5f5949", b);                                  // seam under the lid
+    ctx.fillRect(px + t * 0.14, py + t * 0.24, t * 0.72, t * 0.03);
+    ctx.fillStyle = shade("#6b6455", b);                                  // the figure carved on it
+    ctx.beginPath(); ctx.arc(px + t * 0.5, py + t * 0.40, t * 0.09, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(px + t * 0.42, py + t * 0.50, t * 0.16, t * 0.30);
+  }
   function drawGrass(px, py, b) { ctx.fillStyle = shade("#3a6b2e", b); ctx.fillRect(px, py, tile, tile); }
   // Wall-mounted torch: a bracket and a flickering flame, with a soft glow pool.
   function drawTorch(px, py, b, now) {
@@ -4176,7 +4591,8 @@
         const px = SX(mx), py = SY(my);
         const t = map[my][mx];
         if (t === WALL) {
-          if (!drawImg(SPRITES[biome.wall], px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
+          if (sarcophagi.has(my * MAP_W + mx)) drawSarcophagus(px, py, b);
+          else if (!drawImg(SPRITES[biome.wall], px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
         } else {
           if (!drawImg(SPRITES[biome.floor], px, py)) {
             ctx.fillStyle = shade((mx + my) % 2 === 0 ? COL.floorA : COL.floorB, b);
@@ -4207,6 +4623,21 @@
     }
     if (fountain && inBounds(fountain.x, fountain.y) && explored[fountain.y][fountain.x]) {
       drawFountain(SX(fountain.x), SY(fountain.y), visible[fountain.y][fountain.x] ? litBright(fountain.x, fountain.y) : MEM, now);
+    }
+
+    // Slime auras. Drawn AS a field on the ground rather than a ring around the
+    // monster, because what the player needs to know is which tiles are expensive,
+    // not which creature is charging them for it. Only ever tiles you can see —
+    // which is also the only place the aura actually applies.
+    for (const [key, col] of auraTiles()) {
+      const ax = key % MAP_W, ay = (key - (key % MAP_W)) / MAP_W;
+      if (!inBounds(ax, ay) || map[ay][ax] === WALL) continue;
+      const px = SX(ax), py = SY(ay);
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = col;
+      ctx.fillRect(px, py, tile, tile);
+      ctx.restore();
     }
 
     // route markers
@@ -5679,6 +6110,9 @@
       if (m.boss) tags.push("BOSS");
       if (m.ranged) tags.push("ranged");
       if (m.charge) tags.push("charges");
+      if (m.auraRange && (m.auraWalk || m.auraAttack)) tags.push((m.auraName || "aura") + " " + m.auraRange);
+      if (m.burstRadius) tags.push("bursts on death");
+      if (hexList(m).length) tags.push("hexes: " + hexList(m).map((k) => HEXES[k].name.toLowerCase()).join("/"));
       if ((m.ac != null ? m.ac : MON_AC) >= 15) tags.push("evasive");
       if ((m.toHit != null ? m.toHit : MON_TOHIT) >= 4) tags.push("accurate");
       if (m.state === SLEEPING) tags.push("asleep");
@@ -5708,7 +6142,7 @@
     if (shopKeeper && shopKeeper.x === x && shopKeeper.y === y) { log("A merchant — tap to buy potions or sell your gear."); return; }
     if (fountain && fountain.x === x && fountain.y === y) { log("A fountain — tap to pay for a full heal."); return; }
     const t = map[y][x];
-    log(t === WALL ? "A wall." : t === STAIRS ? "The way onward." :
+    log(t === WALL ? (sarcophagi.has(y * MAP_W + x) ? "A stone sarcophagus — sealed, and going nowhere. It blocks the way as surely as a wall." : "A wall.") : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
         t === THORN ? "A wall of thorns — you can force through, but it'll draw blood. Something waits beyond." :
         t === WATER ? "Deep water — too deep to wade. You'll have to go around; winged things won't." :
@@ -6221,6 +6655,25 @@
                alive: !!h, at: h ? { x: h.x, y: h.y } : null, hp: h ? h.hp : 0,
                maxHp: h ? h.maxHp : 0, atk: h ? [h.atkMin, h.atkMax] : null, state: h ? h.state : null };
     },
+    // ---- Biome 3 test hooks: auras, hexes, death bursts ----
+    hexState: () => {
+      const out = { stun: player.stun | 0, burn: player.burn ? Object.assign({}, player.burn) : null, poison: player.poison | 0 };
+      for (const k of HEX_KEYS) out[k] = player[k] | 0;
+      out.charmSrc = player.charmSrc ? player.charmSrc.type : null;
+      return out;
+    },
+    setHex: (k, n) => { if (HEXES[k]) { player[k] = n; updateHUD(); } },
+    clearHexes: () => { clearHexes(); updateHUD(); },
+    hexTarget: (i) => { const m = monsters[i]; if (m) { player.charm = 5; player.charmSrc = m; } },
+    auraState: () => ({ walk: auraMult("auraWalk"), attack: auraMult("auraAttack"), tiles: auraTiles().size,
+                        sources: auraSources("auraWalk").concat(auraSources("auraAttack")).map((m) => m.type) }),
+    burnPlayer: (n) => { burnPlayer(n); updateHUD(); },
+    curePlayer: () => { player.burn = null; player.poison = 0; player.stun = 0; updateHUD(); },
+    poisonPlayer: (n) => { poisonPlayer(n); updateHUD(); },
+    sarcophagi: () => Array.from(sarcophagi).map((k) => ({ x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W })),
+    layout: () => layoutOf(),
+    fovRadius: () => fovRadius(),
+
     // ---- Boon-system test hooks ----
     setKillCount: (n) => { player.killCount = n; },
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },

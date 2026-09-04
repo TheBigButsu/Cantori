@@ -196,6 +196,26 @@ body{
 .vbar.tm.low .vlabel,.vbar.tm.low .vnum{color:#e0685a}
 .vbar.tm.spent .vfill{background:linear-gradient(90deg,#7a1a12,#c8402f)}
 .vbar.tm.off{opacity:.35}
+/* Status chips: everything currently ON the player — stun, the crypt's five hexes,
+   a burn, a poison, and the movement/attack tax of a slime's aura. They wrap onto a
+   second line rather than squeezing, because on a phone the vitals column is already
+   at the width it can afford and a chip that has shrunk to three pixels is worse
+   than a chip on the next row. */
+.statuses{
+  display:flex;flex-wrap:wrap;gap:4px;
+  max-width:150px;
+  margin-top:1px;
+}
+.schip{
+  font-size:9px;font-weight:700;font-variant-numeric:tabular-nums;
+  line-height:1;
+  padding:3px 5px;
+  border:1px solid currentColor;
+  border-radius:4px;
+  background:rgba(6,4,2,.72);
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  white-space:nowrap;
+}
 .vnum{
   font-size:9.5px;font-variant-numeric:tabular-nums;
   color:var(--ink-dim);letter-spacing:.02em;

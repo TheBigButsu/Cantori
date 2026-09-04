@@ -726,3 +726,135 @@ Worth recording because the request was to slow "the summon skill": the Piper's 
 vermin summons are **one-shot events**, not cooldowns — one on first sight, one at
 half HP via `piperPhaseShift`. The beam is the only recurring ability it has, and that
 is what moved.
+
+## Biome 3: the crypt's five — DONE
+
+The Mummy's Crypt had four monsters, all of them variations on "walks at you and
+bites". Five more, and between them they make the crypt about *your turn* rather
+than your hit points: three of the five take the turn away instead of taking HP off.
+
+### Red Slime and Black Slime — an aura is a thing you HAVE
+
+Range 3, and the field is on whether or not the slime has noticed you: a red one
+doubles what every step costs, a black one adds half again to every swing. They are
+slow (walk 0.6) and reasonably tough on purpose — a fast slime would just be a bad
+wolf, and the whole creature is a piece of ground you would rather not fight on.
+
+Three scalars on the data row do it — `auraRange`, `auraWalk`, `auraAttack` — and
+they fold into `walkCost()` / `attackCost()` at exactly the point haste already
+divides them. Haste divides, an aura multiplies; several auras compound, so two red
+slimes are worse than one.
+
+**The rule that makes it fair: an aura only applies from a slime you can SEE.** An
+unexplained tax on your movement, arriving from a creature in an unlit room two
+corners away, is not a mechanic — it is a bug report. The tiles inside the field are
+tinted in the slime's own colour, the multiplier shows as a chip under the vitals
+bars, and the log says once when the mix of fields you are standing in changes.
+
+### Hollow Acolyte — it does its real work dying
+
+14 HP. It wants to die, and it wants to die next to you. The burst is 1..the current
+depth, rolled *per victim*, and every victim takes the same blow four further ways:
+a burn at half, a poison at half, mana torn off at all of it, and 1–2 turns of stun
+on top. Monsters inside the radius are caught too, so a burst can chain through a
+pack (once — recursion is blocked, so a chain resolves rather than looping).
+
+Killing one beside you is a mistake. Killing one in a crowd is a tactic. That is the
+whole design, and it is why it is fragile enough to pop on a single hit.
+
+This needed **burn and poison that land on the player**, which had never existed —
+monsters have carried both since the beginning, but nothing could put either on you.
+They are the mirror of the monster tick, not a new idea: a burn cools by 1 a turn to
+a floor of 1 and lasts as many turns as its opening tick (so 4 damage is 4+3+2+1 =
+10), and a poison stack deals its whole total each turn and decays by 1.
+
+### Brute — charge
+
+Pure data: 40 HP, `charge: true`, and it inherits the momentum bonus the bear got
+last week, which now lands after mitigation. Nothing in the engine had to move,
+which is the framework working.
+
+### Hollow Bard — five ways to lose a turn
+
+Ranged, range 5, and on a **connecting** hit (never a miss — the song has to reach
+you) it has a 35% chance to land one of five hexes:
+
+| Hex | What it does | Lasts |
+|---|---|---|
+| **Hex** | a blow of yours that already *connected* still slides off, half the time | floor number |
+| **Blind** | sight radius halved, 8 → 4, lighting falloff with it | floor number |
+| **Vertigo** | the direction you press is replaced by a random one of the eight | 3 turns |
+| **Charmed** | you cannot attack the singer, melee or bow, until something hurts you | floor number |
+| **Berserk** | your input is discarded; you go at the nearest thing and hit it | 3–5 turns |
+
+Which of them a monster can sing is a comma-separated pick-list on its row
+(`hexes`), so a future biome-4 creature can take two of these and none of the rest
+without touching code.
+
+Four details worth writing down, because each was a decision rather than an
+implementation:
+
+**Hex sits AFTER the to-hit roll, not as a penalty to it.** That is what makes it
+defeat a *guaranteed* hit as well: an ambush and a foe pinned in a doorway are
+certain against the foe's dodging, and a hex is not the foe.
+
+**Vertigo cancels auto-travel outright** rather than staggering you along the path.
+A route you cannot walk straight is not a route, and watching the game lurch you
+down one for twenty tiles is worse than being told to walk it yourself.
+
+**Charmed breaks on ANY damage, not just the singer's next arrow.** There is no one
+funnel every source of player damage passes through — a trap, a burst, the brambles,
+a burn still ticking — so rather than remembering to break it at a dozen call sites
+(and missing the next one added), it watches the HP itself, once at the end of each
+world turn. The singer's own blow breaks it inline a few lines earlier, which is
+what lets the bard re-charm you on the very shot that broke the last one.
+
+**Berserk outranks Charmed.** Rage beats love, so a berserk player *will* go for the
+singer. Its approach is greedy rather than pathfound, on purpose: rage is not clever,
+and a berserk player who solves a maze to reach the far side of the room reads as
+help. Walking into a wall still burns the turn.
+
+All of it shows as chips under the vitals bars — stun, the five hexes, a burn, a
+poison, and the two aura multipliers. Without that the crypt is a floor where your
+steps silently cost double and your blows silently miss, which is indistinguishable
+from a broken game.
+
+### The crypt's floors: long halls, big chambers, sarcophagi
+
+`layout` is now a per-biome block, and every default in it is exactly what the
+generator did before the block existed — a biome that authors nothing generates the
+floors it always did. The crypt authors `6,13,120,0,14,55`:
+
+| | forest (default) | crypt |
+|---|---|---|
+| room side band | 4–9 | 6–13 |
+| area cap | 60 | 120 |
+| attached rooms | 30% | **0%** — every room is down a hall |
+| longest straight hall run | 6 | **14** |
+| average room area | 33 | **77** |
+| rooms per floor | ~9 | ~4 |
+
+**Sarcophagi are not a new tile.** A sarcophagus is one of the obstacle pillars
+`placeTrees` already drops in big rooms — already solid, already sight-blocking,
+already correct in every predicate CLAUDE.md rule 5 lists — and `sarcophagusPct`
+only decides how many of them are *painted* as stone coffins. A new `TILE` row would
+have bought the same look for the price of auditing `passable` / `isWall` /
+`blocksSight` / `floodReach` / `fixOpenCorners` and the travel pathing. That is the
+exact trade the rule warns about, and the answer was to not take it.
+
+Two changes to `placeTrees` came with the bigger rooms, and the first is a real bug
+fix: **every pillar is now reverted if it would strand a room.** That pass has never
+had a reachability check, and it is the pass that used to entomb bosses on boss
+floors. It costs one flood fill per pillar and buys back a whole class of unwinnable
+floor — which matters far more now that a room can be big enough to want a dozen.
+Second, the pillar count is capped at 12: the uncapped `1 + (area−21)/5` turns a
+12×10 crypt hall into twenty obstacles, which is a maze rather than texture.
+
+### Sprites
+
+DCSS has no tile for a red slime, a black slime, a hollow acolyte, a brute or a
+hollow bard, so these five are drawn for Cantori and released public-domain
+alongside the CC0 art (see `ART-CREDITS.md`). They are plain, composed from simple
+shapes at 32×32, and exist so that no data row renders as a bare glyph. Any of them
+can be replaced by dropping a better PNG over the same filename — nothing in the
+code needs to know.
