@@ -538,7 +538,12 @@ reaches 33 by level 20, its modifier +11, and `mod × level` goes quadratic — 
 max HP at level 20** against 20 at level 1. Modifiers are flat bonuses; per-level
 growth stays the `levelUp` set's job.
 
-### Still open: how stats should grow
+### RESOLVED: stat growth, and the whole to-hit system — see below
+
+The two "still open" notes in this section are settled; the sections that follow
+supersede them. Kept here because the reasoning still explains *why*.
+
+### (superseded) How stats should grow
 
 The level-up rule is untouched — **+2 main, +1 secondary, every level**. That is not
 a D&D curve, and it is the next domino. It means a main stat reaches 53 by level 20
@@ -547,7 +552,7 @@ just a slower-growing version of the old raw stats. If the intent is genuinely
 D&D-shaped, level-ups want to become an ASI: +2 to one stat every 4 levels, capped
 at 20, which holds every modifier at +5 or under for the whole run.
 
-### Still open: accuracy and evasion are on the wrong scale for this
+### (superseded) Accuracy and evasion were on the wrong scale for this
 
 See the note in the editor's formula reference. `mod(DEX)` spans **−1 … +2 across
 every class in the game** — a 3-point total spread. On the current hit curve
@@ -562,3 +567,40 @@ like a d20), monster `eva` re-authored onto an AC-like **10–20** band instead 
 0–30, and weapon accuracy onto a proficiency-like **±3** instead of ±15. Doing only
 the first makes the game unplayable: at scale 9, a Snake at eva 30 against a level-1
 accuracy of 17 is a **10%** hit.
+
+## d20 to-hit and Armour Class — DONE
+
+The tanh hit curve is gone. A hit is now **`d20 + to-hit ≥ the target's AC`**, with a
+natural 1 always missing and a natural 20 always hitting, so every exchange stays
+between 5% and 95%.
+
+This had to follow the ability modifiers. On the old curve, `mod(DEX)` spanning
+−1…+2 was worth **3 percentage points** across the entire stat; on a d20 the same
+spread is **15**, which is the whole reason 5e's modifiers can be small numbers.
+
+- **To hit** = proficiency + `mod(DEX)` + the weapon's `toHit` + boons + passives.
+  Proficiency is 5e's: **+2, rising by one every four levels** (+2 at 1–4, +3 at
+  5–8, … +6 at 17+). There is no per-level accuracy any more — `levelUp.accuracy`
+  and `levelUp.evasion` are removed from every class, because +2 to-hit a level is
+  +10 percentage points a level and would cap out by about level 6.
+- **AC** = 10 + `min(mod(DEX), subtype cap)` + the armour's `ac` + boons + passives.
+  Light armour lets the whole DEX modifier through, **medium caps it at +2, heavy
+  takes none** — which is what stops plate being strictly best. Heavy buys that back
+  with flat mitigation (light +0, medium +1, heavy +3 damage soaked), which is this
+  game's own addition on top of AC.
+
+Monsters carry `toHit` and `ac` instead of `acc` and `eva`, converted from the old
+columns as `AC = 10 + eva/4` and `toHit = acc/4`, which lands them in a 10–18 AC
+band and a +0…+5 to-hit band. Weapons' `accuracy` became `toHit` at a third of its
+old value (dagger +3, sword +2, big axe −5). Armour got explicit AC on the new
+scale (cloth/Shitty +1, leather +2, chain +3, plate +4). Bosses were given an
+authored ladder rather than defaulting: Piper AC 14/+5, Golem 16/+6, Mummy 15/+7,
+Cultist 16/+8, Demigod 17/+9.
+
+## Stat growth — DONE
+
+**Main stat +1 every 2 levels, secondary +1 every 3.** It was +2 and +1 *every*
+level, which drove a main stat to 53 by level 20 — a +21 modifier, nothing like the
+bounded thing `(score − 10) / 2` assumes. At this rate a main stat gains 10 points
+over 20 levels and its modifier tops out near +7. HP and MP still rise every level
+through the `levelUp` set; only the stats slowed down.

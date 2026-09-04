@@ -106,8 +106,22 @@
   const RES_MOD_SCALE = 10;   // damage cut = m / (m + 10): +2 → 17%, +5 → 33%, never 100%
   const CRIT_PER_LCK_MOD = 2; // percentage points of crit chance per point of LCK modifier
   const CRITDMG_PER_LCK_MOD = 5;
-  const ACC_BASE = 10, EVA_BASE = -3;     // DEX modifier → accuracy & evasion
-  const MON_ACC = 12, MON_EVA = 4;        // monster defaults when unspecified
+  // Armour Class and a d20 to hit, straight out of 5e: you hit when
+  // d20 + to-hit >= the target's AC. A natural 1 always misses and a natural 20
+  // always hits, so nothing is ever a certainty in either direction.
+  //
+  // This replaced a difference-and-tanh curve. The curve was fine on its own terms
+  // but it could not survive the move to ability modifiers: mod(DEX) spans −1…+2
+  // across every class, and on that curve three points of lead was worth three
+  // percentage points, so DEX had stopped meaning anything. On a d20 a point is
+  // worth five, which is the whole reason the modifiers are small in the first place.
+  const AC_BASE = 10;
+  const MON_TOHIT = 3, MON_AC = 11;       // monster defaults when unspecified
+  // 5e's proficiency bonus: +2, rising by one every four levels. This is what makes
+  // a character better at hitting things as they level; there is deliberately no
+  // per-level accuracy in the class levelUp sets any more, because +2 to-hit a level
+  // on a d20 is +10 percentage points a level and would cap out almost immediately.
+  const proficiency = () => 2 + Math.floor((player.level - 1) / 4);
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
   // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
@@ -134,8 +148,11 @@
   // reads, and the per-level growth stays the levelUp set's job.
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(1, (cls.baseHp != null ? cls.baseHp : HP_BASE) + mod("VIT") * HP_PER_VIT_MOD + (player.lvlHp || 0)); };
   const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + (player.lvlMp || 0)); };
-  const playerAcc = () => ACC_BASE + mod("DEX") + weaponAccuracy() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");  // DEX mod + weapon + level + skills + boons
-  const playerEva = () => EVA_BASE + mod("DEX") + (player.lvlEva || 0) + (player.boonEva || 0) + armorSubEva() + armorEvasion() + passiveMod("eva");     // DEX mod + level + armor weight/item + skills + boons
+  const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");
+  // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
+  // how much DEX it lets through — light takes all of it, medium at most +2, heavy
+  // none at all. That cap is what stops heavy armour from being strictly best.
+  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + (player.lvlEva || 0) + (player.boonEva || 0) + passiveMod("eva");
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -167,9 +184,16 @@
   // the curve never arrives at certainty. That last part is the whole point: there
   // is always headroom left for a monster's evasion to occupy, which is what keeps
   // a genuinely slippery foe slippery at level 25.
-  const HIT_SCALE = 45;   // a lead of this many points lands ~84% (tanh(1) of the way up)
-  const hitChance = (acc, eva) => 0.5 + 0.45 * Math.tanh((acc - eva) / HIT_SCALE);
-  const rollHit = (acc, eva) => Math.random() < hitChance(acc, eva);
+  // P(d20 + bonus >= ac), with the natural-1 / natural-20 floor and ceiling. Used
+  // for the character screen's readout; the real roll is rollHit below.
+  const hitChance = (bonus, ac) => Math.max(0.05, Math.min(0.95, (21 + bonus - ac) / 20));
+  const d20 = () => randInt(1, 20);
+  function rollHit(bonus, ac) {
+    const r = d20();
+    if (r === 1) return false;            // a natural 1 always misses
+    if (r === 20) return true;            // a natural 20 always hits
+    return r + bonus >= ac;
+  }
   // RES cuts a percentage off every incoming hit, on a curve that approaches but
   // never reaches immunity — m / (m + 10) on the RES MODIFIER, so +2 is 17%, +5 is
   // 33%, +10 is 50%, and total immunity stays unreachable however high RES climbs
@@ -436,7 +460,7 @@
   // Brynn's Unarmed Master passive when no weapon is equipped).
   const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin + passiveMod("dmgMin") + unarmedStatBonus());
   const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax + passiveMod("dmgMax") + unarmedStatBonus());
-  const weaponAccuracy = () => (player.weapon ? (GEAR[player.weapon.key].accuracy || 0) : 0);
+  const weaponToHit = () => (player.weapon ? (GEAR[player.weapon.key].toHit || 0) : 0);
   const weaponSpeed = () => { if (!player.weapon) { const s = passiveMod("speed"); if (s) return s; } return player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1; };
   // Weapon reach: 1 = melee (adjacent only). Spears/bows carry a range > 1 and
   // can strike a monster that far away with line of sight.
@@ -444,12 +468,19 @@
   const weaponSub = () => (player.weapon ? (GEAR[player.weapon.key].sub || "") : "");
   // Armor subtype: lighter armor dodges better (evasion), heavier mitigates more
   // damage on top of the item's def. Tunable here.
-  const ARMOR_SUB = { light: { eva: 3, mit: 0 }, medium: { eva: 0, mit: 1 }, heavy: { eva: -3, mit: 3 } };
+  // Armour subtypes, 5e-shaped: light takes the whole DEX modifier, medium caps it
+  // at +2, heavy takes none. `mit` is this game's own addition — flat damage soaked
+  // on top of AC — and it runs the other way, which is what pays heavy armour back
+  // for the DEX it refuses.
+  const ARMOR_SUB = { light: { dexCap: Infinity, mit: 0 }, medium: { dexCap: 2, mit: 1 }, heavy: { dexCap: 0, mit: 3 } };
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
-  const armorSubEva = () => { const a = armorSub(); return a ? (a.eva || 0) : 0; };
+  // How much of the DEX modifier this armour lets through: light all of it, medium
+  // at most +2, heavy none — 5e's rule, and the reason plate isn't simply best.
+  const armorDexCap = () => { const a = armorSub(); return a && a.dexCap != null ? a.dexCap : Infinity; };
+  const armorDexAllowed = (m) => Math.min(m, armorDexCap());
   const armorSubMit = () => { const a = armorSub(); return a ? (a.mit || 0) : 0; };
-  // A worn armor piece's own evasion stat (on top of the flat subtype bonus above).
-  const armorEvasion = () => (player.armor ? (GEAR[player.armor.key].evasion || 0) : 0);
+  // A worn armour piece's own AC.
+  const armorAC = () => (player.armor ? (GEAR[player.armor.key].ac || 0) : 0);
   // Passive haste from worn enchants, tiered by the item bearing it. There are two
   // independent kinds and an enchant carries exactly one: `haste` quickens the
   // weapon, `walkHaste` quickens the feet. Kit that speeds your swing does nothing
@@ -2094,7 +2125,7 @@
       // and it is the reliable answer to the genuinely slippery foes (a bee at
       // eva 25) that a fair roll almost never lands on.
       const pinned = isDoor(target.x, target.y);
-      if (!surprise && !pinned && !rollHit(playerAcc(), target.eva != null ? target.eva : MON_EVA)) {
+      if (!surprise && !pinned && !rollHit(playerToHit(), target.ac != null ? target.ac : MON_AC)) {
         floatText(target.x, target.y, "miss", "#cfe6b0");
         log("The " + monName(target) + " evades your blow.");
         return;
@@ -2131,8 +2162,8 @@
       }
     } else {
       bump(attacker, player.x, player.y);
-      const acc = attacker.acc != null ? attacker.acc : MON_ACC;
-      if (!rollHit(acc, playerEva())) {                // player evades (DEX)
+      const acc = attacker.toHit != null ? attacker.toHit : MON_TOHIT;
+      if (!rollHit(acc, playerAC())) {                 // it rolls against your AC
         floatText(player.x, player.y, "miss", "#cfe6b0");
         log("You evade the " + monName(attacker) + ".");
         return;
@@ -2365,8 +2396,13 @@
       player.xp -= threshold;
       player.level++;
       const cls = DATA.classes[player.cls] || DATA.classes.warrior;
-      player.stats[cls.main] += 2;             // main +2
-      player.stats[cls.secondary] += 1;        // secondary +1
+      // Main +1 every 2 levels, secondary +1 every 3. It was +2 and +1 EVERY level,
+      // which is a fine curve for raw stats read directly but not for D&D modifiers:
+      // a main stat reached 53 by level 20, a +21 modifier, and nothing about that is
+      // bounded the way (score − 10) / 2 assumes. At this rate a main stat gains 10
+      // points over 20 levels and its modifier tops out around +7.
+      if (player.level % 2 === 0) player.stats[cls.main] += 1;
+      if (player.level % 3 === 0) player.stats[cls.secondary] += 1;
       // No free skill point here — skill points now come only from Potions of
       // Insight (1 guaranteed per floor, 3 more on a boss kill).
       const lu = cls.levelUp || {};            // flat per-level set (hp/mp/accuracy/evasion)
@@ -2383,8 +2419,12 @@
       const extra = [];
       if (lu.hp) extra.push("+" + lu.hp + " HP"); if (lu.mp) extra.push("+" + lu.mp + " MP");
       if (lu.accuracy) extra.push("+" + lu.accuracy + " acc"); if (lu.evasion) extra.push("+" + lu.evasion + " eva");
-      log("Level " + player.level + "!  +2 " + cls.main + ", +1 " + cls.secondary + (extra.length ? " · " + extra.join(", ") : ""), "hit");
-      const gains = ["+2 " + cls.main, "+1 " + cls.secondary].concat(extra);
+      const statGain = [];
+      if (player.level % 2 === 0) statGain.push("+1 " + cls.main);
+      if (player.level % 3 === 0) statGain.push("+1 " + cls.secondary);
+      if (proficiency() > 2 + Math.floor((player.level - 2) / 4)) statGain.push("proficiency " + sgnNum(proficiency()));
+      const gains = statGain.concat(extra);
+      log("Level " + player.level + (gains.length ? "!  " + gains.join(", ") : "!"), "hit");
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
       threshold = xpToNext();
@@ -3158,9 +3198,9 @@
   // A lightweight monster-vs-monster strike (Anger of Kethara only) — no crits,
   // affixes, or identify progress; just a hit-chance roll and flat damage.
   function monsterVsMonster(attacker, target) {
-    const acc = attacker.acc != null ? attacker.acc : MON_ACC;
-    const eva = target.eva != null ? target.eva : MON_EVA;
-    if (!rollHit(acc, eva)) { floatText(target.x, target.y, "miss", "#cfe6b0"); return; }
+    const acc = attacker.toHit != null ? attacker.toHit : MON_TOHIT;
+    const ac = target.ac != null ? target.ac : MON_AC;
+    if (!rollHit(acc, ac)) { floatText(target.x, target.y, "miss", "#cfe6b0"); return; }
     let dmg = randInt(attacker.atkMin, attacker.atkMax);
     dmg = Math.round(dmg * 1.5);   // berserk hits harder
     target.hp -= dmg;
@@ -5345,8 +5385,8 @@
       if (m.boss) tags.push("BOSS");
       if (m.ranged) tags.push("ranged");
       if (m.charge) tags.push("charges");
-      if ((m.eva != null ? m.eva : MON_EVA) >= 12) tags.push("evasive");
-      if ((m.acc != null ? m.acc : MON_ACC) >= 12) tags.push("accurate");
+      if ((m.ac != null ? m.ac : MON_AC) >= 15) tags.push("evasive");
+      if ((m.toHit != null ? m.toHit : MON_TOHIT) >= 4) tags.push("accurate");
       if (m.state === SLEEPING) tags.push("asleep");
       else if (!m.aware) tags.push("unaware");
       log(monName(m) + " — Lv " + (m.level || 1) + ", HP " + Math.max(0, m.hp) + "/" + m.maxHp + (tags.length ? " (" + tags.join(", ") + ")" : ""));
@@ -5405,10 +5445,11 @@
       }
     }
   }
+  const sgnNum = (n) => (n >= 0 ? "+" : "") + n;
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "acc " + playerAcc() + " / eva " + playerEva(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
     // The modifier is what every formula actually reads, so it is what the screen
     // leads with — the raw score is shown beside it, not instead of it.
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
@@ -5421,8 +5462,8 @@
     const pts = player.statPoints > 0 ? `<span class="cpts">${player.statPoints} unspent points</span> — spend them under Skills.` : "No unspent points.";
     // Accuracy/Evasion, spelled out as chance-to-hit / chance-to-evade against a
     // baseline foe (monster defaults), plus the exact formula behind them.
-    const accPct = Math.round(hitChance(playerAcc(), MON_EVA) * 100);
-    const evaPct = Math.round((1 - hitChance(MON_ACC, playerEva())) * 100);
+    const accPct = Math.round(hitChance(playerToHit(), MON_AC) * 100);
+    const evaPct = Math.round((1 - hitChance(MON_TOHIT, playerAC())) * 100);
     const sgn = (n) => (n >= 0 ? "+" : "") + n + "%";
     const walkHasteTxt = sgn(Math.round(walkHaste() * 100));
     const atkHasteTxt = sgn(Math.round(atkHaste() * 100));
@@ -5430,8 +5471,8 @@
       `<div class="cline">Attack <b>${playerAtk()}</b> · Defense <b>${df}</b> · HP <b>${player.hp}/${player.maxHp}</b> · MP <b>${player.mp}/${player.maxMp}</b></div>` +
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">every stat acts through its modifier, ⌊(score − 10) ÷ 2⌋ · crit% = 5 + DEX mod + LCK mod×2 + skills · crit dmg% = 125 + LCK mod×5</div>` +
-      `<div class="cline">Accuracy <b>${playerAcc()}</b> (~${accPct}% to hit an average foe) · Evasion <b>${playerEva()}</b> (~${evaPct}% to evade an average hit)</div>` +
-      `<div class="cline cformula">hit% = 50% + 45% × tanh((attacker acc − defender eva) ÷ 45) — about 1% per point of lead, always helping, never becoming certainty</div>` +
+      `<div class="cline">To hit <b>${sgnNum(playerToHit())}</b> (~${accPct}% against an average foe) · Armour Class <b>${playerAC()}</b> (~${evaPct}% to be missed)</div>` +
+      `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = proficiency (${sgnNum(proficiency())} at your level) + DEX mod + weapon</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
       `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted</div>` +
@@ -5789,7 +5830,8 @@
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
       return {
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
-        acc: playerAcc(), eva: playerEva(), lvlHp: player.lvlHp, level: player.level, xp: player.xp,
+        acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(), prof: proficiency(),
+        lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
         skillsAll: Object.keys(player.skills || {}),
@@ -5798,7 +5840,7 @@
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
-        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponAccuracy: weaponAccuracy(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
+        weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponToHit: weaponToHit(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
         inv: player.inv.map((i) => i.key), invItems: player.inv.map((i) => Object.assign({}, i)), identified: [...identified],
         x: player.x, y: player.y, dead, explored: ex, stun: player.stun || 0,
         camX, camY, panX, panY,
@@ -5809,7 +5851,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, acc: m.acc != null ? m.acc : MON_ACC, eva: m.eva != null ? m.eva : MON_EVA, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),

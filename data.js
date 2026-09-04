@@ -9,10 +9,10 @@ window.CANTORI_DATA = {
       "glyph": "r",
       "color": "#c9b48f",
       "speed": 1,
-      "eva": 12,
+      "ac": 13,
       "atkMin": 1,
       "atkMax": 4,
-      "acc": 5
+      "toHit": 1
     },
     "bat": {
       "name": "Bat",
@@ -24,8 +24,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "atkMin": 1,
       "atkMax": 4,
-      "eva": 20,
-      "acc": 5
+      "ac": 15,
+      "toHit": 1
     },
     "snake": {
       "name": "Snake",
@@ -34,9 +34,9 @@ window.CANTORI_DATA = {
       "color": "#7ec98a",
       "minFloor": 3,
       "speed": 1,
-      "acc": 10,
+      "toHit": 2,
       "atkMin": 1,
-      "eva": 30,
+      "ac": 18,
       "atkMax": 6
     },
     "spider": {
@@ -47,8 +47,8 @@ window.CANTORI_DATA = {
       "glyph": "x",
       "color": "#d68f8f",
       "speed": 1,
-      "acc": 15,
-      "eva": 10,
+      "toHit": 4,
+      "ac": 12,
       "range": 4,
       "ranged": true,
       "atkMin": 1,
@@ -56,7 +56,7 @@ window.CANTORI_DATA = {
     },
     "wolf": {
       "name": "Wolf",
-      "acc": 0,
+      "toHit": 0,
       "glyph": "W",
       "color": "#9aa0a8",
       "hp": 16,
@@ -64,7 +64,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "minFloor": 2,
       "atkMin": 2,
-      "eva": 15
+      "ac": 14
     },
     "bee": {
       "name": "Bee",
@@ -72,13 +72,13 @@ window.CANTORI_DATA = {
       "hp": 10,
       "atkMin": 2,
       "atkMax": 6,
-      "acc": 9,
+      "toHit": 2,
       "glyph": "e",
       "color": "#e6c34a",
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "eva": 25,
+      "ac": 16,
       "minFloor": 2
     },
     "bear": {
@@ -87,8 +87,8 @@ window.CANTORI_DATA = {
       "hp": 35,
       "atkMin": 2,
       "atkMax": 4,
-      "acc": 15,
-      "eva": 6,
+      "toHit": 4,
+      "ac": 12,
       "charge": true,
       "glyph": "B",
       "color": "#8a6a44",
@@ -100,8 +100,8 @@ window.CANTORI_DATA = {
       "name": "Harpy",
       "flying": true,
       "atkMax": 12,
-      "acc": 12,
-      "eva": 14,
+      "toHit": 3,
+      "ac": 14,
       "ranged": true,
       "range": 4,
       "glyph": "H",
@@ -217,8 +217,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "walkSpeed": 1,
       "attackSpeed": 1,
-      "acc": 8,
-      "eva": 10,
+      "toHit": 2,
+      "ac": 12,
       "minFloor": 7
     },
     "Goblin_archer": {
@@ -228,8 +228,8 @@ window.CANTORI_DATA = {
       "atkMax": 8,
       "glyph": "?",
       "color": "#c0c0c0",
-      "acc": 20,
-      "eva": 0,
+      "toHit": 5,
+      "ac": 10,
       "range": 4,
       "ranged": true,
       "minFloor": 8
@@ -248,7 +248,7 @@ window.CANTORI_DATA = {
       },
       "glyph": "/",
       "color": "#cfc3a0",
-      "accuracy": 9,
+      "toHit": 3,
       "dmgMax": 4,
       "rarity": 25
     },
@@ -266,7 +266,7 @@ window.CANTORI_DATA = {
         "STR": 10
       },
       "rarity": 25,
-      "accuracy": 6
+      "toHit": 2
     },
     "big axe": {
       "cat": "weapon",
@@ -281,7 +281,7 @@ window.CANTORI_DATA = {
       "req": {
         "STR": 15
       },
-      "accuracy": -15,
+      "toHit": -5,
       "rarity": 4
     },
     "leather": {
@@ -296,7 +296,7 @@ window.CANTORI_DATA = {
       "color": "#b98a5a",
       "defMin": 1,
       "defMax": 4,
-      "evasion": 1
+      "ac": 2
     },
     "chain": {
       "cat": "armor",
@@ -310,7 +310,7 @@ window.CANTORI_DATA = {
       },
       "defMin": 2,
       "defMax": 10,
-      "evasion": 0
+      "ac": 3
     },
     "plate": {
       "cat": "armor",
@@ -324,7 +324,7 @@ window.CANTORI_DATA = {
       },
       "defMin": 3,
       "defMax": 25,
-      "evasion": -10
+      "ac": 4
     },
     "ring_copper": {
       "cat": "ring",
@@ -377,7 +377,7 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "dmgMin": 4,
       "speed": 0.9,
-      "accuracy": -15,
+      "toHit": -5,
       "rarity": 25
     },
     "spear": {
@@ -394,7 +394,7 @@ window.CANTORI_DATA = {
       "range": 2,
       "glyph": "/",
       "color": "#c8b890",
-      "accuracy": 3,
+      "toHit": 1,
       "rarity": 10
     },
     "bow": {
@@ -411,7 +411,7 @@ window.CANTORI_DATA = {
       "color": "#b08a4a",
       "dmgMin": 0,
       "dmgMax": 8,
-      "accuracy": -10,
+      "toHit": -3,
       "rarity": 15
     },
     "Shitty_sword": {
@@ -419,7 +419,7 @@ window.CANTORI_DATA = {
       "name": "Shitty sword",
       "dmgMin": 1,
       "dmgMax": 2,
-      "accuracy": 5,
+      "toHit": 2,
       "tier": 0,
       "req": {
         "STR": 0
@@ -441,7 +441,7 @@ window.CANTORI_DATA = {
       "sub": "light",
       "defMin": 0,
       "defMax": 1,
-      "evasion": 0,
+      "ac": 1,
       "tier": 0,
       "rarity": 0
     },
@@ -457,7 +457,7 @@ window.CANTORI_DATA = {
       "color": "#cccccc",
       "defMin": 0,
       "defMax": 2,
-      "evasion": 10,
+      "ac": 1,
       "sub": "light"
     }
   },
@@ -976,32 +976,42 @@ window.CANTORI_DATA = {
       "name": "The Pied Piper",
       "atkMin": 6,
       "atkMax": 10,
-      "hp": 200
+      "hp": 200,
+      "ac": 14,
+      "toHit": 5
     },
     "golem": {
       "arena": "hall",
       "name": "Stone Golem",
       "atkMin": 1,
       "hp": 400,
-      "atkMax": 25
+      "atkMax": 25,
+      "ac": 16,
+      "toHit": 6
     },
     "cultist": {
       "name": "Cultist",
       "hp": 200,
       "atkMin": 0,
-      "atkMax": 20
+      "atkMax": 20,
+      "ac": 16,
+      "toHit": 8
     },
     "mummy": {
       "name": "The Mummy",
       "hp": 90,
       "atkMin": 7,
-      "atkMax": 10
+      "atkMax": 10,
+      "ac": 15,
+      "toHit": 7
     },
     "demigod": {
       "name": "The Demi-God",
       "hp": 150,
       "atkMin": 9,
-      "atkMax": 13
+      "atkMax": 13,
+      "ac": 17,
+      "toHit": 9
     }
   },
   "biomes": [
@@ -1235,9 +1245,7 @@ window.CANTORI_DATA = {
       "intRegen": 2,
       "levelUp": {
         "hp": 5,
-        "mp": 2,
-        "accuracy": 2,
-        "evasion": 1
+        "mp": 2
       },
       "blurb": "Front-line brawler. All around weapons master.",
       "skillTree": [
@@ -1517,9 +1525,7 @@ window.CANTORI_DATA = {
       "intRegen": 2,
       "levelUp": {
         "hp": 5,
-        "mp": 2,
-        "accuracy": 1,
-        "evasion": 2
+        "mp": 2
       },
       "blurb": "Fights best barehanded — hurls foes aside and lands harder the longer she goes unarmed.",
       "skillTree": [
@@ -1622,9 +1628,7 @@ window.CANTORI_DATA = {
       },
       "levelUp": {
         "hp": 3,
-        "mp": 4,
-        "accuracy": 1,
-        "evasion": 1
+        "mp": 4
       },
       "skillTree": [],
       "icon": "✨",
