@@ -179,6 +179,94 @@ window.CANTORI_DATA = {
       "color": "#c0c0e0",
       "minFloor": 14
     },
+    "red_slime": {
+      "name": "Red Slime",
+      "hp": 22,
+      "atkMin": 2,
+      "atkMax": 5,
+      "walkSpeed": 0.6,
+      "attackSpeed": 0.8,
+      "speed": 1,
+      "toHit": 3,
+      "ac": 11,
+      "minFloor": 11,
+      "auraRange": 3,
+      "auraWalk": 2,
+      "auraName": "a red mire",
+      "auraColor": "#d0483a",
+      "glyph": "J",
+      "color": "#d0483a"
+    },
+    "black_slime": {
+      "name": "Black Slime",
+      "hp": 26,
+      "atkMin": 3,
+      "atkMax": 6,
+      "walkSpeed": 0.6,
+      "attackSpeed": 0.8,
+      "speed": 1,
+      "toHit": 3,
+      "ac": 11,
+      "minFloor": 12,
+      "auraRange": 3,
+      "auraAttack": 1.5,
+      "auraName": "a black pall",
+      "auraColor": "#8f7fa8",
+      "glyph": "j",
+      "color": "#4a4450"
+    },
+    "hollow_acolyte": {
+      "name": "Hollow Acolyte",
+      "hp": 14,
+      "atkMin": 2,
+      "atkMax": 4,
+      "walkSpeed": 1,
+      "speed": 1,
+      "toHit": 4,
+      "ac": 12,
+      "minFloor": 11,
+      "burstRadius": 1,
+      "burstDmg": 0,
+      "burstBurn": 50,
+      "burstPoison": 50,
+      "burstMp": 100,
+      "burstStunMin": 1,
+      "burstStunMax": 2,
+      "glyph": "a",
+      "color": "#c58fd6"
+    },
+    "brute": {
+      "name": "Brute",
+      "hp": 40,
+      "atkMin": 4,
+      "atkMax": 8,
+      "walkSpeed": 0.9,
+      "attackSpeed": 1,
+      "speed": 1,
+      "toHit": 5,
+      "ac": 11,
+      "minFloor": 12,
+      "charge": true,
+      "glyph": "B",
+      "color": "#a07850"
+    },
+    "hollow_bard": {
+      "name": "Hollow Bard",
+      "hp": 18,
+      "atkMin": 2,
+      "atkMax": 5,
+      "walkSpeed": 1.1,
+      "speed": 1,
+      "toHit": 5,
+      "ac": 14,
+      "minFloor": 13,
+      "ranged": true,
+      "range": 5,
+      "hexChance": 35,
+      "hexes": "hex,blind,vertigo,charm,berserk",
+      "glyph": "b",
+      "color": "#e0b0c8"
+    },
     "keener": {
       "walkSpeed": 1.2,
       "speed": 1,
@@ -1270,10 +1358,88 @@ window.CANTORI_DATA = {
         "ghoul",
         "wraith",
         "phantom",
-        "imp"
+        "imp",
+        "red_slime",
+        "black_slime",
+        "hollow_acolyte",
+        "brute",
+        "hollow_bard"
       ],
       "boss": "mummy",
-      "door": "door"
+      "door": "door",
+      "spawnMix": {
+        "ghoul": [
+          30,
+          20,
+          10,
+          5,
+          0
+        ],
+        "wraith": [
+          null,
+          15,
+          15,
+          10,
+          0
+        ],
+        "phantom": [
+          null,
+          null,
+          15,
+          15,
+          0
+        ],
+        "imp": [
+          null,
+          null,
+          null,
+          15,
+          0
+        ],
+        "red_slime": [
+          30,
+          20,
+          10,
+          10,
+          0
+        ],
+        "black_slime": [
+          null,
+          10,
+          10,
+          10,
+          0
+        ],
+        "hollow_acolyte": [
+          40,
+          20,
+          15,
+          10,
+          0
+        ],
+        "brute": [
+          null,
+          15,
+          15,
+          15,
+          0
+        ],
+        "hollow_bard": [
+          null,
+          null,
+          10,
+          10,
+          0
+        ]
+      },
+      "layout": {
+        "roomSideMin": 6,
+        "roomSideMax": 13,
+        "roomAreaMax": 120,
+        "attachPct": 0,
+        "hallLegMax": 14,
+        "sarcophagusPct": 55
+      }
     },
     {
       "key": "town",

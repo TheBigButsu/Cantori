@@ -16,3 +16,18 @@ originally published under other names, and our Goblin Archer wears DCSS's deep
 elf archer, picked because the bow in its hands is the thing a player needs to
 read at 32 pixels. Renaming a file changes nothing about the art's origin, and
 the credit above covers it either way.
+
+## Original tiles (also public domain)
+
+Five of the crypt's monsters have no counterpart in the DCSS tileset, so their
+sprites were drawn for Cantori rather than borrowed:
+
+- `red_slime.png`, `black_slime.png`, `hollow_acolyte.png`, `brute.png`,
+  `hollow_bard.png`
+
+They are original work and are released into the **public domain (CC0 1.0)**, on
+the same terms as the DCSS art beside them, so nothing about the project's
+licensing changes by mixing the two. They are composed from simple shapes at
+32×32 and are deliberately plain: they exist so no data row renders as a bare
+glyph, and any of them can be replaced with a better tile — DCSS or otherwise —
+by dropping a new PNG over the same filename. Nothing in the code needs to know.

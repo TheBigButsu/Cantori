@@ -65,6 +65,28 @@
       { f: "charge", type: "bool" }, { f: "ranged", type: "bool" }, { f: "flying", type: "bool" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
+    // The abilities half of the monsters tab. Same rows as `monsters` — this is a
+    // second view of them, not a second collection — so that the stat table stays
+    // scannable instead of growing sixteen mostly-blank columns. Everything here is
+    // a plain scalar: the engine reads these straight off the row.
+    monsterAbilities: [
+      { f: "__key", label: "key", type: "key" },
+      { f: "name", type: "text", cls: "name" },
+      { f: "auraRange", label: "aura range", type: "num" },
+      { f: "auraWalk", label: "aura ×step", type: "num", step: "0.1" },
+      { f: "auraAttack", label: "aura ×swing", type: "num", step: "0.1" },
+      { f: "auraName", label: "aura name", type: "text" },
+      { f: "auraColor", label: "aura colour", type: "color" },
+      { f: "burstRadius", label: "burst r", type: "num" },
+      { f: "burstDmg", label: "burst dmg", type: "num" },
+      { f: "burstBurn", label: "burn %", type: "num" },
+      { f: "burstPoison", label: "poison %", type: "num" },
+      { f: "burstMp", label: "MP %", type: "num" },
+      { f: "burstStunMin", label: "stun min", type: "num" },
+      { f: "burstStunMax", label: "stun max", type: "num" },
+      { f: "hexChance", label: "hex %", type: "num" },
+      { f: "hexes", label: "hexes", type: "text", cls: "name" },
+    ],
     gear: [
       { f: "__key", label: "key", type: "key" },
       { f: "cat", type: "select", opts: ["weapon", "armor", "ring", "trinket", "necklace"] },
@@ -302,6 +324,7 @@
     const main = $("main");
     main.innerHTML = "";
     if (activeTab === "gear") main.appendChild(renderGearTables());
+    else if (activeTab === "monsters") main.appendChild(renderMonsterTables());
     else if (TABLE_COLLS.includes(activeTab)) main.appendChild(renderTable(activeTab));
     else if (activeTab === "biomes") main.appendChild(renderBiomes());
     else if (activeTab === "classes") main.appendChild(renderClasses());
@@ -357,7 +380,7 @@
 
     if (opts.hint !== false) {
       const note = document.createElement("p"); note.className = "hint";
-      note.textContent = "Click a column header to sort by it (again to reverse); type in the filter box to narrow the list. " + tableHint(coll);
+      note.textContent = "Click a column header to sort by it (again to reverse); type in the filter box to narrow the list. " + tableHint(typeof opts.hint === "string" ? opts.hint : coll);
       wrap.appendChild(note);
     }
 
@@ -381,15 +404,17 @@
     table.appendChild(tbody);
     tw.appendChild(table); wrap.appendChild(tw);
 
-    const add = document.createElement("div"); add.className = "addrow";
-    const addBase = opts.addBase || coll.replace(/s$/, "");
-    const btn = document.createElement("button"); btn.textContent = "+ Add " + (opts.addLabel || addBase);
-    btn.onclick = () => {
-      filterText[stateKey] = "";   // clear the filter so the new row is visible
-      rows[coll].push({ key: uniqueKey(coll, "new_" + addBase.replace(/[^a-z0-9]+/gi, "_")), obj: clone(opts.template || TEMPLATES[coll]) });
-      render();
-    };
-    add.appendChild(btn); wrap.appendChild(add);
+    if (!opts.noAdd) {
+      const add = document.createElement("div"); add.className = "addrow";
+      const addBase = opts.addBase || coll.replace(/s$/, "");
+      const btn = document.createElement("button"); btn.textContent = "+ Add " + (opts.addLabel || addBase);
+      btn.onclick = () => {
+        filterText[stateKey] = "";   // clear the filter so the new row is visible
+        rows[coll].push({ key: uniqueKey(coll, "new_" + addBase.replace(/[^a-z0-9]+/gi, "_")), obj: clone(opts.template || TEMPLATES[coll]) });
+        render();
+      };
+      add.appendChild(btn); wrap.appendChild(add);
+    }
 
     // Recompute the filtered/sorted view and repaint just the header labels +
     // body (so typing in the filter box keeps focus).
@@ -435,6 +460,19 @@
         filterFn: (row) => g.match(getField(row.obj, "cat")),
       }));
     }
+    return wrap;
+  }
+
+  // The monsters tab is two views of ONE row set: the stat block, then what the
+  // creature does. Adding and deleting live on the first table only — a second
+  // "+ Add monster" button under a second table of the same rows is a trap.
+  function renderMonsterTables() {
+    const wrap = document.createElement("div");
+    wrap.appendChild(renderTable("monsters"));
+    wrap.appendChild(renderTable("monsters", {
+      stateKey: "monster_abilities", heading: "monster abilities", spec: SPECS.monsterAbilities,
+      noAdd: true, hint: "abilities",
+    }));
     return wrap;
   }
 
@@ -544,6 +582,31 @@
     wrap.appendChild(inp);
     return wrap;
   }
+  // How this biome's floors are SHAPED. Packed into one field the way terrain is:
+  // "roomSideMin,roomSideMax,roomAreaMax,attachPct,hallLegMax,sarcophagusPct".
+  // Blank deletes the block, and the generator falls back to the numbers it used
+  // before per-biome layout existed (4,9,60,30,6,0).
+  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "hallLegMax", "sarcophagusPct"];
+  function layoutField(b) {
+    const wrap = document.createElement("label"); wrap.className = "bfield";
+    const span = document.createElement("span");
+    span.textContent = "layout (room side min,max, area max, attach %, hall leg max, sarcophagus %)";
+    wrap.appendChild(span);
+    const inp = document.createElement("input"); inp.type = "text";
+    const L = b.layout;
+    inp.value = L ? LAYOUT_KEYS.map((k) => (L[k] != null ? L[k] : "")).join(",") : "";
+    inp.placeholder = "6,13,120,0,14,55";
+    inp.oninput = () => {
+      const v = inp.value.trim();
+      if (v === "") { delete b.layout; return; }
+      const parts = v.split(",").map((t) => t.trim());
+      const row = {};
+      LAYOUT_KEYS.forEach((k, i) => { if (parts[i] !== undefined && parts[i] !== "") row[k] = Number(parts[i]) || 0; });
+      b.layout = row;
+    };
+    wrap.appendChild(inp);
+    return wrap;
+  }
   function renderBiomes() {
     const wrap = document.createElement("div");
     const bar = document.createElement("div"); bar.className = "collbar";
@@ -584,6 +647,7 @@
       grid.appendChild(biomeField(b, "horror", "horror", "select", [""].concat(monKeys)));
       grid.appendChild(biomeField(b, "horror name", "horrorName", "text"));
       grid.appendChild(biomeField(b, "final biome?", "final", "bool"));
+      grid.appendChild(layoutField(b));
       grid.appendChild(terrainField(b, "water", "pools"));
       grid.appendChild(terrainField(b, "grass", "patches"));
       grid.appendChild(terrainField(b, "rubble", "patches"));
@@ -1106,11 +1170,36 @@
     {
       title: "Action speed & turn cost",
       rows: [
-        { name: "Attack cost", formula: "1 / (weapon speed × (1 + attack haste) [+1 if a Metrognome is tuned to attack speed])", note: "Attack haste = worn `haste` enchants + Ourn's boons. Lower cost = more actions per monster turn." },
-        { name: "Walk cost", formula: "1 / (1 + walk haste [+1 if a Metrognome is tuned to walk speed])", note: "Walk haste = worn `walkHaste` enchants + Ourn's boons. Weapon speed is deliberately NOT in here: a heavy axe slows your swing, not your feet." },
+        { name: "Attack cost", formula: "1 / (weapon speed × (1 + attack haste) [+1 if a Metrognome is tuned to attack speed]) × every visible aura ×swing", note: "Attack haste = worn `haste` enchants + Ourn's boons. Lower cost = more actions per monster turn. An aura is the mirror image of haste: haste divides this, an aura multiplies it." },
+        { name: "Walk cost", formula: "1 / (1 + walk haste [+1 if a Metrognome is tuned to walk speed]) × every visible aura ×step", note: "Walk haste = worn `walkHaste` enchants + Ourn's boons. Weapon speed is deliberately NOT in here: a heavy axe slows your swing, not your feet." },
         { name: "Every other action", formula: "1, flat", note: "A potion, a scroll, equipping, a skill, waiting. Neither haste shortens these, so consumables always cost real tempo." },
         { name: "Monster eligibility", formula: "spawns when its biome is active AND minFloor <= current depth", note: "minFloor is an absolute depth (the floor number in the HUD), not a 1–5 position within the biome. Blank disables the monster entirely." },
         { name: "Monster actions", formula: "banks your action's cost each turn, acts while it holds ≥ 1, and each action costs 1 / (walk speed) if it stepped or 1 / (attack speed) otherwise — capped at 2 actions", note: "walk/attack speed each fall back to the row's `speed` when blank, so setting only `speed` gives one figure for everything. 1.2 on an axis means a double-action every 5th turn on that axis; 0.8 means skipping one in 5. Halving your own cost halves what every monster banks — that IS haste." },
+      ],
+    },
+    {
+      title: "Auras, death bursts & hexes",
+      rows: [
+        { name: "Aura", formula: "every VISIBLE monster within its auraRange (Chebyshev) of you multiplies your walk cost by its aura ×step and your attack cost by its aura ×swing; several compound", note: "The visibility rule is the whole fairness of it — an unexplained tax on your movement arriving from a creature you cannot see is a bug report, not a mechanic. The affected tiles are tinted in the monster's aura colour, and the multiplier shows as a chip under the vitals bars. Red Slime is ×2 to step, Black Slime ×1.5 to swing, both at range 3." },
+        { name: "Death burst", formula: "on death, everything within burst r takes randInt(1, burst dmg or the current DEPTH) — rolled separately per victim", note: "Then, as shares of the damage THAT victim took: a burn at burn %, a poison at poison %, and (player only) mana torn off at MP %. A stun of randInt(stun min, stun max) lands on top. Monsters are caught too, so a burst can chain through a pack — recursion is blocked, so a chain resolves once and does not loop." },
+        { name: "Burn (on you)", formula: "deals its damage each turn, then cools by 1 to a floor of 1, and ends after as many turns as its opening tick", note: "Same shape as ToneTum's Burning Sensation. A 4-damage burn is 4+3+2+1 = 10 over four turns." },
+        { name: "Poison (on you)", formula: "the whole stack lands each turn, then decays by 1", note: "Same shape as poison on a monster: a big stack keeps hurting as it winds down." },
+        { name: "Hex chance", formula: "on a CONNECTING hit only, hex % to apply one of the monster's `hexes` at random", note: "Never on a miss — the song has to reach you." },
+        { name: "hex", formula: "for `depth` turns, a blow of yours that already CONNECTED still misses, 50% of the time", note: "It sits after the to-hit roll, not as a penalty to it, so it defeats a guaranteed hit too — an ambush and a foe pinned in a doorway are certain against the FOE's dodging, and a hex is not the foe." },
+        { name: "blind", formula: "for `depth` turns, sight radius is halved (8 → 4)", note: "Floored at 2. Lighting falls off over the shorter radius too, so the room genuinely closes in." },
+        { name: "vertigo", formula: "for 3 turns, the direction you press is replaced by a random one of the eight", note: "Auto-travel is cancelled outright rather than staggered along, because a path you cannot walk straight is not a path." },
+        { name: "charm", formula: "for `depth` turns or until anything damages you, you cannot attack the monster that cast it", note: "Melee and ranged both refuse, and refusing costs no turn. The singer's own next hit breaks it — which it may then re-apply on that same shot." },
+        { name: "berserk", formula: "for 3–5 turns your input is discarded: you step greedily toward the nearest living monster and attack it", note: "Outranks charm — rage beats love, so a berserk player WILL go for the singer. The approach is greedy, not pathfound: rage is not clever, and walking into a wall still burns the turn." },
+      ],
+    },
+    {
+      title: "Floor shape (per biome)",
+      rows: [
+        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 4 / 9 / 60 — the numbers the generator used before biomes could shape their own floors. The crypt runs 6 / 13 / 120 for genuinely big chambers." },
+        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, capped at half the rooms", note: "0 means every room is reached down a hallway, which is what makes a biome read as corridors rather than a warren." },
+        { name: "Hall length", formula: "a corridor leg runs randInt(3, hallLegMax) tiles before it must bend", note: "The path still alternates axes after every leg — this only sets how far a straight run may go first. Default 6; the crypt runs 14." },
+        { name: "Pillars", formula: "a room over 20 tiles gets 1 + (area − 21) / 5 obstacle pillars, capped at 12, each reverted if it would strand any room", note: "The cap exists because the uncapped formula turns a 12×10 crypt hall into twenty obstacles. The reachability check is CLAUDE.md rule 5 applied to the pass that used to entomb bosses." },
+        { name: "Sarcophagi", formula: "sarcophagusPct of a room's pillars are DRAWN as stone coffins", note: "Not a new tile: a sarcophagus is a pillar, so it is already solid, sight-blocking and correct in every map predicate. This is only how it is painted (and what Examine calls it)." },
       ],
     },
     {
@@ -1686,7 +1775,8 @@
   }
   function tableHint(coll) {
     return ({
-      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank to-hit / AC / range / charge / ranged use engine defaults (to-hit +3, AC 11). Sprite = assets/tiles/<key>.png.",
+      monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank to-hit / AC / range / charge / ranged use engine defaults (to-hit +3, AC 11). Auras, death bursts and hexes are on the second table below. Sprite = assets/tiles/<key>.png — a row with no PNG falls back to its glyph in its colour, which works but is not the finished article.",
+      abilities: "What a creature DOES, over and above hitting you. All of it optional, all of it blank by default. AURA: auraRange is the Chebyshev radius, aura ×step multiplies what a player's move costs (Red Slime 2) and aura ×swing what an attack costs (Black Slime 1.5); several auras compound. An aura only bites while the creature is IN SIGHT — an unexplained tax arriving from an unlit room is a bug report, not a mechanic — and the tiles it covers are tinted with aura colour. BURST (on death): burst r is the radius, burst dmg the top of a 1..N roll (0 = use the current DEPTH), and burn/poison/MP % are shares of the damage that victim actually took; stun min/max is rolled on top. It catches monsters as well as the player, so a pack can chain. HEXES (on a connecting hit): hex % is the chance one lands, hexes is a comma-separated pick from hex, blind, vertigo, charm, berserk — hex makes half your CONNECTING blows slide off, blind halves sight, vertigo scrambles the direction you press, charm stops you attacking the singer until something hurts you, berserk hands your turns to the AI. hex and charm last the floor number, vertigo 3 turns, berserk 3–5.",
       gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and to-hit (added to the d20 attack roll); ARMOR uses mit min/max (each hit blocks a random amount in that range) and, if LIGHT, its INT and MP columns; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armour grants NO flat AC — the subtype IS the identity: light pays in INT/MP, MEDIUM is the only one that turns DEX into AC (up to tier + plus of it), heavy just soaks. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
       consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab. `arena` picks the hand-laid floor it is fought on — \"ring\" is 4–5 chambers in a closed loop with the boss opposite the way in, \"hall\" is an antechamber leading to one great pillared room. Blank means hall.",
@@ -1695,7 +1785,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them. layout is \"roomSideMin,roomSideMax,roomAreaMax,attachPct,hallLegMax,sarcophagusPct\" and shapes the floors themselves: room width is drawn from (sideMin+1 … sideMax) and height from (sideMin … sideMax−1) under the area cap, attachPct is the share of rooms placed flush against another with only a doorway between (0 = every room is down a hall), hallLegMax is the longest straight run a corridor may take before it must bend, and sarcophagusPct is the share of a room's obstacle pillars painted as sarcophagi. Blank = the old defaults, 4,9,60,30,6,0.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",
