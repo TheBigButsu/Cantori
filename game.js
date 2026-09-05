@@ -614,12 +614,18 @@
     const g = GEAR[inst.key];
     if (g.cat === "weapon") {   // base weapon feel is intrinsic — always shown
       if (g.speed != null && g.speed !== 1) parts.push("spd " + g.speed);
-      if (g.accuracy) parts.push("acc " + (g.accuracy > 0 ? "+" : "") + g.accuracy);
+      // `accuracy` has not existed on a gear row since the d20 migration; this
+      // read silently showed nothing for every weapon, including the ones whose
+      // to-hit is the most important thing about them (dagger +3, bow −3, axe −5).
+      if (g.toHit) parts.push("to hit " + (g.toHit > 0 ? "+" : "") + g.toHit);
     }
     if (!itemIdentified(inst)) { parts.push("unidentified"); return parts.join(", "); }
     if (inst.variant === "walk") parts.push("+1 walk speed");
     else if (inst.variant === "attack") parts.push("+1 attack speed");
-    for (const s of inst.stats || []) parts.push("+" + (s.val + (inst.plus || 0)) + " " + s.stat);
+    // Must match gStatBonus, which is triangular in `plus` — the card used a flat
+    // `plus` and so under-reported every upgraded item from +2 on (a +3 affix
+    // reads as val+3 and is really val+6).
+    for (const s of inst.stats || []) parts.push("+" + (s.val + triangular(inst.plus || 0)) + " " + s.stat);
     for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
     return parts.join(", ");
   }
@@ -6526,6 +6532,11 @@
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
     rollItem: (k, f) => rollItem(k, f != null ? f : depth),
+    // The affix line exactly as the pack, the floor and the merchant print it.
+    // Exposed because the card and the engine drifted apart once already: it read
+    // a flat `plus` where gStatBonus is triangular in it, and a gear field
+    // (`accuracy`) that the d20 migration had removed.
+    itemText: (inst) => itemAffixText(inst),
     rollGear: (f) => rollGearDrop(f != null ? f : depth),
     rollTrinket: (f) => rollTrinket(f != null ? f : depth),
     costs: () => ({ walk: walkCost(), attack: attackCost() }),

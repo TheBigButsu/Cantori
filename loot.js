@@ -50,8 +50,26 @@ window.CantoriLoot = function (deps) {
     const stats = [], enchants = [];
     // enchants eligible for this item's category (respecting each enchant's `slots`)
     const ekeys = Object.keys(LOOT.enchants).filter((k) => { const s = LOOT.enchants[k].slots; return !s || s.indexOf(base.cat) >= 0; });
-    const addStat = () => stats.push({ stat: LOOT.statPool[randInt(0, LOOT.statPool.length - 1)], val: tier });
-    const addEnchant = () => { if (ekeys.length) enchants.push(ekeys[randInt(0, ekeys.length - 1)]); };
+    // Both pools are drawn WITHOUT replacement, because an item that rolls two
+    // affixes has to get two DIFFERENT ones. Weapons have only three eligible
+    // enchants, so a gold weapon landed the same one twice about a third of the
+    // time (a gold trinket, with two, half the time) — and the duplicate is not
+    // cosmetic in either case:
+    //   · procEnchants walks the array, so two Flamings each roll their own proc
+    //     and both can fire. A duplicate is a straight double-dip on damage.
+    //   · gStatBonus adds `val + triangular(plus)` per matching entry, so two of
+    //     the same stat count the upgrade bonus twice. On a +3 item that is +6
+    //     more than the two distinct affixes it replaced.
+    // So the duplicate was quietly the STRONGER roll while reading to the player
+    // as a bug, which is the worst of both.
+    const statPool = LOOT.statPool.slice();
+    const enchantPool = ekeys.slice();
+    const draw = (pool) => (pool.length ? pool.splice(randInt(0, pool.length - 1), 1)[0] : null);
+    const addStat = () => { const st = draw(statPool); if (st) stats.push({ stat: st, val: tier }); };
+    // Out of distinct enchants (a category with fewer of them than the rarity asks
+    // for), take a stat instead — the item still carries the number of properties
+    // its rarity promised rather than silently rolling one fewer.
+    const addEnchant = () => { const e = draw(enchantPool); if (e) enchants.push(e); else addStat(); };
     if (rarity === "green") { addStat(); }
     else if (rarity === "blue") { addStat(); addEnchant(); }
     else if (rarity === "purple") {
