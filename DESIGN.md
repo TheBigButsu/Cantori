@@ -858,3 +858,48 @@ alongside the CC0 art (see `ART-CREDITS.md`). They are plain, composed from simp
 shapes at 32×32, and exist so that no data row renders as a bare glyph. Any of them
 can be replaced by dropping a better PNG over the same filename — nothing in the
 code needs to know.
+
+## Four ways the item card lied — DONE
+
+Reported as "two Flaming on the same bow". It was that, and pulling on it found
+three more in the same few lines.
+
+**Duplicate affixes.** `rollItem` drew both stats and enchants with replacement, so
+any roll that took two of a kind could take the same one twice. Weapons have only
+**three** eligible enchants and trinkets **two**, so this was not rare: measured over
+81,000 rolls, **29% of every item that rolled two enchants got a duplicate.**
+
+And it was not cosmetic in either direction:
+
+- `procEnchants` walks the array, so two Flamings each roll their own proc and both
+  can fire — a straight double-dip on damage.
+- `gStatBonus` adds `val + triangular(plus)` per matching entry, so two of the same
+  stat count the upgrade bonus twice. On a +3 item that is six points more than the
+  two distinct affixes it replaced.
+
+So the duplicate was quietly the *stronger* roll while reading to the player as a
+bug. Both pools are now drawn without replacement. If a category has fewer distinct
+enchants than the rarity asks for, the extra becomes a stat, so the item still
+carries as many properties as its rarity promises rather than silently rolling one
+fewer.
+
+**The card under-reported every upgraded item.** `itemAffixText` printed
+`val + plus` where `gStatBonus` computes `val + triangular(plus)`. They agree at +0
+and +1 and diverge from +2 on: a tier-1 stat affix at +4 was displayed as +5 and was
+really **+11**.
+
+**The card never showed a weapon's to-hit.** It read `g.accuracy`, a field the d20
+migration removed — no gear row has carried it since. So the dagger's +3, the bow's
+−3 and the axe's −5 were all invisible, which on the bow in the bug report is
+arguably the most important number on the item.
+
+**The editor's proc formula was pre-D&D.** It published `eff(LCK) / 100`; the engine
+does `max(0, mod(LCK)) × 3%`. At LCK 10 the reference promised +10% and the truth was
++0%.
+
+Three new reference rows go with the fixes — the triangular stat-affix formula, the
+affix-per-rarity table with its no-duplicates rule, and how many enchants each
+category actually has eligible — because the last one is the tripwire: a category
+with a small enchant pool is what turns a rich roll into a duplicate, or now into a
+substituted stat. `itemText()` joins the dev surface so the card can be diffed
+against the engine from a test rather than by eye.
