@@ -1011,3 +1011,61 @@ otherwise approaches through `stepMonsterTo` like everything else. Measured afte
 
 A `setTile` dev hook came with it, so terrain-versus-pathing bugs can be reproduced in a
 test instead of from a screenshot.
+
+## Four small things, and a fourth bug found under one of them — DONE
+
+**The item card shows what an enchant is worth.** `✦ Defense` alone told you nothing:
+a tier-1 Defense is +1 and a tier-5 is +8, and the card looked identical either way.
+It now prints the tiered value, with the sign saying which kind of number it is —
+Defense is flat mitigation added to every block, everything else multiplies something.
+
+```
+Rusted mail (tier 1)     ✦ Defense +1
+Banded plate (tier 3)    ✦ Defense +3
+Adamant bulwark (tier 5) ✦ Defense +8
+Sword                    🔥 Flaming ×0.5
+Short Bow                ✦ Speed   ×1.1
+```
+
+Adding that display could not be done honestly, because **three enchants never read
+their own `tierValues`**. Only Defense, Speed/Swiftness and Poison went through
+`enchantTierValue`; Burn, Shock and Thorns read `fx.burstMult` / `fx.mult` directly,
+so their five-number arrays were dead data and a tier-5 Flaming weapon burst for
+exactly the same as a tier-1. They honour the arrays now. That is a real power
+increase at the top tiers — the intent was clearly authored, and the editor has
+always documented it as working, but the arrays may want retuning.
+
+**No scattered loot on a boss floor.** The fight is the floor; gold and gear round
+the edges only pull you off it, and the boss already pays out properly on death.
+Measured: boss floors now show 0 gold and 0 gear against 2–3.7 gear on a normal
+floor. The two GUARANTEED drops still land — the per-floor Potion of Insight and the
+per-biome Scroll of Upgrade are the economy rather than clutter, and because the two
+scroll floors are picked across all five, skipping boss floors would silently cost a
+biome a scroll whenever it happened to pick the fifth.
+
+**Scrolls already stacked; you just couldn't see which were alike.** Same-key
+consumables have shared a slot since the beginning. The real problem was that every
+unidentified scroll read "Unidentified Scroll" and drew the same parchment in the
+same colour, so a Scroll of Mapping and a Scroll of Teleportation sat in the pack as
+two slots you could not tell apart — which looks exactly like identical scrolls
+refusing to stack. Potions have been dealt a scrambled shade + colour per run since
+they existed; scrolls never got the equivalent. They now draw a rune title and a
+wax-seal colour, so `Scroll titled "Eihwaz"` and `Scroll titled "Kenaz"` are visibly
+different objects, and two that match really are the same scroll.
+
+**Weapons and armour have sprites.** `renderIconInto` has always looked up
+`SPRITES[key]` — but `SPRITE_NAMES` never contained a single gear key. Only `dagger`
+and `sword` resolved, by accident of being in the hardcoded list; **24 of 26 gear
+rows** fell through to the vector primitives, which is why every axe, spear, bow and
+all fifteen armours drew as the same generic blade or shield. Twenty new 32×32 tiles,
+public domain, plus the loader actually asking for gear keys.
+
+Each armour family shares one silhouette — a hooded robe for light, a sleeveless
+jerkin for medium, a pauldroned breastplate for heavy — and tiers differ by palette
+and surface (quilting, studs, scales, mail, bands, a heraldic crest). A tier should
+read as the same kit made better, not as a different object. Jewelry is deliberately
+still drawn by `drawJewelInto`, which tints a ring or pendant with the item's own
+rarity colour; a fixed sprite cannot do that.
+
+`mace.png`, `leather.png`, `chain.png` and `plate.png` are now orphans — no gear row
+has ever used those keys. Left in place; harmless, and a future weapon may want them.

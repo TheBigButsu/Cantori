@@ -631,7 +631,18 @@
     // `plus` and so under-reported every upgraded item from +2 on (a +3 affix
     // reads as val+3 and is really val+6).
     for (const s of inst.stats || []) parts.push("+" + (s.val + triangular(inst.plus || 0)) + " " + s.stat);
-    for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
+    // Show the NUMBER, not just the name. Every enchant's strength is read off the
+    // tier of the item carrying it, so "✦ Defense" alone told you nothing — a
+    // tier-1 Defense is +1 and a tier-5 is +8, and the card looked identical. The
+    // sign says which kind of number it is: Defense is flat mitigation added to
+    // every block, everything else multiplies something (a burst, a dose, a speed).
+    for (const e of inst.enchants || []) {
+      const d = LOOT.enchants[e];
+      if (!d) { parts.push(e); continue; }
+      const v = enchantTierValue(d, inst, null);
+      const flat = d.effect && d.effect.type === "defense";
+      parts.push(d.icon + " " + d.name + (v == null ? "" : (flat ? " +" + v : " ×" + v)));
+    }
     return parts.join(", ");
   }
 
@@ -653,16 +664,35 @@
     ["Jade", "#4fbf8f"], ["Ochre", "#c9922e"], ["Indigo", "#5b4fd0"],
     ["Charcoal", "#6a7078"],
   ];
+  // Scrolls needed the same treatment and never got it. Every unidentified scroll
+  // read "Unidentified Scroll" and drew the same parchment in the same colour, so a
+  // Scroll of Mapping and a Scroll of Teleportation sat in the pack as two slots you
+  // could not tell apart — which looks exactly like identical scrolls refusing to
+  // stack. They were never the same item; you just had no way to see that. (Two
+  // scrolls that ARE the same key have always stacked, and still do.)
+  //
+  // Rune names, because a scroll's tell is what is written on it.
+  const SCROLL_TITLES = [
+    ["Fehu", "#c9922e"], ["Uruz", "#8a5a2b"], ["Thurisaz", "#c0392b"], ["Ansuz", "#3d7fd6"],
+    ["Raido", "#2ecc71"], ["Kenaz", "#e0a838"], ["Gebo", "#9b59b6"], ["Wunjo", "#e07aa0"],
+    ["Hagalaz", "#6a7078"], ["Naudiz", "#20b2aa"], ["Isa", "#d8dce2"], ["Jera", "#4fbf8f"],
+    ["Eihwaz", "#5b4fd0"], ["Perth", "#e04a3a"], ["Algiz", "#3454c4"], ["Sowilo", "#ece0c0"],
+  ];
   const potionLook = {};   // key -> { name, color } for the current run
+  const scrollLook = {};   // ditto, for scrolls
   function assignPotionLooks() {
     for (const k of Object.keys(potionLook)) delete potionLook[k];
-    const shades = POTION_SHADES.slice();
-    for (let i = shades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = shades[i]; shades[i] = shades[j]; shades[j] = t; }
-    let si = 0;
+    for (const k of Object.keys(scrollLook)) delete scrollLook[k];
+    const shuffled = (arr) => {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+      return a;
+    };
+    const shades = shuffled(POTION_SHADES), titles = shuffled(SCROLL_TITLES);
+    let si = 0, ti = 0;
     for (const k of Object.keys(CONSUM)) {
-      if (CONSUM[k].cat !== "potion") continue;
-      const s = shades[si % shades.length]; si++;
-      potionLook[k] = { name: s[0], color: s[1] };
+      if (CONSUM[k].cat === "potion") { const s = shades[si++ % shades.length]; potionLook[k] = { name: s[0], color: s[1] }; }
+      else if (CONSUM[k].cat === "scroll") { const t = titles[ti++ % titles.length]; scrollLook[k] = { name: t[0], color: t[1] }; }
     }
   }
   // The colour a consumable shows at: an unidentified potion wears its scrambled
@@ -671,13 +701,14 @@
     const d = CONSUM[key];
     if (!d) return "#cfc3a0";
     if (d.cat === "potion" && !identified.has(key) && potionLook[key]) return potionLook[key].color;
+    if (d.cat === "scroll" && !identified.has(key) && scrollLook[key]) return scrollLook[key].color;
     return d.color || "#cfc3a0";
   }
   function displayName(key) {
     const d = defOf(key);
     if (d.cat === "weapon" || d.cat === "armor" || d.cat === "tool" || identified.has(key)) return d.name;
     if (d.cat === "potion") return (potionLook[key] ? potionLook[key].name + " Potion" : "Unidentified Potion");
-    return "Unidentified Scroll";
+    return scrollLook[key] ? "Scroll titled \u201c" + scrollLook[key].name + "\u201d" : "Unidentified Scroll";
   }
   function weightedConsumKey() {
     const pool = CONSUM_KEYS.filter((k) => !CONSUM[k].noDrop);   // torch etc. never drop as loot
@@ -1853,7 +1884,13 @@
   }
 
   function spawnItems(rooms) {
-    let count = randInt(2, 4);
+    // A boss arena gets no scattered loot. The fight IS the floor: gold and gear
+    // strewn round the edges pulls you away from it, and the boss already pays out
+    // properly on death (3 Potions of Insight, a trinket and a full equipment set).
+    // The two GUARANTEED drops below still land — they are the biome's economy, not
+    // clutter, and skipping them would quietly cost a Scroll of Upgrade whenever the
+    // biome happened to pick its 5th floor.
+    let count = isBossDepth(depth) ? 0 : randInt(2, 4);
     if (Math.random() < 0.10 * count) count += 1;     // ~+10% loot per floor
     // Drop-type mix (gold / gear / consumable) is data-driven so it's tunable in
     // the editor. Default favours gear so weapons & armor aren't drowned out by potions.
@@ -2473,7 +2510,7 @@
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
       switch (fx.type) {
         case "burn": {                                  // instant burst + a short DOT that stacks only once
-          const burst = Math.max(1, Math.ceil(power * (fx.burstMult != null ? fx.burstMult : 0.5)));
+          const burst = Math.max(1, Math.ceil(power * enchantTierValue(def, item, fx.burstMult != null ? fx.burstMult : 0.5)));
           target.hp -= burst; flash(target); floatText(target.x, target.y, "🔥-" + burst, "#ff8f4a");
           addDot(target, { tag: "burn", dmg: Math.max(1, Math.ceil(burst / 2)), rounds: fx.dotTurns || 3, icon: "🔥", color: "#ff8f4a" });
           break;
@@ -2486,7 +2523,7 @@
           break;
         }
         case "shock": {                                 // burst + a scaling stun chance
-          const burst = Math.max(1, Math.round(power * (fx.burstMult != null ? fx.burstMult : 1)));
+          const burst = Math.max(1, Math.round(power * enchantTierValue(def, item, fx.burstMult != null ? fx.burstMult : 1)));
           target.hp -= burst; flash(target); floatText(target.x, target.y, "⚡-" + burst, "#9ad0ff");
           const chance = (burst * (fx.stunPer != null ? fx.stunPer : 0.10)) / Math.max(1, target.level || 1);
           if (Math.random() < chance) { target.stun = (target.stun || 0) + 1; floatText(target.x, target.y, "stun!", "#cfe6ff"); }
@@ -2494,7 +2531,7 @@
         }
         case "thorns": {                                // reflect a share of the damage you just took
           const base = incoming != null ? incoming : power;
-          const dmg = Math.max(1, Math.round(base * (fx.mult != null ? fx.mult : 0.5)));
+          const dmg = Math.max(1, Math.round(base * enchantTierValue(def, item, fx.mult != null ? fx.mult : 0.5)));
           target.hp -= dmg; flash(target); floatText(target.x, target.y, icon + "-" + dmg, color);
           break;
         }
@@ -4197,17 +4234,23 @@
 
   // ---- Sprites (CC0 Dungeon Crawl Stone Soup tiles) -----------------------
   const SPRITE_NAMES = Array.from(new Set([
-    "player", "dagger", "sword", "mace", "leather", "chain", "plate",
-    "potion", "scroll", "stairs",
+    "player", "potion", "scroll", "stairs",
     ...Object.keys(DATA.monsters),                      // rat … harpy
     ...Object.keys(DATA.bosses),                        // piper … demigod
+    // Weapons and armour, by gear key — renderIconInto has always looked up
+    // SPRITES[key], but this list never contained a single gear key, so every
+    // weapon past the dagger and sword and every one of the fifteen armours fell
+    // through to the vector primitives. Jewelry is deliberately still drawn:
+    // drawJewelInto tints a ring/gem/pendant with the item's own rarity colour,
+    // which a fixed sprite cannot do.
+    ...Object.keys(DATA.gear).filter((k) => DATA.gear[k].cat === "weapon" || DATA.gear[k].cat === "armor"),
     ...DATA.biomes.flatMap((b) => [b.floor, b.wall]),   // per-biome terrain
     ...DATA.biomes.map((b) => b.exitSprite).filter(Boolean),
   ]));
   const SPRITES = {};
   for (const n of SPRITE_NAMES) {
     const img = new Image();
-    img.src = "./assets/tiles/" + n + ".png";
+    img.src = "./assets/tiles/" + encodeURIComponent(n) + ".png";   // a key may contain a space ("big axe")
     SPRITES[n] = img;
   }
   const ready = (img) => img && img.complete && img.naturalWidth > 0;
@@ -4510,8 +4553,18 @@
     }
     if (d.cat === "potion") { drawFlaskInto(c, ox, oy, s, consumColor(key)); return; }
     if (d.cat === "scroll") {
-      if (ready(SPRITES.scroll)) { c.drawImage(SPRITES.scroll, ox, oy, s, s); return; }
-      drawGlyphInto(c, ox, oy, s, "?", consumColor(key)); return;
+      if (!ready(SPRITES.scroll)) { drawGlyphInto(c, ox, oy, s, "?", consumColor(key)); return; }
+      c.drawImage(SPRITES.scroll, ox, oy, s, s);
+      // A wax seal in this scroll's run-scrambled colour. The parchment is the same
+      // for every scroll, so without this the colour assigned to the title would be
+      // invisible and two different unidentified scrolls would still be one picture.
+      const col = consumColor(key);
+      c.fillStyle = col;
+      c.beginPath(); c.arc(ox + s * 0.70, oy + s * 0.70, s * 0.17, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "rgba(0,0,0,0.55)"; c.lineWidth = Math.max(1, s * 0.03); c.stroke();
+      c.fillStyle = "rgba(255,255,255,0.35)";
+      c.beginPath(); c.arc(ox + s * 0.65, oy + s * 0.65, s * 0.05, 0, Math.PI * 2); c.fill();
+      return;
     }
     drawGlyphInto(c, ox, oy, s, d.glyph || "?", d.color || "#cfc3a0");   // tools (torch) etc.
   }
