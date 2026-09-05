@@ -962,3 +962,52 @@ change. Standing in a room's mouth you still see a median 81% of it (it was 83%)
 see *fewer tiles* — 24 rather than 32 — but a similar fraction of the room. At ~30-tile
 rooms, a 6-tile radius covers the room; that goal needs either rooms kept larger than
 sight or sight cut below 6, and the two pull against each other.
+
+## The bear that could not path — DONE
+
+Reported from a screenshot: a bear stood on the far shore of a pond, in plain sight
+of the player, and never moved. Reproduced headless — the bear sat on **one tile for
+thirty turns** while a wolf spawned on the same tile routed around the water and
+arrived adjacent.
+
+It was two bugs stacked, and the first hid the second.
+
+**A charge gate that confused seeing with running.** The gate read:
+
+```
+m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(…)
+```
+
+Deep water is transparent and impassable — `opaque` and `solid` are different rows in
+the `TILE` table, which is the whole point of that table. So the bear had a clear line
+across the pond, took the charge branch, and `doCharge` stopped dead on the first water
+tile with `moved = 0`. Turn spent, nothing done, every turn, for ever. It never reached
+the approach code at all.
+
+The gate now also asks `chargeLane()`, which walks the tiles the dash would cross and
+checks each one is steppable. Sight and movement are separate questions — the same
+split CLAUDE.md rule 5 draws between `blocksSight()` and `passable()`.
+
+**An approach with no pathfinding.** `chargeApproach` scored every neighbour by
+`−distance` and took the best, which is a plain greedy step with no idea what is
+*reachable*. Fixing the gate alone would have turned the freeze into a shuffle: the
+bear would have paced the shoreline instead of standing on it. Its `else
+stepMonsterTo(…)` fallback was dead code, because a legal neighbour almost always
+exists.
+
+This is the same local-minimum trap that `stepMonsterTo` and the wandering AI were each
+fixed for long ago — both of them BFS now, and both carry comments about it.
+`chargeApproach` was written separately and got neither fix, which made the bear the
+only monster in the game that could not path around an obstacle.
+
+It now sidesteps **only when the sidestep actually buys a lane it can run**, and
+otherwise approaches through `stepMonsterTo` like everything else. Measured after:
+
+| | before | after |
+|---|---|---|
+| bear across a pond, 30 turns | 1 tile, never crossed | 12 tiles, reached the player — the wolf's exact route |
+| open ground, lined up at 5 tiles | charges | charges, 12/12, 4 tiles crossed |
+| a wall mid-lane | (would have paced) | steps around it, ends adjacent |
+
+A `setTile` dev hook came with it, so terrain-versus-pathing bugs can be reproduced in a
+test instead of from a screenshot.

@@ -3441,7 +3441,16 @@
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
-    if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
+    if (m.charge && d >= 2 && d <= CHARGE_MAX) {
+      const cdir = straightDir(m);
+      // Sight and movement are different questions — the same split CLAUDE.md rule 5
+      // draws between blocksSight() and passable(). Deep water is transparent and
+      // impassable, so a bear on the far shore of a pond had a clear line to the
+      // player, took this branch every single turn, and doCharge stopped dead on
+      // the first water tile with moved = 0. Turn spent, nothing done, for ever —
+      // and it never reached chargeApproach to try walking round.
+      if (cdir && lineOfSight(m.x, m.y, player.x, player.y) && chargeLane(m, m.x, m.y, cdir)) { doCharge(m); return; }
+    }
     // Kethara's Faith's Pull: a hunting monster caught in the aura paths to its
     // center instead of you, for as long as the pull lasts.
     if (pullZone && pullZone.turns > 0 && cheb(m.x, m.y, pullZone.x, pullZone.y) <= 4) {
@@ -3481,24 +3490,50 @@
       if (moved >= 2) flashScreen("#5a3a1e", 200);
     }
   }
+  // Could `m` actually RUN from (sx, sy) to the player along `dir` — every tile of
+  // the dash steppable, ending adjacent? This is the walkable half of what the
+  // charge gate needs; lineOfSight is the visible half, and they are not the same
+  // test. Takes the start tile explicitly so chargeApproach can ask the question
+  // about a neighbour it is considering moving to, not only about where m stands.
+  function chargeLane(m, sx, sy, dir) {
+    let x = sx, y = sy, steps = 0;
+    while (cheb(x, y, player.x, player.y) > 1 && steps++ <= CHARGE_MAX) {
+      const nx = x + dir[0], ny = y + dir[1];
+      if (nx === player.x && ny === player.y) break;
+      if (!canStep(x, y, dir[0], dir[1], m) || shuns(nx, ny)) return false;
+      if (!(nx === m.x && ny === m.y) && monsterAt(nx, ny)) return false;   // m's own tile doesn't block m
+      x = nx; y = ny;
+    }
+    return cheb(x, y, player.x, player.y) === 1;
+  }
   // A charge monster (bear) that can see you but isn't lined up sidesteps to get on
   // your row / column / diagonal (at range) so it can charge, instead of just
   // trudging straight in and settling for a normal swing.
   function chargeApproach(m) {
-    let best = null, bestScore = -Infinity;
+    // Sidestep ONLY when the sidestep actually buys a lane it can run. The old rule
+    // scored every neighbour by −distance and took the best available, which is a
+    // plain greedy step with no idea what is REACHABLE — the same local-minimum
+    // trap that stepMonsterTo and the wandering AI were each fixed for long ago,
+    // and that this function never got. Against a pond it would have paced the
+    // shoreline; the `else` below was dead code, because a legal neighbour almost
+    // always exists.
+    let lane = null, laneDist = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
       if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny) || monsterAt(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       const ddx = player.x - nx, ddy = player.y - ny;
       const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
-      const aligned = (ddx === 0 || ddy === 0 || Math.abs(ddx) === Math.abs(ddy));
-      let score = -dist;                                    // closing in is good
-      if (aligned && dist >= 2 && dist <= CHARGE_MAX && lineOfSight(nx, ny, player.x, player.y)) score += 100;  // a charge lane = great
-      if (score > bestScore) { bestScore = score; best = [nx, ny]; }
+      if (dist < 2 || dist > CHARGE_MAX) continue;
+      if (!(ddx === 0 || ddy === 0 || Math.abs(ddx) === Math.abs(ddy))) continue;
+      if (!lineOfSight(nx, ny, player.x, player.y)) continue;
+      if (!chargeLane(m, nx, ny, [Math.sign(ddx), Math.sign(ddy)])) continue;
+      if (dist < laneDist) { laneDist = dist; lane = [nx, ny]; }
     }
-    if (best) moveMonster(m, best[0], best[1]);
-    else stepMonsterTo(m, player.x, player.y);
+    if (lane) { moveMonster(m, lane[0], lane[1]); return; }
+    // No lane to be had from here — approach like anything else. stepMonsterTo
+    // routes with a BFS, which is what walks around the pond.
+    stepMonsterTo(m, player.x, player.y);
   }
 
   function eligiblePool() {
@@ -6645,6 +6680,10 @@
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    // Paint a tile, for tests that need a specific piece of terrain in a specific
+    // place — a pond between a monster and the player, a thorn wall across a
+    // corridor. Recomputes FOV because changing a tile can change what is visible.
+    setTile: (x, y, t) => { if (!inBounds(x, y)) return false; map[y][x] = t; computeFOV(); return true; },
     passableAt: (x, y) => passable(x, y),                          // on foot — deep water says no
     passableFlying: (x, y) => passableFor({ flying: true }, x, y),
     tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),
