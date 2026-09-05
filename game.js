@@ -21,8 +21,13 @@
   // ---- Map model -----------------------------------------------------------
   const MAP_W = 47;         // a sprawling floor (~15% less area than the old 51×51)
   const MAP_H = 47;         // joined by narrow, winding 1-wide hallways between chambers
-  const FOV_RADIUS = 8;     // max line of sight: you see 8 tiles out (walls/closed
-                            // doors block); rooms reveal as you move into them
+  const FOV_RADIUS = 6;     // max line of sight: you see 6 tiles out (walls/closed
+                            // doors block); rooms reveal as you move into them.
+                            // It was 8, which is a whole ordinary room — you stood in
+                            // the doorway, saw every sleeper in the chamber, and had
+                            // resolved the encounter before entering it. At 6 a room
+                            // has to be walked into, and a big one still has corners
+                            // you have not looked at.
   // What sight actually asks for. FOV_RADIUS stays the constant it always was —
   // this is the one place the Hollow Bard's Blind gets to halve it, so nothing has
   // to remember to check the status separately. Floored at 2: a blind player who
@@ -936,7 +941,17 @@
   //                    doorway between. 0 means every room is reached down a hall.
   //   hallLegMax       longest straight run a corridor may take before it must bend.
   //   sarcophagusPct   share of a room's pillars painted as sarcophagi.
-  const LAYOUT_DEFAULT = { roomSideMin: 4, roomSideMax: 9, roomAreaMax: 60, attachPct: 30, hallLegMax: 6, sarcophagusPct: 0 };
+  //   roomTarget       total room floor to lay down before stopping. Divided by the
+  //                    average room size, this IS the room count.
+  //   attachCap        ceiling on attached rooms, as a % of all rooms.
+  //
+  // The defaults are Shattered Pixel Dungeon's shape, measured from its source:
+  // a standard SPD room is SizeCategory.NORMAL, outer dim 4–10, and Painter.fill
+  // insets 1, so its INTERIOR is 2×2 to 8×8 — a mean of about 25 tiles. A Caves
+  // floor (its depth 11–15) carries ~10 rooms. Cantori was running 8 rooms of ~38,
+  // which is the same total floor divided into fewer, larger spaces — and the count
+  // of rooms is what a floor feels like, because each one is an encounter.
+  const LAYOUT_DEFAULT = { roomSideMin: 3, roomSideMax: 8, roomAreaMax: 56, attachPct: 55, attachCap: 70, hallLegMax: 6, roomTarget: 265, sarcophagusPct: 0 };
   const layoutOf = (b) => Object.assign({}, LAYOUT_DEFAULT, (b || biome || {}).layout || {});
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
@@ -1601,12 +1616,12 @@
     const bossFloor = isBossDepth(depth);
     // Keep the TOTAL room area about the same as before — the same chambers spread
     // across a big floor, joined by 1-wide winding hallways (or a shared doorway).
-    const roomTarget = 290;   // ~15% less than the old 340, matching the smaller map
+    const roomTarget = layoutOf().roomTarget;
     let roomArea = 0, guard = 0;
-    while (!bossFloor && roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
-      // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
-      // but kept to the familiar chamber size (~24–60 tiles) — bigger, arena-scale
-      // on a boss floor.
+    // 22, not 16: smaller rooms mean more of them, and the old cap silently became
+    // the binding constraint the moment the average room shrank.
+    while (!bossFloor && roomArea < roomTarget && rooms.length < 22 && guard++ < 1400) {
+      // Varied aspect ratios (often tall or wide) so rooms don't all read as squares.
       const L = layoutOf();
       let w = randInt(L.roomSideMin + 1, L.roomSideMax), h = randInt(L.roomSideMin, L.roomSideMax - 1);
       if (Math.random() < 0.4) { const t = w; w = h; h = t; }
@@ -1614,7 +1629,10 @@
       // A fraction of rooms are "attached": placed flush against another with just
       // a doorway between (no hallway). Kept under ~half so most rooms are still
       // joined by hallways; the rest are separate.
-      if (rooms.length && Math.random() * 100 < L.attachPct && attachEdges.length < rooms.length * 0.5) {
+      // An attached room shares a wall with its neighbour and opens onto it through
+      // a single doorway — which is how SPD packs almost its whole floor. Raising
+      // this is what turns a scatter of chambers joined by hallways into a warren.
+      if (rooms.length && Math.random() * 100 < L.attachPct && attachEdges.length < rooms.length * (L.attachCap / 100)) {
         const res = placeAdjacent(rooms, w, h);
         if (!res) continue;
         carveRoom(res.rect); roomArea += w * h; rooms.push(res.rect);
@@ -1865,6 +1883,15 @@
     }
   }
 
+  // How often a monster placed in a room brings a friend into the SAME room. Taken
+  // straight from Shattered Pixel Dungeon's createMobs, which rolls Random.Int(4)
+  // for a second mob after each successful placement.
+  //
+  // This is the difference between a floor's monsters being a headcount and being
+  // encounters. Scattering N monsters uniformly over the rooms gives you N thin
+  // moments; letting a quarter of them double up gives you fewer moments, but some
+  // of them are a pair — and a pair is a fight, where a lone sleeper is a chore.
+  const PAIR_CHANCE = 0.25;
   function spawnMonsters(rooms) {
     const pool = eligiblePool();
     if (!pool.length) return;
@@ -1873,17 +1900,28 @@
     if (Array.isArray(si)) { const i = floorInBiome(depth) - 1; count = si[i] != null ? si[i] : si[si.length - 1]; }
     else if (si != null) count = si;
     else count = Math.min(9, 3 + Math.floor(depth / 2));
+    // Put one monster somewhere inside `room`, if there is anywhere to put it.
+    const placeIn = (room) => {
+      for (let t = 0; t < 20; t++) {
+        const x = randInt(room.x, room.x + room.w - 1);
+        const y = randInt(room.y, room.y + room.h - 1);
+        if (map[y][x] !== FLOOR) continue;
+        if (x === player.x && y === player.y) continue;
+        if (monsterAt(x, y)) continue;
+        const mk = pickMonster();
+        if (!mk) return false;
+        monsters.push(makeMonster(mk, x, y));   // a floor starts asleep — see makeMonster
+        return true;
+      }
+      return false;
+    };
     let guard = 0;
     while (monsters.length < count && guard++ < 300) {
-      const ri = rooms.length > 1 ? randInt(1, rooms.length - 1) : 0;
+      const ri = rooms.length > 1 ? randInt(1, rooms.length - 1) : 0;   // never the room you start in
       const room = rooms[ri];
-      const x = randInt(room.x, room.x + room.w - 1);
-      const y = randInt(room.y, room.y + room.h - 1);
-      if (map[y][x] !== FLOOR) continue;
-      if (x === player.x && y === player.y) continue;
-      if (monsterAt(x, y)) continue;
-      const mk = pickMonster();
-      if (mk) monsters.push(makeMonster(mk, x, y));   // a floor starts asleep — see makeMonster
+      if (!placeIn(room)) continue;
+      // ...and a quarter of the time, a second one right beside it.
+      if (monsters.length < count && Math.random() < PAIR_CHANCE) placeIn(room);
     }
   }
 
@@ -3084,7 +3122,13 @@
   };
   const monWalkSpeed = (m) => monSpeed(m, "walkSpeed");
   const monAtkSpeed = (m) => monSpeed(m, "attackSpeed");
-  const SENSE = 8;          // how far a monster notices the player (needs line of sight)
+  // A monster's eyes are the same as yours. This is deliberately tied to
+  // FOV_RADIUS rather than written as its own number: the ambush — creep up on a
+  // sleeper, strike first, guaranteed hit — only works while neither side can see
+  // further than the other. Leaving this at 8 when sight dropped to 6 would have
+  // meant every fight opening with something already awake and walking out of a
+  // dark you cannot see into.
+  const SENSE = FOV_RADIUS;   // how far a monster notices the player (needs line of sight)
   const CHARGE_MAX = 7;
   let turns = 0;
   let boonPending = false;    // a boss-reward boon choice is open — block play until picked
@@ -3497,7 +3541,10 @@
     for (let t = 0; t < 40; t++) {
       const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
       if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
-      if (cheb(x, y, player.x, player.y) < 6) continue;    // arrive out of sight, at a distance
+      // Out of sight AND out of reach. Tied to FOV_RADIUS rather than a literal so
+      // it cannot drift out of step with what "out of sight" means — a hard-coded 6
+      // beside a sight radius of 8 was a reinforcement arriving inside your vision.
+      if (cheb(x, y, player.x, player.y) < FOV_RADIUS) continue;
       const mk = pickMonster();
       if (mk) {
         const mm = makeMonster(mk, x, y);

@@ -582,20 +582,19 @@
     wrap.appendChild(inp);
     return wrap;
   }
-  // How this biome's floors are SHAPED. Packed into one field the way terrain is:
-  // "roomSideMin,roomSideMax,roomAreaMax,attachPct,hallLegMax,sarcophagusPct".
-  // Blank deletes the block, and the generator falls back to the numbers it used
-  // before per-biome layout existed (4,9,60,30,6,0).
-  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "hallLegMax", "sarcophagusPct"];
+  // How this biome's floors are SHAPED. Packed into one field the way terrain is,
+  // in LAYOUT_KEYS order. Blank deletes the block and the biome uses the defaults
+  // (3,8,56,55,70,6,265,0) — which are Shattered Pixel Dungeon's measured shape.
+  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "attachCap", "hallLegMax", "roomTarget", "sarcophagusPct"];
   function layoutField(b) {
     const wrap = document.createElement("label"); wrap.className = "bfield";
     const span = document.createElement("span");
-    span.textContent = "layout (room side min,max, area max, attach %, hall leg max, sarcophagus %)";
+    span.textContent = "layout (side min,max · area max · attach % · attach cap % · hall leg max · room target · sarcophagus %)";
     wrap.appendChild(span);
     const inp = document.createElement("input"); inp.type = "text";
     const L = b.layout;
     inp.value = L ? LAYOUT_KEYS.map((k) => (L[k] != null ? L[k] : "")).join(",") : "";
-    inp.placeholder = "6,13,120,0,14,55";
+    inp.placeholder = "3,8,56,55,70,6,265,0";
     inp.oninput = () => {
       const v = inp.value.trim();
       if (v === "") { delete b.layout; return; }
@@ -1181,6 +1180,15 @@
       ],
     },
     {
+      title: "How many monsters a floor holds",
+      rows: [
+        { name: "At floor start", formula: "biome.spawnInitial (a number, or one per floor like 3,5,5,5); blank = min(9, 3 + depth / 2)", note: "Compare Shattered Pixel Dungeon, whose mobLimit() is 3 + depth%5 + Random.Int(3) — 4 to 9 across a chapter, averaging 6. Every monster starts ASLEEP." },
+        { name: "Placement", formula: "a random room (never the one you start in), then a 25% chance of a SECOND monster in that same room", note: "Straight from SPD's createMobs, which rolls Random.Int(4) for a second mob after each placement. Scattering N monsters one-per-room gives N thin moments; letting a quarter double up gives fewer moments, but some of them are a pair — and a pair is a fight where a lone sleeper is a chore. It lands about 45% of occupied rooms holding two or more." },
+        { name: "Respawn", formula: "every spawnEvery turns, if the floor holds fewer than spawnCap, one more arrives out of sight and at least 6 tiles away", note: "SPD's TIME_TO_RESPAWN is 50 turns, which is what every biome now uses. Before this only the forest had a respawn at all, so the other four cleared out and stayed cleared — with a 1000-turn floor clock, the back half of a visit was played on an empty map. Caps run 8 / 10 / 10 / 11 / 12 by biome." },
+        { name: "Where a respawn may appear", formula: "a random floor tile that is not currently visible to you and at least 6 tiles away", note: "Never in sight — a monster blinking into existence in front of you reads as a bug, not a reinforcement." },
+      ],
+    },
+    {
       title: "Auras, death bursts & hexes",
       rows: [
         { name: "Aura", formula: "every VISIBLE monster within its auraRange (Chebyshev) of you multiplies your walk cost by its aura ×step and your attack cost by its aura ×swing; several compound", note: "The visibility rule is the whole fairness of it — an unexplained tax on your movement arriving from a creature you cannot see is a bug report, not a mechanic. The affected tiles are tinted in the monster's aura colour, and the multiplier shows as a chip under the vitals bars. Red Slime is ×2 to step, Black Slime ×1.5 to swing, both at range 3." },
@@ -1198,8 +1206,9 @@
     {
       title: "Floor shape (per biome)",
       rows: [
-        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 4 / 9 / 60 — the numbers the generator used before biomes could shape their own floors. The crypt runs 6 / 13 / 120 for genuinely big chambers." },
-        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, capped at half the rooms", note: "0 means every room is reached down a hallway, which is what makes a biome read as corridors rather than a warren." },
+        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 3 / 8 / 56, giving a mean room of ~30 tiles. That is Shattered Pixel Dungeon's shape read off its source: an SPD standard room is SizeCategory.NORMAL with outer dim 4–10, and Painter.fill insets 1, so its interior is 2×2 to 8×8 — about 25 tiles. The crypt overrides this at 6 / 13 / 120 for deliberately big chambers." },
+        { name: "Room count", formula: "rooms are laid until their total floor reaches roomTarget (default 265), hard-capped at 22", note: "roomTarget ÷ average room size IS the room count — about 9–10 at the defaults, against SPD's ~10 on an equivalent floor. The number of ROOMS is what a floor feels like, because each one is an encounter: the same total floor divided into half as many rooms plays as half as much game." },
+        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, up to attachCap % of all rooms", note: "Defaults 55% / 70% cap, which lands around 60% attached in practice — that shared-wall packing is how SPD's builder fits almost a whole floor together, and it is the difference between a warren and a scatter of chambers on the ends of hallways. 0 means every room is reached down a hall (what the crypt authors)." },
         { name: "Hall length", formula: "a corridor leg runs randInt(3, hallLegMax) tiles before it must bend", note: "The path still alternates axes after every leg — this only sets how far a straight run may go first. Default 6; the crypt runs 14." },
         { name: "Pillars", formula: "a room over 20 tiles gets 1 + (area − 21) / 5 obstacle pillars, capped at 12, each reverted if it would strand any room", note: "The cap exists because the uncapped formula turns a 12×10 crypt hall into twenty obstacles. The reachability check is CLAUDE.md rule 5 applied to the pass that used to entomb bosses." },
         { name: "Sarcophagi", formula: "sarcophagusPct of a room's pillars are DRAWN as stone coffins", note: "Not a new tile: a sarcophagus is a pillar, so it is already solid, sight-blocking and correct in every map predicate. This is only how it is painted (and what Examine calls it)." },
@@ -1208,7 +1217,7 @@
     {
       title: "Monster AI & doors",
       rows: [
-        { name: "Sight", formula: "sees you within 8 tiles AND has line of sight", note: "A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
+        { name: "Sight", formula: "sees you within 6 tiles AND has line of sight — the SAME 6 tiles you see", note: "Deliberately tied to the player's own sight rather than authored separately. The ambush (creep up on a sleeper, strike first, guaranteed hit) only works while neither side sees further than the other; a monster with the longer eyes opens every fight already awake, walking out of a dark you cannot see into. A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
         { name: "Hunting", formula: "in sight → moves straight toward you, refreshing its last-known-position trail every turn", note: "" },
         { name: "Tracking", formula: "out of sight but has a trail → walks to your last known position", note: "It doesn't forget the instant it loses sight — it commits to the spot it saw you last, right through a door or bush along the way." },
         { name: "Searching", formula: "reaches the last known spot, you're not there → 4 turns poking around a random nearby tile before giving up", note: "Mirrors Shattered Pixel Dungeon's Hunting → searching Wandering → idle Wandering chain." },
@@ -1788,7 +1797,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them. layout is \"roomSideMin,roomSideMax,roomAreaMax,attachPct,hallLegMax,sarcophagusPct\" and shapes the floors themselves: room width is drawn from (sideMin+1 … sideMax) and height from (sideMin … sideMax−1) under the area cap, attachPct is the share of rooms placed flush against another with only a doorway between (0 = every room is down a hall), hallLegMax is the longest straight run a corridor may take before it must bend, and sarcophagusPct is the share of a room's obstacle pillars painted as sarcophagi. Blank = the old defaults, 4,9,60,30,6,0.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them. layout is \"sideMin,sideMax,areaMax,attachPct,attachCap,hallLegMax,roomTarget,sarcophagusPct\" and shapes the floors themselves: room width is drawn from (sideMin+1 … sideMax) and height from (sideMin … sideMax−1) under the area cap; attachPct is the share of rooms placed flush against another with only a doorway between (0 = every room is down a hall) and attachCap the ceiling on those as a % of all rooms; hallLegMax is the longest straight run a corridor may take before it must bend; roomTarget is how much room floor to lay down before stopping, so roomTarget ÷ average room size IS the room count; sarcophagusPct is the share of a room's obstacle pillars painted as sarcophagi. Blank = the defaults 3,8,56,55,70,6,265,0, which match Shattered Pixel Dungeon's measured shape (~10 rooms averaging ~30 tiles). spawnEvery/spawnCap are the respawn drip: one monster every N turns while the floor holds fewer than the cap.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",
