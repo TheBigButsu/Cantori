@@ -1297,8 +1297,8 @@ window.CANTORI_DATA = {
       ],
       "exitSprite": "exit_forest",
       "door": "bush",
-      "spawnEvery": 25,
-      "spawnCap": 100,
+      "spawnEvery": 50,
+      "spawnCap": 8,
       "terrain": {
         "water": {
           "pools": [
@@ -1347,7 +1347,9 @@ window.CANTORI_DATA = {
             7
           ]
         }
-      }
+      },
+      "spawnEvery": 50,
+      "spawnCap": 10
     },
     {
       "key": "crypt",
@@ -1438,8 +1440,11 @@ window.CANTORI_DATA = {
         "roomAreaMax": 120,
         "attachPct": 0,
         "hallLegMax": 14,
+        "roomTarget": 290,
         "sarcophagusPct": 55
-      }
+      },
+      "spawnEvery": 50,
+      "spawnCap": 10
     },
     {
       "key": "town",
@@ -1453,7 +1458,9 @@ window.CANTORI_DATA = {
       ],
       "boss": "cultist",
       "bossCount": 3,
-      "door": "door"
+      "door": "door",
+      "spawnEvery": 50,
+      "spawnCap": 11
     },
     {
       "key": "lake",
@@ -1479,7 +1486,9 @@ window.CANTORI_DATA = {
             14
           ]
         }
-      }
+      },
+      "spawnEvery": 50,
+      "spawnCap": 12
     }
   ],
   "stats": {

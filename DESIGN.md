@@ -903,3 +903,62 @@ category actually has eligible — because the last one is the tripwire: a categ
 with a small enchant pool is what turns a rich roll into a duplicate, or now into a
 substituted stat. `itemText()` joins the dev surface so the card can be diffed
 against the engine from a test rather than by eye.
+
+## Floors the shape of Shattered Pixel Dungeon's — DONE
+
+The complaint was that floors felt too big and monsters too spread out. Measured
+against SPD's source, Cantori was not actually sparser — ~330 walkable tiles with 8
+monsters is one per 40, against SPD's one per ~60. What differed was structure.
+
+**Floors are now more rooms, smaller.** An SPD standard room is `SizeCategory.NORMAL`,
+outer dim 4–10, and `Painter.fill` insets 1 — so its interior is 2×2 to 8×8, about 25
+tiles, and a Caves floor (its depth 11–15) carries ~10 of them. Cantori was running 8
+rooms of ~38. Same total floor, fewer and larger spaces.
+
+| | before | after | SPD |
+|---|---|---|---|
+| rooms per floor | 8 | **9.5** | ~10 |
+| average room | 38 | **30** | ~25 |
+| walkable tiles | 330 | **300** | ~300 |
+| rooms sharing a wall | 30% cap | **60%** | most of the floor |
+| used extent | 38×37 | **36×36** | sized to fit |
+
+The count of *rooms* is what a floor feels like, because each one is an encounter: the
+same floor divided into half as many rooms plays as half as much game. Two knobs moved
+into the per-biome `layout` block to get there — `roomTarget` (total room floor to lay
+down, so `roomTarget ÷ mean room size` **is** the room count) and `attachCap` (ceiling
+on shared-wall rooms). Raising the attach rate is what turns a scatter of chambers on
+the ends of hallways into SPD's warren.
+
+The crypt keeps its own big-chamber layout and gets an explicit `roomTarget: 290` so
+the smaller global budget does not quietly shrink it from four rooms to three. It is
+the one biome still undesigned.
+
+**Monsters arrive in pairs, and keep arriving.** Two changes, both SPD's:
+
+- 25% of placements put a second monster in the *same room* (`Random.Int(4)` in SPD's
+  `createMobs`). Scattering N monsters one per room gives N thin moments; letting a
+  quarter double up gives fewer moments, but some of them are a pair — and a pair is a
+  fight where a lone sleeper is a chore. It lands at ~45% of occupied rooms holding
+  two or more.
+- **Every biome respawns now**, one monster per 50 turns up to a cap (SPD's
+  `TIME_TO_RESPAWN`). Only the forest had a respawn at all; caves, crypt, town and lake
+  cleared out and stayed cleared, so with a 1000-turn floor clock the back half of a
+  visit was played on an empty map. Caps run 8/10/10/11/12 by biome.
+
+**Sight is 6 tiles, for both sides.** It was 8, which is a whole ordinary room. `SENSE`
+— how far a monster notices you — is now defined *as* `FOV_RADIUS` rather than as its
+own number, because the ambush only works while neither side sees further than the
+other: leaving monsters at 8 against a player at 6 would open every fight with
+something already awake, walking out of a dark you cannot see into. The respawn
+distance is tied to the same constant for the same reason.
+
+Measured effect of the sight cut: tiles visible from a standing position 47.7 → 42.6,
+and the share of positions with no monster in sight 57% → 65%.
+
+**One honest caveat.** The stated goal was to stop seeing a whole room on entering it,
+and 6 tiles does not achieve that on its own, because the rooms shrank in the same
+change. Standing in a room's mouth you still see a median 81% of it (it was 83%). You
+see *fewer tiles* — 24 rather than 32 — but a similar fraction of the room. At ~30-tile
+rooms, a 6-tile radius covers the room; that goal needs either rooms kept larger than
+sight or sight cut below 6, and the two pull against each other.
