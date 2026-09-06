@@ -1422,6 +1422,8 @@ window.CANTORI_DATA = {
         "roomSideMax": 13,
         "roomAreaMax": 120,
         "attachPct": 0,
+        "attachCap": 70,
+        "roomPad": 3,
         "hallLegMax": 14,
         "roomTarget": 290,
         "sarcophagusPct": 55

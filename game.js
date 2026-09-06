@@ -1014,7 +1014,25 @@
   // floor (its depth 11–15) carries ~10 rooms. Cantori was running 8 rooms of ~38,
   // which is the same total floor divided into fewer, larger spaces — and the count
   // of rooms is what a floor feels like, because each one is an encounter.
-  const LAYOUT_DEFAULT = { roomSideMin: 3, roomSideMax: 8, roomAreaMax: 56, attachPct: 55, attachCap: 70, hallLegMax: 6, roomTarget: 265, sarcophagusPct: 0 };
+  //   roomPad          tiles that must separate two UNATTACHED rooms. 3 fits a 1-wide
+  //                    hall plus its walls between them; 2 packs them tighter and
+  //                    leans on the attach path instead.
+  // These are Shattered Pixel Dungeon's shape, measured from its source rather than
+  // eyeballed. An SPD standard room is SizeCategory.NORMAL, and Room.setSize does
+  // `resize(NormalIntRange(4, 10) - 1, ...)` with the comment "subtract one because
+  // rooms are inclusive to their right and bottom sides"; Painter.fill then insets a
+  // wall. So its INTERIOR is (D − 3)², a mean of about 17 tiles — not the ~25 an
+  // earlier pass here assumed, which is why Cantori's floors read as bigger than
+  // SPD's even while the room COUNT matched.
+  //
+  // Room size was never the whole story though. Shrinking rooms alone just made more
+  // of them inside the same 47×47 footprint, with more corridor in between: extent
+  // stayed at 36² and the walk to the stairs did not move. SPD sizes its map TO its
+  // rooms (bounding box + 1 padding) and packs most of them wall-to-wall, so the
+  // packing knobs — attachPct, attachCap, roomPad — matter as much as the sizes.
+  // Together they take the used extent from 36² to 29² and the walk to the stairs
+  // from 30 steps to 24, which is what "the floor feels empty" was actually about.
+  const LAYOUT_DEFAULT = { roomSideMin: 2, roomSideMax: 7, roomAreaMax: 36, attachPct: 85, attachCap: 90, roomPad: 2, hallLegMax: 6, roomTarget: 180, sarcophagusPct: 0 };
   const layoutOf = (b) => Object.assign({}, LAYOUT_DEFAULT, (b || biome || {}).layout || {});
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
@@ -1704,7 +1722,7 @@
       }
       const x = randInt(2, MAP_W - w - 3), y = randInt(2, MAP_H - h - 3);
       const room = { x, y, w, h };
-      if (rooms.some((r) => overlaps(r, room, 3))) continue;   // ≥3 apart so a 1-wide hall + walls fit between
+      if (rooms.some((r) => overlaps(r, room, L.roomPad))) continue;   // far enough apart for a hall + its walls
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
     // A boss floor is a hand-laid arena instead: connectivity comes from the shape.
@@ -7062,6 +7080,10 @@
     nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
     stairsAt: () => findStairs(),
     genRepaired: () => _genRepaired,
+    // Tuning hook: override the default floor-shape block at runtime so a layout can
+    // be measured without an edit-reload cycle. Mutates the defaults in place.
+    setLayout: (o) => Object.assign(LAYOUT_DEFAULT, o || {}),
+    layoutDefaults: () => Object.assign({}, LAYOUT_DEFAULT),
     // Can the player physically walk to (tx, ty)? Terrain-only flood fill, the same
     // one the generator uses to guarantee connectivity — so tests/smoke.js can prove
     // a floor is completable without depending on monster positions or explored state.

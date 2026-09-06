@@ -584,17 +584,17 @@
   }
   // How this biome's floors are SHAPED. Packed into one field the way terrain is,
   // in LAYOUT_KEYS order. Blank deletes the block and the biome uses the defaults
-  // (3,8,56,55,70,6,265,0) — which are Shattered Pixel Dungeon's measured shape.
-  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "attachCap", "hallLegMax", "roomTarget", "sarcophagusPct"];
+  // (2,7,36,85,90,2,6,180,0) — Shattered Pixel Dungeon's measured shape.
+  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "attachCap", "roomPad", "hallLegMax", "roomTarget", "sarcophagusPct"];
   function layoutField(b) {
     const wrap = document.createElement("label"); wrap.className = "bfield";
     const span = document.createElement("span");
-    span.textContent = "layout (side min,max · area max · attach % · attach cap % · hall leg max · room target · sarcophagus %)";
+    span.textContent = "layout (side min,max · area max · attach % · attach cap % · room pad · hall leg max · room target · sarcophagus %)";
     wrap.appendChild(span);
     const inp = document.createElement("input"); inp.type = "text";
     const L = b.layout;
     inp.value = L ? LAYOUT_KEYS.map((k) => (L[k] != null ? L[k] : "")).join(",") : "";
-    inp.placeholder = "3,8,56,55,70,6,265,0";
+    inp.placeholder = "2,7,36,85,90,2,6,180,0";
     inp.oninput = () => {
       const v = inp.value.trim();
       if (v === "") { delete b.layout; return; }
@@ -1208,9 +1208,10 @@
     {
       title: "Floor shape (per biome)",
       rows: [
-        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 3 / 8 / 56, giving a mean room of ~30 tiles. That is Shattered Pixel Dungeon's shape read off its source: an SPD standard room is SizeCategory.NORMAL with outer dim 4–10, and Painter.fill insets 1, so its interior is 2×2 to 8×8 — about 25 tiles. The crypt overrides this at 6 / 13 / 120 for deliberately big chambers." },
-        { name: "Room count", formula: "rooms are laid until their total floor reaches roomTarget (default 265), hard-capped at 22", note: "roomTarget ÷ average room size IS the room count — about 9–10 at the defaults, against SPD's ~10 on an equivalent floor. The number of ROOMS is what a floor feels like, because each one is an encounter: the same total floor divided into half as many rooms plays as half as much game." },
-        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, up to attachCap % of all rooms", note: "Defaults 55% / 70% cap, which lands around 60% attached in practice — that shared-wall packing is how SPD's builder fits almost a whole floor together, and it is the difference between a warren and a scatter of chambers on the ends of hallways. 0 means every room is reached down a hall (what the crypt authors)." },
+        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 2 / 7 / 36, a mean room of ~19 tiles. Read off SPD's source: Room.setSize does resize(NormalIntRange(4,10) − 1, …) — \"subtract one because rooms are inclusive to their right and bottom sides\" — and Painter.fill then insets a wall, so an SPD standard room's INTERIOR is (D − 3)², averaging about 17. (An earlier note here said ~25, which is why Cantori's floors read as bigger than SPD's even with a matching room count.) The crypt overrides this at 6 / 13 / 120 for deliberately big chambers." },
+        { name: "Room count", formula: "rooms are laid until their total floor reaches roomTarget (default 180), hard-capped at 22", note: "roomTarget ÷ average room size IS the room count — about 10 at the defaults, against SPD's 9–13. The number of ROOMS is what a floor feels like, because each one is an encounter." },
+        { name: "Room packing", formula: "roomPad tiles must separate two UNATTACHED rooms (default 2; 3 fits a 1-wide hall plus its walls)", note: "This is the knob that decides how BIG a floor feels, and it is not the same as how much floor there is. Shrinking rooms alone just fits more of them into the same 47×47 with more corridor between: the used extent stayed at 36² and the walk to the stairs did not move. SPD sizes its map to its rooms and packs most of them wall-to-wall, so pad 2 plus a high attach rate is what took Cantori's extent to 29² and its walk to the stairs from 30 steps to 24." },
+        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, up to attachCap % of all rooms", note: "Defaults 85% / 90% cap. That shared-wall packing is how SPD's builder fits almost a whole floor together, and it is the difference between a warren and a scatter of chambers on the ends of hallways. 0 means every room is reached down a hall (what the crypt authors)." },
         { name: "Hall length", formula: "a corridor leg runs randInt(3, hallLegMax) tiles before it must bend", note: "The path still alternates axes after every leg — this only sets how far a straight run may go first. Default 6; the crypt runs 14." },
         { name: "Pillars", formula: "a room over 20 tiles gets 1 + (area − 21) / 5 obstacle pillars, capped at 12, each reverted if it would strand any room", note: "The cap exists because the uncapped formula turns a 12×10 crypt hall into twenty obstacles. The reachability check is CLAUDE.md rule 5 applied to the pass that used to entomb bosses." },
         { name: "Sarcophagi", formula: "sarcophagusPct of a room's pillars are DRAWN as stone coffins", note: "Not a new tile: a sarcophagus is a pillar, so it is already solid, sight-blocking and correct in every map predicate. This is only how it is painted (and what Examine calls it)." },

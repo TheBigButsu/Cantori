@@ -1194,3 +1194,43 @@ Reachable, not theoretical: Ourn's Pride takes a point off every stat every 15 k
 "with no floor". Rolling STR lowers the bottom end, which is what brought it within
 reach rather than leaving it a curiosity. Outgoing damage is now floored at 1 like
 everything else, and the Atk readout clamps to match rather than promising a negative.
+
+## Floors that are the size Shattered Pixel Dungeon's are — DONE
+
+Cantori felt empty next to SPD and Shiren. The spawns were not the problem; the
+floors were.
+
+**First, a correction to an earlier measurement here.** A previous pass put SPD's
+standard room interior at ~25 tiles. That was an estimate, and it was wrong.
+`Room.setSize` does `resize(NormalIntRange(4, 10) − 1, …)` with the comment *"subtract
+one because rooms are inclusive to their right and bottom sides"*, and `Painter.fill`
+then insets a wall — so the interior is **(D − 3)², a mean of about 17**. Cantori's
+rooms were 29. Nearly double, while the earlier note claimed near-parity.
+
+**Second, and more useful: room size was never the whole story.** Shrinking rooms
+alone just fits more of them into the same fixed 47×47 grid, with more corridor in
+between. Measured across four candidate sizings, the used extent stayed at 36² and the
+walk to the stairs did not move at all. SPD sizes its map *to* its rooms (bounding box
+plus one tile of padding) and packs most of them wall-to-wall; Cantori scatters them
+across a fixed grid with a 3-tile gap. So the packing knobs matter as much as the
+sizes, and `roomPad` joined the layout block to make that tunable.
+
+| | before | after | SPD |
+|---|---|---|---|
+| rooms per floor | 9.6 | **10.2** | 9–13 |
+| average room | 29 | **19** | ~17 |
+| walkable tiles | 309 | **212** | ~190–280 |
+| used extent | 36² | **29²** | sized to the rooms |
+| walkable tiles per monster | 44 | **30** | ~30 |
+| steps from start to stairs | 30 | **24** | — |
+
+Monster counts are untouched — 7 alive on a mid-game floor either way. The floor
+shrank around them.
+
+The crypt keeps its own big-chamber block and is pinned at `roomPad: 3` and
+`attachCap: 70` so the new packing defaults do not quietly reshape the one biome that
+is still undesigned.
+
+**The exit backstop is now earning its keep.** Across the same 14,000-floor sweep it
+fired **5 times** rather than 2 — tighter packing does strand more floors — and not
+one ended unreachable.
