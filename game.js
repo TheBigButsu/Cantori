@@ -69,6 +69,7 @@
   let explored = [];        // revealed on the map (own eyes OR magic mapping)
   let beenSeen = [];        // actually held in FOV at some point (not just mapped)
   let genStats = null;      // last level's room/corridor/floor fill breakdown
+  let _genRepaired = 0;     // how many floors this session needed the exit backstop
   let torches = [];            // decorative wall-mounted torches {x, y}
   // Which of a level's obstacle pillars are drawn as sarcophagi. A set of tile keys,
   // not a new tile constant: a sarcophagus IS a pillar — solid, sight-blocking,
@@ -143,7 +144,18 @@
   // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
   // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
   // weapon you do not meet, so there is nothing left for the damage formula to gate.
-  const strBonus = () => mod("STR");
+  // STR is ROLLED into a swing, not added flat: every blow gets somewhere between
+  // half the modifier and all of it. Same scaling shape, much wider spread — which
+  // is what a game with one attack per turn has instead of D&D's multiattack, and
+  // it stops a high-STR character's damage from being a single predictable number.
+  //
+  // Ordered through min/max so a NEGATIVE modifier still reads as "between the small
+  // penalty and the large one" instead of inverting into an empty range: at mod −3
+  // that is −3…−2, not −2…−3.
+  const strBonus = () => mod("STR");                    // the modifier itself
+  const strDmgLo = () => Math.min(Math.floor(strBonus() / 2), strBonus());
+  const strDmgHi = () => Math.max(Math.floor(strBonus() / 2), strBonus());
+  const strDmgRoll = () => randInt(strDmgLo(), strDmgHi());
   // Stat requirements (e.g. armor/weapon req.STR) gate whether a piece can be
   // equipped at all — met once every listed stat is at or above its threshold.
   const gearReqUnmet = (inst) => {
@@ -169,7 +181,17 @@
   // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
   // how much DEX it lets through — light takes all of it, medium at most +2, heavy
   // none at all. That cap is what stops heavy armour from being strictly best.
-  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + (player.lvlEva || 0) + (player.boonEva || 0) + passiveMod("eva");
+  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC();
+  // Evasion is NOT armour class. AC is how hard you are to aim at; Evasion is
+  // slipping a blow that was already aimed true — it is rolled AFTER the attack
+  // roll has beaten your AC. Keeping them apart is what lets Ourn's Foresight
+  // offer a real choice: to-hit sharpens your own attack roll, Evasion buys back
+  // some of theirs, and they are not the same currency.
+  const FORESIGHT_KILLS = 25;   // Ourn's Future Sight: kills between milestones
+  const EVA_PER_POINT = 0.02;   // 2% dodge per point — a d20 AC point is worth ~5%,
+  const EVA_CAP = 0.50;         // so Evasion is cheaper per point and hard-capped
+  const evasionPoints = () => (player.lvlEva || 0) + (player.boonEva || 0) + passiveMod("eva");
+  const dodgeChance = () => Math.min(EVA_CAP, Math.max(0, evasionPoints()) * EVA_PER_POINT);
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -254,6 +276,8 @@
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
     player.healPending = 0;                    // queued heal-over-time from a potion
     player.stun = 0;                           // turns you're dazed (e.g. slammed into a wall) — actions are wasted
+    player.rage = null;                        // Raging Smite's temporary STR/VIT
+    player.shield = 0;                         // Healing Smite's overflow
     clearHexes();                              // the crypt's songs don't survive a death
     player.burn = null; player.poison = 0;     // nor does anything still burning in you
     player.boons = new Set();                  // boons are earned fresh each run
@@ -446,8 +470,11 @@
     for (const it of wornItems()) { if (it.plus) total += it.plus * (QUALITY_MULT[it.rarity] || 1.0); }
     return roundHalf(total);
   }
+  // Raging Smite's temporary STR/VIT. One pool, spent down a point at a time —
+  // see rageTick(). Stored rather than recomputed so the decay is visible.
+  const rageBonus = (statKey) => (player.rage && player.rage.amount > 0 && player.rage.stats.indexOf(statKey) >= 0 ? player.rage.amount : 0);
   const eff = (statKey) => {
-    let v = player.stats[statKey] + equipStat(statKey);   // base + gear
+    let v = player.stats[statKey] + equipStat(statKey) + rageBonus(statKey);   // base + gear + rage
     if (player.boons) {
       if (statKey === "INT" && player.boons.has("scribe")) v += guildQualityBonus();
       if (statKey === "STR" && player.boons.has("blacksmith")) v += guildQualityBonus();
@@ -494,8 +521,13 @@
   const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorFlat() + stoneSkinRoll();
   // Weapon combat numbers (unarmed falls back to the base 2–3 fists, boosted by
   // Brynn's Unarmed Master passive when no weapon is equipped).
-  const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin + passiveMod("dmgMin") + unarmedStatBonus());
-  const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax + passiveMod("dmgMax") + unarmedStatBonus());
+  // passiveMod's own `when` gate decides which passives apply, so adding it to the
+  // ARMED branch too is safe: Unarmed Master (when: "unarmed") still contributes
+  // nothing here, and Sword Master (when: "sword") reaches the roll it is about.
+  // Without this a sword passive could only ever add flat damage, never widen the
+  // weapon's range — so "+1 max damage" had nowhere to land.
+  const weaponDmgMin = () => (player.weapon ? gDmgMin(player.weapon) : player.atkMin + unarmedStatBonus()) + passiveMod("dmgMin");
+  const weaponDmgMax = () => (player.weapon ? gDmgMax(player.weapon) : player.atkMax + unarmedStatBonus()) + passiveMod("dmgMax");
   const weaponToHit = () => (player.weapon ? (GEAR[player.weapon.key].toHit || 0) : 0);
   const weaponSpeed = () => { if (!player.weapon) { const s = passiveMod("speed"); if (s) return s; } return player.weapon ? (GEAR[player.weapon.key].speed || 1) : 1; };
   // Weapon reach: 1 = melee (adjacent only). Spears/bows carry a range > 1 and
@@ -1635,7 +1667,7 @@
     turns = 0;
     sarcophagi = new Set();
     auraSig = "";                              // whatever field you stood in is a floor behind you
-    horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
+    horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
 
     // The biome (and so which boss, and so which arena) has to be known before the
     // layout is built, not after it.
@@ -1749,6 +1781,26 @@
         fixOpenCorners(rooms);
       }
     }
+    // The SAME backstop for an ordinary floor, which never had one. Measured at
+    // roughly 1 floor in 5,000 with no exit reachable on foot — rare, but over a
+    // 25-floor run that is a run in two hundred that simply cannot be finished, and
+    // this game is permadeath. The terrain check above cannot help: it only undoes
+    // TERRAIN, and unpaintTerrain repairs nothing that water did not cause — a
+    // doorway walled up by narrowRoomBreaches or fixOpenCorners is beyond it, and
+    // likelier now that most rooms attach by a single door rather than a corridor.
+    // Carving is always available where removing terrain is not.
+    if (!bossFloor) {
+      const st = findStairs();
+      const cut = () => !!st && !floodReach(player.x, player.y, false).has(st.y * MAP_W + st.x);
+      if (cut()) {
+        _genRepaired++;
+        carveCorridor({ x: player.x, y: player.y }, { x: st.x, y: st.y });
+        fixOpenCorners(rooms);
+        // fixOpenCorners walls tiles, so it must not get the last word on the one
+        // route we just guaranteed.
+        if (cut()) carveCorridor({ x: player.x, y: player.y }, { x: st.x, y: st.y });
+      }
+    }
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -1785,7 +1837,7 @@
     turns = 0;
     sarcophagi = new Set();
     auraSig = "";
-    horrorWarned = false; horrorDeadAt = -1;   // the new floor's patience starts over
+    horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
     bossActive = false;
     bossRoom = null;
 
@@ -2163,6 +2215,9 @@
     const left = Math.max(0, FLOOR_PATIENCE - turns);
     row.classList.toggle("off", !running);
     row.classList.toggle("low", running && left > 0 && turns >= FLOOR_WARNING);
+    row.title = !running ? "No clock on this floor."
+      : sparkGone ? "The spark is gone — no health regenerates here. " + left + " turns before something comes."
+      : left + " turns before the floor turns on you.";
     row.classList.toggle("spent", running && left <= 0);
     fill.style.width = (running ? (left / FLOOR_PATIENCE) * 100 : 100) + "%";
     num.textContent = running ? String(left) : "—";
@@ -2194,6 +2249,11 @@
     // one would invert the mechanic exactly: farming Horrors would become the most
     // efficient grind in the game, on a floor the player was supposed to leave.
     blinkKillCredit();
+    // Raging Smite rank 4: a kill during the rage pushes the next decay tick out,
+    // so a berserker who keeps killing keeps the strength.
+    if (player.rage && player.rage.killDelay && player.rage.amount > 0) {
+      player.rage.next += Math.max(1, player.level);
+    }
     if (target.horror) { horrorDeadAt = turns; xp = 0; }
     else if (target.boss) xp = 15 + Math.round(target.maxHp * 0.4);
     else { const mf = (VERMIN[target.type] && VERMIN[target.type].minFloor) || 1; xp = Math.max(1, Math.ceil(mf / 2)); }
@@ -2233,10 +2293,14 @@
       floatText(player.x, player.y, "+1 RES", "#b491d6");
       log("Kethara's Gift of the Faithful strengthens your resolve. (+1 RES)", "hit");
     }
-    if (player.boons.has("foresight") && kc % 10 === 0) {
-      player.boonAcc = (player.boonAcc || 0) + 1; player.boonEva = (player.boonEva || 0) + 1;
-      floatText(player.x, player.y, "+1 ACC/EVA", "#9ad0ff");
-      log("Ourn's Future Sight sharpens your senses. (+1 Accuracy, +1 Evasion)", "hit");
+    if (player.boons.has("foresight") && kc % FORESIGHT_KILLS === 0) {
+      // One or the other, never both — a coin per milestone. Both, every ten kills,
+      // is what put a player at +27 to hit: 270 kills is an ordinary run.
+      let gain;
+      if (Math.random() < 0.5) { player.boonAcc = (player.boonAcc || 0) + 1; gain = "+1 to hit"; }
+      else { player.boonEva = (player.boonEva || 0) + 1; gain = "+1 Evasion — " + Math.round(dodgeChance() * 100) + "% to slip a blow"; }
+      floatText(player.x, player.y, "✦", "#9ad0ff");
+      log("Ourn's Future Sight sharpens your senses. (" + gain + ")", "hit");
     }
     if (player.boons.has("dilating") && kc % 5 === 0) {
       player.boonHaste = (player.boonHaste || 0) + 1;
@@ -2386,6 +2450,19 @@
       log("The pain breaks the song's hold on you.", "hit");
     }
     charmHpMark = player.hp;
+  }
+  // Raging Smite grants STR and VIT equal to your character level, then spends
+  // that pool one point at a time — a point every `per` turns. A long fight keeps
+  // most of it; a slow walk back to the stairs does not.
+  function rageTick() {
+    const r = player.rage;
+    if (!r || r.amount <= 0) { if (r) player.rage = null; return; }
+    if (--r.next > 0) return;
+    r.next = r.per;
+    r.amount--;
+    if (r.amount <= 0) { player.rage = null; log("The rage leaves you."); }
+    player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
+    updateHUD();
   }
   // Every hex is a turn counter, so one loop retires all five. Charmed drops its
   // source with it — holding a reference to a monster that may already be dead and
@@ -2578,7 +2655,13 @@
         log("Your blow slides off the " + monName(target) + " — the hex holds.", "hurt");
         return;
       }
-      let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
+      // Floored at 1, the same way an incoming blow is. A connecting hit that deals
+      // nothing is odd; one that deals a NEGATIVE and heals the monster is a bug, and
+      // it was reachable — Ourn's Pride takes a point off every stat every 15 kills
+      // "with no floor", so a low-STR character on a weak weapon really could get
+      // there. Rolling STR rather than adding it flat lowers the bottom end, which
+      // is what brought this within reach rather than merely theoretical.
+      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg"));
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
@@ -2616,6 +2699,14 @@
         log("You evade the " + monName(attacker) + ".");
         return;
       }
+      // Evasion is rolled AFTER the attack roll beat your AC: the blow was aimed
+      // true and you slipped it. That is a different thing from being hard to aim
+      // at, and keeping it separate is what makes Foresight's coin a real choice.
+      if (Math.random() < dodgeChance()) {
+        floatText(player.x, player.y, "dodge", "#9ad0ff");
+        log("You slip aside from the " + monName(attacker) + "'s blow.");
+        return;
+      }
       let dmg = randInt(attacker.atkMin, attacker.atkMax);
       // RES applies first, as a % reduction of the raw hit; armor (and other
       // flat mitigation) then reduces whatever's left.
@@ -2625,6 +2716,14 @@
       // was simply eaten — a bear that thundered four squares still hit for 1
       // against any real armour, which made its signature move read as a whiff.
       dmg += bonus;
+      // Healing Smite's overflow becomes a shield: it eats damage before your HP
+      // does, and is spent doing it.
+      if (player.shield > 0 && dmg > 0) {
+        const soak = Math.min(player.shield, dmg);
+        player.shield -= soak; dmg -= soak;
+        floatText(player.x, player.y, "-" + soak + " shield", "#9ad0ff");
+        if (player.shield <= 0) log("Your shield of light breaks.");
+      }
       player.hp -= dmg;
       flash(player);
       floatText(player.x, player.y, "-" + dmg, "#ff8f84");
@@ -3187,8 +3286,11 @@
   function regenTick() {
     const cls = DATA.classes[player.cls] || {};
     let changed = false, healed = 0;
-    // HP: heals to full over regenTurns, sped by Vitality.
-    if (player.hp < player.maxHp) {
+    // HP: heals to full over regenTurns, sped by Vitality — unless the floor's
+    // spark has gone out (FLOOR_STAGES), after which it gives nothing back for the
+    // rest of the visit. MP is untouched: the floor is tired of you, not hostile
+    // to magic, and taking both would just end runs quietly.
+    if (player.hp < player.maxHp && !sparkGone) {
       const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - mod("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2) * 5);
       player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult();
       while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
@@ -3647,12 +3749,21 @@
   //
   // `turns` already resets in generateLevel, so it IS the per-floor clock; no
   // second counter to keep in sync.
-  const FLOOR_PATIENCE = 1000;    // turns of welcome before the floor turns on you
-  const FLOOR_WARNING = 900;      // when it starts to be felt
+  const FLOOR_PATIENCE = 600;     // turns of welcome before the floor turns on you
+  // Three warnings on the way, and the FIRST one costs something real rather than
+  // just saying words: the floor stops giving your health back. A clock that only
+  // talks is a clock you learn to ignore.
+  const FLOOR_STAGES = [
+    { at: 300, spark: true, msg: "The spark has left this location." },
+    { at: 450, msg: "You feel yourself losing your way." },
+    { at: 550, msg: "You must leave now, or you do not think you ever will." },
+  ];
+  const FLOOR_WARNING = FLOOR_STAGES[0].at;   // when the TIME bar turns
   const HORROR_RESPAWN = 60;      // turns after a kill before the next one comes
   const HORROR_HP_MULT = 3;       // it is the same creature, wrong
   const HORROR_DMG_MULT = 4;      // and it hits like nothing else on the floor
   let horrorWarned = false, horrorDeadAt = -1;
+  let sparkGone = false;          // past the first stage: this floor heals no one
   // Which monster the Horror wears. Authored per biome (`horror` in data.js);
   // falls back to the deepest-starting monster the biome spawns, so a biome that
   // has not been given one yet still gets its scariest resident rather than none.
@@ -3687,10 +3798,12 @@
   }
   function maybeHorror() {
     if (bossActive || inShop || dead) return;                 // a boss floor has its own pressure
-    if (turns === FLOOR_WARNING && !horrorWarned) {
+    for (const st of FLOOR_STAGES) {
+      if (turns !== st.at) continue;
       horrorWarned = true;
-      log("The air goes wrong. You have been here too long.", "hurt");
+      log(st.msg, "hurt");
       flashScreen("#3a1e1e", 420);
+      if (st.spark) { sparkGone = true; player.regenAcc = 0; }
     }
     if (turns < FLOOR_PATIENCE) return;
     if (monsters.some((m) => m.horror && m.hp > 0)) return;    // one at a time
@@ -3869,6 +3982,7 @@
     }
     if (player.hasteBuff > 0) player.hasteBuff = Math.max(0, player.hasteBuff - 1);   // Speed of Light: decays 1%/turn
     if (player.invisible > 0 && --player.invisible <= 0) log("The air around you settles — you're visible again.");
+    rageTick();
     tickHexes();
     playerDotTick(); if (dead) return;   // what is burning or poisoning YOU, before the monsters move
     if (pullZone) { pullZone.turns--; if (pullZone.turns <= 0) pullZone = null; }      // Faith's Pull: expires after 5 turns
@@ -4043,6 +4157,12 @@
         return;
       }
       // ToneTum: three want a monster, Blink wants a tile.
+      if (pk === "ragesmite" || pk === "healsmite") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
+        if (pk === "ragesmite") executeRagingSmite(pendingSkill, tx, ty); else executeHealingSmite(pendingSkill, tx, ty);
+        return;
+      }
       if (pk === "bolt" || pk === "sleepcast" || pk === "madnesscast" || pk === "burncast") {
         const m = monsterAt(tx, ty);
         if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
@@ -5218,8 +5338,12 @@
     toggleFountain(false);
   }
   function playerAtk() {
-    const b = strBonus() + player.atkBonus;
-    return (weaponDmgMin() + b) + "–" + (weaponDmgMax() + b);
+    // Both ends move: the low end takes STR's low roll, the high end its high roll,
+    // so the number on the pack header is the real spread rather than the old flat
+    // band shifted sideways.
+    const lo = Math.max(1, weaponDmgMin() + strDmgLo() + player.atkBonus);
+    const hi = Math.max(lo, weaponDmgMax() + strDmgHi() + player.atkBonus);
+    return lo + "–" + hi;   // clamped to match the floor the swing itself has
   }
   // A colored, affix-annotated label for an equipped/carried gear instance.
   function equipLabel(inst) {
@@ -5857,8 +5981,173 @@
     if (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) { log("Requires character level " + nextDef.minLevel + " first.", ""); return; }
     player.statPoints--; st.rank++;
     log((st.rank === 1 ? "Learned " : "Upgraded ") + d.name + " (rank " + st.rank + ").", "hit");
+    const gained = d.ranks[st.rank - 1];
+    if (gained && gained.grantGear) grantRankGear(gained.grantGear);
     renderChar(); updateHotbar();
   }
+  // A rank that comes with a weapon or a piece of armour (Sword Master's top rank
+  // hands you a sword). Authored as a spec on the rank rather than a hardcoded key,
+  // so the reward tracks whatever the gear tables actually hold.
+  function grantRankGear(spec) {
+    const inCat = (k) => {
+      const g = GEAR[k];
+      return g && (!spec.cat || g.cat === spec.cat) && (!spec.sub || (g.sub || "") === spec.sub);
+    };
+    // NOT gearTier() here: that reads `tier || 1`, so an explicitly tier-0 row (the
+    // Shitty_sword) reports as tier 1 and ties with the real one. For picking a
+    // reward the authored number is what matters.
+    const trueTier = (k) => (GEAR[k].tier != null ? GEAR[k].tier : 1);
+    const lo = spec.tierMin || 1, hi = spec.tierMax || 5;
+    let pool = GEAR_KEYS.filter((k) => inCat(k) && trueTier(k) >= lo && trueTier(k) <= hi);
+    if (!pool.length) {
+      // Nothing authored in the asked-for tier band. Fall back to the best piece
+      // that does match, so the reward is still a sword — better a tier-1 blue than
+      // silently nothing while the gear tables catch up.
+      const any = GEAR_KEYS.filter(inCat);
+      if (!any.length) return;
+      const best = Math.max.apply(null, any.map(trueTier));
+      pool = any.filter((k) => trueTier(k) === best);
+    }
+    const it = rollItem(pool[randInt(0, pool.length - 1)], depth, spec.rarity || null);
+    if (!it) return;
+    if (!invAdd(it)) {
+      const spot = dropSpot();
+      if (!spot) { log("There is no room for it — nothing comes."); return; }
+      items.push(Object.assign({ x: spot.x, y: spot.y }, it));
+      log("A " + itemName(it) + " falls at your feet — your pack is full.", "hit");
+      return;
+    }
+    log("A " + itemName(it) + " is yours.", "hit");
+  }
+
+  // Every Smite variant lands the SAME core blow, and the Smite skill's own rank
+  // decides how hard. That is why the variants sit behind Smite in the tree:
+  // levelling Smite levels all of them at once, and none of them needs its own
+  // damage ladder.
+  function smiteBonus() {
+    const cur = skillCur("smite");
+    return Math.round(mod("STR") * 3 * ((cur && cur.strMult) || 1));
+  }
+  // Shared front half of every Smite: check the target, pay the MP, announce it.
+  // Returns the target, or null if the cast could not happen.
+  function smiteSetup(key, tx, ty, verb) {
+    const cur = skillCur(key);
+    if (!cur) return null;
+    const range = cur.range || 1;
+    const target = monsterAt(tx, ty);
+    if (!target || cheb(player.x, player.y, tx, ty) > range || !lineOfSight(player.x, player.y, tx, ty)) {
+      log(verb + " needs a clear target within range."); updateHotbar(); return null;
+    }
+    const cost = cur.mp != null ? cur.mp : 5;
+    if (player.mp < cost) { log("Not enough MP for " + verb + " (need " + cost + ")."); updateHotbar(); return null; }
+    player.mp -= cost;
+    if (cheb(player.x, player.y, tx, ty) > 1) spawnProjectile(player.x, player.y, tx, ty, "#f0a838");
+    return target;
+  }
+
+  // Raging Smite: Smite's blow plus half your level, and the target goes berserk —
+  // it turns on whatever is nearest, which on a crowded floor is not you.
+  function executeRagingSmite(key, tx, ty) {
+    pendingSkill = null;
+    const cur = skillCur(key);
+    const target = smiteSetup(key, tx, ty, "Raging Smite");
+    if (!target) return;
+    log("You call down a Raging Smite!", "hit");
+    attack(player, target, smiteBonus() + Math.floor(player.level / 2));
+    if (target.hp > 0) {
+      target.berserk = (target.berserk || 0) + 30;
+      floatText(target.x, target.y, "RAGE", "#e0685a");
+    }
+    if (cur.rageStats) {
+      // A pool equal to your level, in both STR and VIT, spent a point every
+      // `level` turns — so it lasts roughly level² turns however high you are.
+      player.rage = { amount: player.level, per: Math.max(1, player.level), next: Math.max(1, player.level),
+                      stats: ["STR", "VIT"], killDelay: !!cur.killDelay };
+      player.maxHp = computeMaxHp();
+      floatText(player.x, player.y, "+" + player.level + " STR/VIT", "#e0a848");
+      log("The rage takes you too. (+" + player.level + " STR and VIT, decaying)", "hit");
+    }
+    player.skills[key].cd = cur.cd || 100;
+    updateHotbar(); updateHUD();
+    if (dead) return;
+    worldTurn();
+  }
+
+  // Healing Smite: what it deals, it returns.
+  function executeHealingSmite(key, tx, ty) {
+    pendingSkill = null;
+    const cur = skillCur(key);
+    const target = smiteSetup(key, tx, ty, "Healing Smite");
+    if (!target) return;
+    log("You call down a Healing Smite!", "hit");
+    const before = target.hp;
+    attack(player, target, smiteBonus());
+    const dealt = Math.max(0, before - target.hp);
+    if (dealt > 0) {
+      const room = Math.max(0, player.maxHp - player.hp);
+      const healed = Math.min(room, dealt), over = dealt - healed;
+      player.hp += healed;
+      if (healed) floatText(player.x, player.y, "+" + healed, "#8ed69a");
+      if (over > 0 && cur.shield) {
+        player.shield = (player.shield || 0) + over;
+        floatText(player.x, player.y, "+" + over + " shield", "#9ad0ff");
+        log("The overflow hardens into a shield. (" + player.shield + ")", "hit");
+      }
+    }
+    player.skills[key].cd = cur.cd || 100;
+    updateHotbar(); updateHUD();
+    if (dead) return;
+    worldTurn();
+  }
+
+  // Spinning Smite: Smite's blow, to everything in reach at once.
+  function executeSpinningSmite(key) {
+    const cur = skillCur(key);
+    if (!cur) return;
+    const cost = cur.mp != null ? cur.mp : 5;
+    if (player.mp < cost) { log("Not enough MP for Spinning Smite (need " + cost + ")."); updateHotbar(); return; }
+    const reach = cur.range || 2;
+    const hits = monsters.filter((m) => m.hp > 0 && cheb(m.x, m.y, player.x, player.y) <= reach
+                                        && lineOfSight(player.x, player.y, m.x, m.y));
+    if (!hits.length) { log("Nothing within " + reach + " tiles to smite."); updateHotbar(); return; }
+    player.mp -= cost;
+    log("You spin, and the Smite goes with you!", "hit");
+    spawnBurst(player.x, player.y, "#f0a838");
+    let kills = 0;
+    for (const m of hits) {
+      if (m.hp <= 0) continue;
+      attack(player, m, smiteBonus());
+      if (dead) return;
+      if (m.hp <= 0) kills++;
+    }
+    // Rank 4: every kill takes turns off the cooldown, so a good spin pays for the
+    // next one.
+    player.skills[key].cd = Math.max(0, (cur.cd || 100) - kills * (cur.killCd || 0));
+    updateHotbar(); updateHUD();
+    worldTurn();
+  }
+
+  // Lay on Hands: a big, slow self-heal whose overflow buys the cooldown back.
+  function executeLayOnHands(key) {
+    const cur = skillCur(key);
+    if (!cur) return;
+    const cost = cur.mp != null ? cur.mp : 15;
+    if (player.mp < cost) { log("Not enough MP for Lay on Hands (need " + cost + ")."); updateHotbar(); return; }
+    player.mp -= cost;
+    const amount = Math.max(1, (cur.vit ? eff("VIT") : 0) + (cur.str ? eff("STR") : 0) + (cur.lvl || 0) * player.level);
+    const room = Math.max(0, player.maxHp - player.hp);
+    const healed = Math.min(room, amount), over = amount - healed;
+    player.hp += healed;
+    spawnBurst(player.x, player.y, "#8ed69a");
+    if (healed) floatText(player.x, player.y, "+" + healed, "#8ed69a");
+    // Overhealing is not wasted — it comes off the wait instead.
+    player.skills[key].cd = Math.max(0, (cur.cd || 200) - over);
+    log(healed ? "You lay hands on your wounds. (+" + healed + (over ? ", " + over + " off the cooldown" : "") + ")"
+               : "Nothing to mend — the power goes into the waiting. (" + over + " off the cooldown)", "hit");
+    updateHotbar(); updateHUD();
+    worldTurn();
+  }
+
   function useSkill(key) {
     if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return;
     const st = player.skills[key], d = skillDef(key);
@@ -5867,10 +6156,12 @@
     if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
     if (d.kind === "rush") beginRush(key);
     else if (d.kind === "spin") executeSpin(key);
+    else if (d.kind === "spinsmite") executeSpinningSmite(key);          // hits everything in reach — nothing to aim at
+    else if (d.kind === "selfheal") executeLayOnHands(key);              // aimed at yourself
     else if (d.kind === "sol") executeSpeedOfLight(key);
     else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
     else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
-             d.kind === "smite" || d.kind === "throwmon" ||
+             d.kind === "smite" || d.kind === "ragesmite" || d.kind === "healsmite" || d.kind === "throwmon" ||
              d.kind === "bolt" || d.kind === "sleepcast" || d.kind === "blinkcast" ||
              d.kind === "madnesscast" || d.kind === "burncast") beginTargetedSkill(key);
   }
@@ -6318,7 +6609,7 @@
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC(), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    const effDesc = { STR: (strDmgLo() === strDmgHi() ? sgnNum(strDmgLo()) : sgnNum(strDmgLo()) + "–" + strDmgHi()) + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC() + (evasionPoints() > 0 ? " / dodge " + Math.round(dodgeChance() * 100) + "%" : ""), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
     // The modifier is what every formula actually reads, so it is what the screen
     // leads with — the raw score is shown beside it, not instead of it.
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {
@@ -6770,6 +7061,7 @@
     bossRoomRect: () => (bossRoom ? { x: bossRoom.x, y: bossRoom.y, w: bossRoom.w, h: bossRoom.h } : null),
     nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
     stairsAt: () => findStairs(),
+    genRepaired: () => _genRepaired,
     // Can the player physically walk to (tx, ty)? Terrain-only flood fill, the same
     // one the generator uses to guarantee connectivity — so tests/smoke.js can prove
     // a floor is completable without depending on monster positions or explored state.
@@ -6826,6 +7118,10 @@
 
     // ---- Boon-system test hooks ----
     setKillCount: (n) => { player.killCount = n; },
+    setEva: (n) => { player.boonEva = n; updateHUD(); },
+    dodgeChance: () => dodgeChance(),
+    sparkGone: () => sparkGone,
+    floorStages: () => ({ patience: FLOOR_PATIENCE, stages: FLOOR_STAGES.map((s) => ({ at: s.at, msg: s.msg, spark: !!s.spark })) }),
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },
     setHasteBuff: (n) => { player.hasteBuff = n; },
     setInvisible: (n) => { player.invisible = n; },

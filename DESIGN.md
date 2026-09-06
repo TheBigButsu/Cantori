@@ -1069,3 +1069,128 @@ rarity colour; a fixed sprite cannot do that.
 
 `mace.png`, `leather.png`, `chain.png` and `plate.png` are now orphans — no gear row
 has ever used those keys. Left in place; harmless, and a future weapon may want them.
+
+## Warrior tree finished, Evasion made its own thing, the floor's clock halved
+
+**Sword Master is a to-hit skill that turns into a damage skill.** To-hit early,
+because that is what a level-1 warrior actually lacks; damage late, gated behind
+character level:
+
+| rank | gives | gate |
+|---|---|---|
+| 1 | +1 to hit | — |
+| 2 | +2 to hit | — |
+| 3 | +2 to hit, +1 max damage | level 7 |
+| 4 | +3 to hit, +1 min and max damage, and a blue sword | level 10 |
+
+Measured on a white sword: to-hit 12 → 13 → 14 → 14 → 15, damage 12–20 → 12–21 at
+rank 3 → 13–21 at rank 4.
+
+Two bits of engine came with it. `minLevel` now works **per rank**, not just per
+node, which is how a skill can be available from the start and still hold its best
+ranks back. And a rank may carry `grantGear` — a spec, not a hardcoded key, so the
+reward tracks whatever the gear tables hold.
+
+**Smite no longer needs a maxed branch behind it.** Its `reqAny` (Rush, Spin or Sword
+Master at rank 4) is gone; the tier gate alone stands. *Spinning* Smite still wants
+Smite and Spin both maxed — that requirement names Smite but is not Smite's own.
+
+**The four authored-but-never-wired warrior skills work.** Raging, Healing and
+Spinning Smite, and Lay on Hands, all had descriptions and level notes but no `ranks`
+array — and `normalizeTree` skips a node without one, so they were invisible in the
+tree rather than broken. Now:
+
+Every Smite variant lands the **same core blow** — `round(mod(STR) × 3 × the Smite
+skill's own strMult)` — plus whatever it adds. That is why they sit behind Smite:
+levelling Smite levels all of them, and none needs its own damage ladder. Raging adds
+half your level and sends the target berserk (rank 3 also grants STR and VIT equal to
+your level, spent a point every `level` turns; rank 4 pushes that decay back on every
+kill). Healing returns what it dealt, and at rank 4 the overflow hardens into a
+shield that eats damage before your HP does. Spinning hits everything in reach.
+
+Lay on Hands heals VIT, then STR, then level — and its overflow comes off the
+cooldown, one turn per point. Worth knowing: at level 32 that took a 200-turn
+cooldown to 26. Casting at full health is a way of buying readiness with MP, which is
+the trade as written, but the discount is steep.
+
+**Evasion is no longer Armour Class.** AC is how hard you are to aim at; Evasion is
+slipping a blow that was already aimed true, so it is rolled *after* the attack roll
+beats your AC — 2% per point, capped at 50%. Measured at 25 points: 46% of connecting
+blows slipped, against 50% expected.
+
+That split is what makes **Ourn's Future Sight** a real choice. It used to give +1
+accuracy **and** +1 evasion every 10 kills, both feeding the same d20 — which is how a
+player reached **+27 to hit**, since 270 kills is an ordinary run. Now it is every
+**25** kills and a coin: to-hit or Evasion, never both. Two currencies, one of them
+capped.
+
+**The floor's patience is 600 turns, and the first warning costs something.**
+
+| turn | |
+|---|---|
+| 300 | *"The spark has left this location."* — **HP regeneration stops for the rest of the visit** |
+| 450 | *"You feel yourself losing your way."* |
+| 550 | *"You must leave now, or you do not think you ever will."* |
+| 600 | the Horror comes |
+
+It was 1000 turns with one warning at 900 — long enough that most players never met
+it, and a clock nobody meets is not a clock. MP regen is untouched: the floor is
+tired of you, not hostile to magic, and taking both would end runs quietly. The TIME
+bar turns at 300 and its tooltip says why.
+
+## A floor you cannot finish, once in seven thousand — DONE
+
+The smoke test caught a depth-18 floor whose stairs could not be reached on foot.
+Swept 14,000 generated floors: it happens about **1 in 7,000**. Rare — but over a
+25-floor run that is roughly a run in three hundred that simply cannot be finished,
+and this game is permadeath.
+
+Boss floors have had a backstop since the arenas landed. Ordinary floors never did,
+and the terrain check that runs beside it cannot help: it only undoes **terrain**, so
+`unpaintTerrain` repairs nothing that water did not cause. A doorway walled up by
+`narrowRoomBreaches` or `fixOpenCorners` is beyond it — and likelier now that most
+rooms attach by a single shared door rather than a corridor.
+
+Ordinary floors now get the same treatment: if the exit is unreachable once
+everything is placed, carve a corridor to it. Carving is always available where
+removing terrain is not. Verified across those 14,000 floors — the backstop fired
+twice and **not one floor ended unreachable**.
+
+## STR is rolled into the swing, not added to it — DONE
+
+`strBonus()` was a flat `mod(STR)`, so a high-STR character's damage was a
+dependable number with the weapon's dice wobbling on top. Every swing now rolls
+`randInt(floor(mod/2), mod)` — half the modifier to all of it.
+
+The reasoning: this game gives you **one attack per turn**. D&D spreads a big
+modifier over several attacks, which is where its variance comes from; without
+multiattack that spread has to live inside the single swing instead.
+
+Measured, white sword (2–6), crit-free:
+
+| level | mod | before | after | spread |
+|---|---|---|---|---|
+| 1 | +2 | 4–8 | **3–8** | 4 → 5 |
+| 10 | +5 | 7–11 | **4–11** | 4 → 7 |
+| 25 | +8 | 10–14 | **6–14** | 4 → 8 |
+
+The **ceiling never moves**. Only the floor drops, so your best hits are exactly
+what they were and your worst are worse — variance bought without touching the top
+end. Average falls about 8% at level 1 and 17% by level 25.
+
+Negative modifiers are ordered through min/max so they read as "small penalty to
+large" (at −3, that is −3…−2) rather than inverting into an empty range. The Atk
+readout moves both ends, so the pack header shows the real spread instead of a fixed
+band shifted sideways.
+
+### A blow that healed the monster
+
+Found while checking the negative case. The player's outgoing damage had **no floor**
+— the incoming path has had `Math.max(1, …)` forever, the outgoing one never did. At
+STR 4 with a weak weapon every blow landed on zero or below, and a negative would
+have been *subtracted from* the target's HP loss, healing it.
+
+Reachable, not theoretical: Ourn's Pride takes a point off every stat every 15 kills
+"with no floor". Rolling STR lowers the bottom end, which is what brought it within
+reach rather than leaving it a curiosity. Outgoing damage is now floored at 1 like
+everything else, and the Atk readout clamps to match rather than promising a negative.

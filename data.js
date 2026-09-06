@@ -1142,7 +1142,7 @@ window.CANTORI_DATA = {
     },
     "foresight": {
       "name": "Future Sight",
-      "desc": "Every 10th kill, gain +1 Accuracy and +1 Evasion.",
+      "desc": "Every 25th kill, gain +1 to hit OR +1 Evasion — the coin decides. Evasion is a chance to slip a blow that had already landed.",
       "icon": "🔮",
       "color": "#9ad0ff"
     },
@@ -1621,24 +1621,35 @@ window.CANTORI_DATA = {
           "when": "sword",
           "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
           "levels": [
-            "+1 damage for swords",
-            "+2 damage for swords",
-            "+4 damage for swords",
-            "+6 damage and +15 accuracy for swords"
+            "+1 to hit with a sword",
+            "+2 to hit with a sword",
+            "+2 to hit and +1 max damage with a sword",
+            "+3 to hit, +1 min and max damage — and a blue sword of your own"
           ],
           "ranks": [
             {
-              "dmg": 1
+              "acc": 1
             },
             {
-              "dmg": 2
+              "acc": 2
             },
             {
-              "dmg": 4
+              "acc": 2,
+              "dmgMax": 1,
+              "minLevel": 7
             },
             {
-              "dmg": 6,
-              "acc": 15
+              "acc": 3,
+              "dmgMin": 1,
+              "dmgMax": 1,
+              "minLevel": 10,
+              "grantGear": {
+                "cat": "weapon",
+                "sub": "sword",
+                "rarity": "blue",
+                "tierMin": 2,
+                "tierMax": 5
+              }
             }
           ],
           "req": []
@@ -1673,21 +1684,7 @@ window.CANTORI_DATA = {
               "range": 2
             }
           ],
-          "req": [],
-          "reqAny": [
-            [
-              "rush",
-              4
-            ],
-            [
-              "spin",
-              4
-            ],
-            [
-              "sword_master",
-              4
-            ]
-          ]
+          "req": []
         },
         {
           "id": "raging_smite",
@@ -1707,6 +1704,24 @@ window.CANTORI_DATA = {
               "smite",
               1
             ]
+          ],
+          "kind": "ragesmite",
+          "ranks": [
+            {
+              "cd": 100
+            },
+            {
+              "cd": 90
+            },
+            {
+              "cd": 90,
+              "rageStats": true
+            },
+            {
+              "cd": 90,
+              "rageStats": true,
+              "killDelay": true
+            }
           ]
         },
         {
@@ -1727,6 +1742,22 @@ window.CANTORI_DATA = {
               "smite",
               1
             ]
+          ],
+          "kind": "healsmite",
+          "ranks": [
+            {
+              "cd": 100
+            },
+            {
+              "cd": 90
+            },
+            {
+              "cd": 80
+            },
+            {
+              "cd": 70,
+              "shield": true
+            }
           ]
         },
         {
@@ -1751,6 +1782,26 @@ window.CANTORI_DATA = {
               "spin",
               "max"
             ]
+          ],
+          "kind": "spinsmite",
+          "ranks": [
+            {
+              "range": 2,
+              "cd": 100
+            },
+            {
+              "range": 3,
+              "cd": 100
+            },
+            {
+              "range": 3,
+              "cd": 90
+            },
+            {
+              "range": 4,
+              "cd": 90,
+              "killCd": 10
+            }
           ]
         },
         {
@@ -1784,7 +1835,35 @@ window.CANTORI_DATA = {
             "Heals for (VIT + STR) + twice your character level."
           ],
           "req": [],
-          "minLevel": 15
+          "minLevel": 15,
+          "kind": "selfheal",
+          "ranks": [
+            {
+              "cd": 200,
+              "mp": 15,
+              "vit": 1
+            },
+            {
+              "cd": 200,
+              "mp": 15,
+              "vit": 1,
+              "str": 1
+            },
+            {
+              "cd": 200,
+              "mp": 15,
+              "vit": 1,
+              "str": 1,
+              "lvl": 1
+            },
+            {
+              "cd": 200,
+              "mp": 15,
+              "vit": 1,
+              "str": 1,
+              "lvl": 2
+            }
+          ]
         }
       ]
     },
