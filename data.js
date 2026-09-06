@@ -12,7 +12,7 @@ window.CANTORI_DATA = {
       "ac": 13,
       "atkMin": 1,
       "atkMax": 4,
-      "toHit": 1
+      "toHit": 0
     },
     "bat": {
       "name": "Bat",
@@ -24,7 +24,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "atkMin": 1,
       "atkMax": 4,
-      "ac": 15,
+      "ac": 17,
       "toHit": 1
     },
     "snake": {
@@ -56,7 +56,6 @@ window.CANTORI_DATA = {
     },
     "wolf": {
       "name": "Wolf",
-      "toHit": 0,
       "glyph": "W",
       "color": "#9aa0a8",
       "hp": 16,
@@ -64,7 +63,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "minFloor": 2,
       "atkMin": 2,
-      "ac": 14
+      "ac": 14,
+      "toHit": 1
     },
     "bee": {
       "name": "Bee",
@@ -86,7 +86,6 @@ window.CANTORI_DATA = {
       "name": "Bear",
       "hp": 35,
       "atkMin": 2,
-      "atkMax": 4,
       "toHit": 4,
       "ac": 12,
       "charge": true,
@@ -94,7 +93,8 @@ window.CANTORI_DATA = {
       "color": "#8a6a44",
       "speed": 1,
       "minFloor": 4,
-      "walkSpeed": 1
+      "walkSpeed": 1,
+      "atkMax": 8
     },
     "harpy": {
       "name": "Harpy",
@@ -421,27 +421,10 @@ window.CANTORI_DATA = {
       },
       "glyph": "/",
       "color": "#cccccc",
-      "dmgMin": 4,
-      "speed": 0.9,
-      "toHit": -5,
-      "rarity": 25
-    },
-    "spear": {
-      "cat": "weapon",
-      "sub": "spear",
-      "name": "Spear",
-      "dmgMin": 2,
-      "dmgMax": 6,
-      "speed": 0.9,
-      "tier": 1,
-      "req": {
-        "STR": 8
-      },
-      "range": 2,
-      "glyph": "/",
-      "color": "#c8b890",
-      "toHit": 1,
-      "rarity": 10
+      "rarity": 25,
+      "dmgMin": 0,
+      "speed": 1,
+      "toHit": -2
     },
     "bow": {
       "cat": "weapon",
@@ -494,46 +477,46 @@ window.CANTORI_DATA = {
       "sub": "light",
       "name": "Cloth armor",
       "defMin": 0,
-      "defMax": 4,
       "tier": 2,
       "rarity": 28,
       "glyph": "[",
       "color": "#8fd6a8",
       "int": 2,
-      "mp": 8
+      "mp": 8,
+      "defMax": 3
     },
     "refined_robe": {
       "cat": "armor",
       "sub": "light",
       "name": "Refined robe",
       "defMin": 1,
-      "defMax": 7,
       "tier": 3,
       "rarity": 18,
       "glyph": "[",
       "color": "#8fd6a8",
       "int": 3,
-      "mp": 12
+      "mp": 12,
+      "defMax": 5
     },
     "mages_robe": {
       "cat": "armor",
       "sub": "light",
       "name": "Mages robe",
       "defMin": 2,
-      "defMax": 11,
       "tier": 4,
       "rarity": 10,
       "glyph": "[",
       "color": "#8fd6a8",
       "int": 4,
-      "mp": 17
+      "mp": 17,
+      "defMax": 8
     },
     "threads_of_fate": {
       "cat": "armor",
       "sub": "light",
       "name": "Threads of fate",
       "defMin": 3,
-      "defMax": 17,
+      "defMax": 13,
       "tier": 5,
       "rarity": 4,
       "glyph": "[",
@@ -545,138 +528,138 @@ window.CANTORI_DATA = {
       "cat": "armor",
       "sub": "medium",
       "name": "Padded jerkin",
-      "defMin": 1,
       "defMax": 3,
       "tier": 1,
       "rarity": 40,
       "glyph": "[",
-      "color": "#c9a86a"
+      "color": "#c9a86a",
+      "defMin": 0
     },
     "studded_leather": {
       "cat": "armor",
       "sub": "medium",
       "name": "Studded leather",
-      "defMin": 2,
-      "defMax": 6,
       "tier": 2,
       "rarity": 28,
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
         "STR": 2
-      }
+      },
+      "defMin": 1,
+      "defMax": 5
     },
     "scale_hauberk": {
       "cat": "armor",
       "sub": "medium",
       "name": "Scale hauberk",
-      "defMin": 3,
-      "defMax": 10,
       "tier": 3,
       "rarity": 18,
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
         "STR": 4
-      }
+      },
+      "defMin": 2,
+      "defMax": 8
     },
     "elven_mail": {
       "cat": "armor",
       "sub": "medium",
       "name": "Elven mail",
-      "defMin": 5,
-      "defMax": 16,
       "tier": 4,
       "rarity": 10,
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
         "STR": 6
-      }
+      },
+      "defMin": 3,
+      "defMax": 13
     },
     "windwoven_coat": {
       "cat": "armor",
       "sub": "medium",
       "name": "Windwoven coat",
-      "defMin": 7,
-      "defMax": 24,
+      "defMax": 21,
       "tier": 5,
       "rarity": 4,
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
         "STR": 8
-      }
+      },
+      "defMin": 4
     },
     "rusted_mail": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Rusted mail",
-      "defMin": 2,
       "defMax": 5,
       "tier": 1,
       "rarity": 40,
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 4
-      }
+        "STR": 12
+      },
+      "defMin": 0
     },
     "chainmail": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Chainmail",
-      "defMin": 4,
       "defMax": 9,
       "tier": 2,
       "rarity": 28,
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 6
-      }
+        "STR": 14
+      },
+      "defMin": 1
     },
     "banded_plate": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Banded plate",
-      "defMin": 6,
       "defMax": 15,
       "tier": 3,
       "rarity": 18,
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 8
-      }
+        "STR": 16
+      },
+      "defMin": 2
     },
     "knights_plate": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Knight's plate",
-      "defMin": 9,
       "defMax": 23,
       "tier": 4,
       "rarity": 10,
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 10
-      }
+        "STR": 18
+      },
+      "defMin": 3
     },
     "adamant_bulwark": {
       "cat": "armor",
       "sub": "heavy",
       "name": "Adamant bulwark",
-      "defMin": 13,
       "defMax": 34,
       "tier": 5,
       "rarity": 4,
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 12
-      }
+        "STR": 20
+      },
+      "defMin": 4
     }
   },
   "loot": {
@@ -1192,11 +1175,11 @@ window.CANTORI_DATA = {
     "piper": {
       "arena": "ring",
       "name": "The Pied Piper",
-      "atkMin": 6,
       "atkMax": 10,
       "hp": 200,
       "ac": 14,
-      "toHit": 5
+      "atkMin": 2,
+      "toHit": 3
     },
     "golem": {
       "arena": "hall",
@@ -2065,7 +2048,7 @@ window.CANTORI_DATA = {
               "minLevel": 5
             },
             {
-              "mpRegen": 1.0,
+              "mpRegen": 1,
               "minLevel": 10
             }
           ],
