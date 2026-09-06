@@ -1155,3 +1155,42 @@ Ordinary floors now get the same treatment: if the exit is unreachable once
 everything is placed, carve a corridor to it. Carving is always available where
 removing terrain is not. Verified across those 14,000 floors — the backstop fired
 twice and **not one floor ended unreachable**.
+
+## STR is rolled into the swing, not added to it — DONE
+
+`strBonus()` was a flat `mod(STR)`, so a high-STR character's damage was a
+dependable number with the weapon's dice wobbling on top. Every swing now rolls
+`randInt(floor(mod/2), mod)` — half the modifier to all of it.
+
+The reasoning: this game gives you **one attack per turn**. D&D spreads a big
+modifier over several attacks, which is where its variance comes from; without
+multiattack that spread has to live inside the single swing instead.
+
+Measured, white sword (2–6), crit-free:
+
+| level | mod | before | after | spread |
+|---|---|---|---|---|
+| 1 | +2 | 4–8 | **3–8** | 4 → 5 |
+| 10 | +5 | 7–11 | **4–11** | 4 → 7 |
+| 25 | +8 | 10–14 | **6–14** | 4 → 8 |
+
+The **ceiling never moves**. Only the floor drops, so your best hits are exactly
+what they were and your worst are worse — variance bought without touching the top
+end. Average falls about 8% at level 1 and 17% by level 25.
+
+Negative modifiers are ordered through min/max so they read as "small penalty to
+large" (at −3, that is −3…−2) rather than inverting into an empty range. The Atk
+readout moves both ends, so the pack header shows the real spread instead of a fixed
+band shifted sideways.
+
+### A blow that healed the monster
+
+Found while checking the negative case. The player's outgoing damage had **no floor**
+— the incoming path has had `Math.max(1, …)` forever, the outgoing one never did. At
+STR 4 with a weak weapon every blow landed on zero or below, and a negative would
+have been *subtracted from* the target's HP loss, healing it.
+
+Reachable, not theoretical: Ourn's Pride takes a point off every stat every 15 kills
+"with no floor". Rolling STR lowers the bottom end, which is what brought it within
+reach rather than leaving it a curiosity. Outgoing damage is now floored at 1 like
+everything else, and the Atk readout clamps to match rather than promising a negative.

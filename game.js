@@ -144,7 +144,18 @@
   // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
   // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
   // weapon you do not meet, so there is nothing left for the damage formula to gate.
-  const strBonus = () => mod("STR");
+  // STR is ROLLED into a swing, not added flat: every blow gets somewhere between
+  // half the modifier and all of it. Same scaling shape, much wider spread — which
+  // is what a game with one attack per turn has instead of D&D's multiattack, and
+  // it stops a high-STR character's damage from being a single predictable number.
+  //
+  // Ordered through min/max so a NEGATIVE modifier still reads as "between the small
+  // penalty and the large one" instead of inverting into an empty range: at mod −3
+  // that is −3…−2, not −2…−3.
+  const strBonus = () => mod("STR");                    // the modifier itself
+  const strDmgLo = () => Math.min(Math.floor(strBonus() / 2), strBonus());
+  const strDmgHi = () => Math.max(Math.floor(strBonus() / 2), strBonus());
+  const strDmgRoll = () => randInt(strDmgLo(), strDmgHi());
   // Stat requirements (e.g. armor/weapon req.STR) gate whether a piece can be
   // equipped at all — met once every listed stat is at or above its threshold.
   const gearReqUnmet = (inst) => {
@@ -2644,7 +2655,13 @@
         log("Your blow slides off the " + monName(target) + " — the hex holds.", "hurt");
         return;
       }
-      let dmg = randInt(weaponDmgMin(), weaponDmgMax()) + strBonus() + player.atkBonus + bonus + passiveMod("dmg");
+      // Floored at 1, the same way an incoming blow is. A connecting hit that deals
+      // nothing is odd; one that deals a NEGATIVE and heals the monster is a bug, and
+      // it was reachable — Ourn's Pride takes a point off every stat every 15 kills
+      // "with no floor", so a low-STR character on a weak weapon really could get
+      // there. Rolling STR rather than adding it flat lowers the bottom end, which
+      // is what brought this within reach rather than merely theoretical.
+      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg"));
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
@@ -5321,8 +5338,12 @@
     toggleFountain(false);
   }
   function playerAtk() {
-    const b = strBonus() + player.atkBonus;
-    return (weaponDmgMin() + b) + "–" + (weaponDmgMax() + b);
+    // Both ends move: the low end takes STR's low roll, the high end its high roll,
+    // so the number on the pack header is the real spread rather than the old flat
+    // band shifted sideways.
+    const lo = Math.max(1, weaponDmgMin() + strDmgLo() + player.atkBonus);
+    const hi = Math.max(lo, weaponDmgMax() + strDmgHi() + player.atkBonus);
+    return lo + "–" + hi;   // clamped to match the floor the swing itself has
   }
   // A colored, affix-annotated label for an equipped/carried gear instance.
   function equipLabel(inst) {
@@ -6588,7 +6609,7 @@
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
-    const effDesc = { STR: "+" + strBonus() + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC() + (evasionPoints() > 0 ? " / dodge " + Math.round(dodgeChance() * 100) + "%" : ""), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    const effDesc = { STR: (strDmgLo() === strDmgHi() ? sgnNum(strDmgLo()) : sgnNum(strDmgLo()) + "–" + strDmgHi()) + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC() + (evasionPoints() > 0 ? " / dodge " + Math.round(dodgeChance() * 100) + "%" : ""), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
     // The modifier is what every formula actually reads, so it is what the screen
     // leads with — the raw score is shown beside it, not instead of it.
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {

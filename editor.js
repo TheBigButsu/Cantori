@@ -1096,7 +1096,7 @@
       title: "Core stats",
       rows: [
         { name: "Ability modifier", formula: "mod(stat) = floor((eff(stat) − 10) / 2)", note: "Every formula below that reads a stat (STR, INT, VIT, DEX, RES, LCK) means this — base roll plus whatever's added by worn gear. INT also adds the Guild's Scribe's Intellect bonus and STR the Blacksmith's Arm bonus (both: round-to-nearest-0.5 of Σ(item's +X × rarity quality mult) across worn gear — white ×1, green ×1.5, blue ×2, purple ×3, gold ×5) when those boons are held." },
-        { name: "STR → damage", formula: "strBonus = mod(STR)", note: "Flat bonus added to every weapon hit. It no longer subtracts the weapon's STR requirement — stat requirements already hard-gate equipping, so the damage formula was charging for the same thing twice." },
+        { name: "STR → damage", formula: "every swing rolls randInt(floor(mod(STR) / 2), mod(STR)) — half the modifier to all of it", note: "ROLLED, not flat. A game with one attack per turn has no multiattack to spread its damage over, so the spread lives inside the single swing instead: at mod +8 that is 4–8 rather than a dependable 8. The ceiling is unchanged and the floor drops, so your best hits stay the same and your worst get worse. Ordered through min/max so a NEGATIVE modifier reads as \"small penalty to large\" (at −3, that is −3…−2) instead of inverting into an empty range. It does not subtract the weapon's STR requirement — equipping already hard-gates that, and charging twice was double-counting." },
         { name: "Stat requirements", formula: "every stat in an item's `req` (Gear tab) must be met by eff(stat) or it can't be equipped at all", note: "A hard gate, not a soft penalty — e.g. Chain Mail's req.STR 15 blocks equipping below 15 STR outright." },
         { name: "VIT → HP", formula: "+mod(VIT) max HP per CHARACTER LEVEL", note: "Applied per level the way 5e adds CON to every hit die — otherwise a +2 modifier would be worth 2 HP for the whole run." },
         { name: "DEX → to-hit/AC/crit", formula: "+mod(DEX) to-hit, +mod(DEX) AC (capped by armour subtype), +mod(DEX)% crit chance", note: "Light armour lets the whole modifier through, medium caps it at +2, heavy takes none." },
@@ -1133,7 +1133,8 @@
       title: "Damage — you hitting a monster",
       rows: [
         { name: "Weapon roll", formula: "random(weapon's dmg min, weapon's dmg max)", note: "Unarmed: 2–3, boosted by Brynn's Unarmed Master while no weapon is equipped." },
-        { name: "Total damage", formula: "total = weapon roll + strBonus + skill bonus (Smite/Rush/etc.) + flat passive bonus (Sword Master, etc.)", note: "" },
+        { name: "Total damage", formula: "total = max(1, weapon roll + STR roll + skill bonus (Smite/Rush/etc.) + flat passive bonus)", note: "Floored at 1, the same way an incoming blow is. A connecting hit that deals nothing is odd; one that deals a negative and HEALS the target is a bug — and it was reachable, because Ourn's Pride takes a point off every stat every 15 kills with no floor." },
+        { name: "What the Atk readout shows", formula: "weapon min + STR roll's low end … weapon max + STR roll's high end, low end clamped to 1", note: "Both ends move, so the pack header shows the real spread rather than a fixed band shifted sideways. At level 25 a warrior with a plain sword reads 6–14; the same character before STR was rolled read 10–14." },
         { name: "Surprise attack", formula: "no damage bonus — guaranteed hit (no d20 roll) against a target that hasn't noticed you", note: "Purely a free hit, not extra damage — flags 'aware' true on the target either way." },
         { name: "Critical hit", formula: "total × critMult", note: "" },
       ],
