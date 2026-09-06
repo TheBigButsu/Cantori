@@ -582,20 +582,19 @@
     wrap.appendChild(inp);
     return wrap;
   }
-  // How this biome's floors are SHAPED. Packed into one field the way terrain is:
-  // "roomSideMin,roomSideMax,roomAreaMax,attachPct,hallLegMax,sarcophagusPct".
-  // Blank deletes the block, and the generator falls back to the numbers it used
-  // before per-biome layout existed (4,9,60,30,6,0).
-  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "hallLegMax", "sarcophagusPct"];
+  // How this biome's floors are SHAPED. Packed into one field the way terrain is,
+  // in LAYOUT_KEYS order. Blank deletes the block and the biome uses the defaults
+  // (3,8,56,55,70,6,265,0) — which are Shattered Pixel Dungeon's measured shape.
+  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "attachCap", "hallLegMax", "roomTarget", "sarcophagusPct"];
   function layoutField(b) {
     const wrap = document.createElement("label"); wrap.className = "bfield";
     const span = document.createElement("span");
-    span.textContent = "layout (room side min,max, area max, attach %, hall leg max, sarcophagus %)";
+    span.textContent = "layout (side min,max · area max · attach % · attach cap % · hall leg max · room target · sarcophagus %)";
     wrap.appendChild(span);
     const inp = document.createElement("input"); inp.type = "text";
     const L = b.layout;
     inp.value = L ? LAYOUT_KEYS.map((k) => (L[k] != null ? L[k] : "")).join(",") : "";
-    inp.placeholder = "6,13,120,0,14,55";
+    inp.placeholder = "3,8,56,55,70,6,265,0";
     inp.oninput = () => {
       const v = inp.value.trim();
       if (v === "") { delete b.layout; return; }
@@ -1152,19 +1151,23 @@
       rows: [
         { name: "Weapon +X", formula: "dmg min += (tier − 1) × plus,  dmg max += tier × 2 × plus", note: "Higher-tier gear scales much harder per point of +X." },
         { name: "Armour +X", formula: "mit min += floor((plus + 1) / 2),  mit max = min(2 × base max, base max + plus)", note: "The OPPOSITE shape to a weapon's. A weapon's +X opens its top end; armour's raises the floor fast and the ceiling slowly, and the ceiling can at most double. Upgrading armour should make it dependable, not spiky — a +3 tier-1 robe is a reliable 2–4, not a wild 0–8." },
+        { name: "Stat affix +X", formula: "each stat affix gives  item tier + triangular(plus),  where triangular(n) = n(n+1)/2", note: "TRIANGULAR, not flat: +1 adds 1, +2 adds 3, +3 adds 6, +4 adds 10. So a tier-1 affix reads +1 / +2 / +4 / +7 / +11 across +0…+4 — upgrade scrolls are worth far more to a stat affix than to the base item. This is also the one the item card got wrong for a long time: it printed a flat `plus` and so under-reported every item from +2 up." },
       ],
     },
     {
       title: "Enchants",
       rows: [
-        { name: "Proc chance", formula: "proc = enchant's own % (Enchants tab) + eff(LCK) / 100", note: "Passive always-on effects (Defense, Speed) are typically authored at 100% proc." },
-        { name: "Tiered value lookup", formula: "tierValues[clamp(1, 5, item's gear tier) − 1]", note: "Any enchant with a `tierValues` array (5 numbers) on the Enchants tab reads its number from the TIER of the item carrying it — an untiered item counts as tier 1. Falls back to the effect's flat legacy field if `tierValues` is absent." },
+        { name: "Proc chance", formula: "proc = enchant's own % (Enchants tab) + max(0, mod(LCK)) × 3%", note: "Driven by the LUCK MODIFIER, not the raw stat, and never negative — at LCK 10 that is +0%, at LCK 16 it is +9%. (This row read \"eff(LCK) / 100\" until the D&D migration was chased through it; that claimed +10% at LCK 10, which was never what the code did.) Passive always-on effects (Defense, Speed) are typically authored at 100% proc." },
+        { name: "Affixes per rarity", formula: "white: none · green: 1 stat · blue: 1 stat + 1 enchant · purple: 1 stat + 1 enchant, then 75% a 2nd stat else a 2nd enchant · gold: 2 stats + 2 enchants", note: "Both pools are drawn WITHOUT replacement, so an item never carries the same enchant or the same stat twice. That matters because a duplicate is not cosmetic: two of an enchant each roll their own proc, and two of a stat each add triangular(plus). Weapons have only three eligible enchants, so before this a gold or two-enchant purple weapon doubled up about a third of the time. If a category has fewer distinct enchants than the rarity asks for, the extra becomes a stat instead so the item still carries as many properties." },
+        { name: "Which enchants an item can roll", formula: "every enchant whose `slots` list includes the item's cat (an enchant with no `slots` fits everything)", note: "Today that is 3 for weapons, 4 for armour, 5 for rings, 2 for trinkets, 5 for necklaces. Keep an eye on the small pools — a category with fewer eligible enchants than a gold roll wants will start substituting stats." },
+        { name: "Tiered value lookup", formula: "tierValues[clamp(1, 5, item's gear tier) − 1]", note: "Any enchant with a `tierValues` array (5 numbers) on the Enchants tab reads its number from the TIER of the item carrying it — an untiered item counts as tier 1. Falls back to the effect's flat legacy field if `tierValues` is absent. This is now true of all seven: Burn, Shock and Thorns each carried a tierValues array that nothing read, so a tier-5 Flaming weapon burst for exactly the same as a tier-1. They honour it now, which is a real power increase at the top tiers — if the arrays are too steep, they are on the Enchants tab." },
         { name: "Poison", formula: "dose = round(weapon power × tiered %); stack += dose; each turn: hp −= stack, then stack −= 1", note: "Doses from repeated procs pile onto ONE running stack rather than layering separate timers — a big early stack keeps hurting as it winds down." },
         { name: "Defense (enchant)", formula: "armor def min += tiered amount,  armor def max += tiered amount", note: "" },
         { name: "Speed / haste", formula: "the matching speed multiplier includes (tiered value − 1) as an additive bonus", note: "Two separate kinds, and an enchant is one or the other: effect type `haste` quickens your ATTACKS, `walkHaste` quickens your WALK. A tiered value of 1.8 alone means ×1.8 on that axis only. Multiple sources stack additively; Ourn's boons are the one thing that counts toward both." },
-        { name: "Burn", formula: "instant burst = power × burstMult (0.5 default); DOT = ceil(burst / 2) per turn for dotTurns (3 default)", note: "Refreshes to the newest proc rather than stacking — only one burn timer at a time." },
-        { name: "Shock", formula: "instant burst = power × burstMult (1.0 default); stun chance = (burst × stunPer (0.1 default)) / monster level", note: "" },
-        { name: "Thorns", formula: "reflect = round(incoming damage × mult (0.5 default))", note: "Fires back at whatever just hit you." },
+        { name: "Burn", formula: "instant burst = power × tiered value (burstMult, 0.5, when untiered); DOT = ceil(burst / 2) per turn for dotTurns (3 default)", note: "Refreshes to the newest proc rather than stacking — only one burn timer at a time." },
+        { name: "Shock", formula: "instant burst = power × tiered value (burstMult, 1.0, when untiered); stun chance = (burst × stunPer (0.1 default)) / monster level", note: "" },
+        { name: "Thorns", formula: "reflect = round(incoming damage × tiered value (mult, 0.5, when untiered))", note: "Fires back at whatever just hit you." },
+        { name: "What the item card shows", formula: "Defense prints \"+N\" (flat mitigation); every other enchant prints \"×N\"", note: "N is the tiered value for the item's own tier, so the same enchant reads differently on a tier-1 and a tier-5 piece — which is the whole point, and was invisible while the card printed only the name." },
       ],
     },
     {
@@ -1175,6 +1178,15 @@
         { name: "Every other action", formula: "1, flat", note: "A potion, a scroll, equipping, a skill, waiting. Neither haste shortens these, so consumables always cost real tempo." },
         { name: "Monster eligibility", formula: "spawns when its biome is active AND minFloor <= current depth", note: "minFloor is an absolute depth (the floor number in the HUD), not a 1–5 position within the biome. Blank disables the monster entirely." },
         { name: "Monster actions", formula: "banks your action's cost each turn, acts while it holds ≥ 1, and each action costs 1 / (walk speed) if it stepped or 1 / (attack speed) otherwise — capped at 2 actions", note: "walk/attack speed each fall back to the row's `speed` when blank, so setting only `speed` gives one figure for everything. 1.2 on an axis means a double-action every 5th turn on that axis; 0.8 means skipping one in 5. Halving your own cost halves what every monster banks — that IS haste." },
+      ],
+    },
+    {
+      title: "How many monsters a floor holds",
+      rows: [
+        { name: "At floor start", formula: "biome.spawnInitial (a number, or one per floor like 3,5,5,5); blank = min(9, 3 + depth / 2)", note: "Compare Shattered Pixel Dungeon, whose mobLimit() is 3 + depth%5 + Random.Int(3) — 4 to 9 across a chapter, averaging 6. Every monster starts ASLEEP." },
+        { name: "Placement", formula: "a random room (never the one you start in), then a 25% chance of a SECOND monster in that same room", note: "Straight from SPD's createMobs, which rolls Random.Int(4) for a second mob after each placement. Scattering N monsters one-per-room gives N thin moments; letting a quarter double up gives fewer moments, but some of them are a pair — and a pair is a fight where a lone sleeper is a chore. It lands about 45% of occupied rooms holding two or more." },
+        { name: "Respawn", formula: "every spawnEvery turns, if the floor holds fewer than spawnCap, one more arrives out of sight and at least 6 tiles away", note: "SPD's TIME_TO_RESPAWN is 50 turns, which is what every biome now uses. Before this only the forest had a respawn at all, so the other four cleared out and stayed cleared — with a 1000-turn floor clock, the back half of a visit was played on an empty map. Caps run 8 / 10 / 10 / 11 / 12 by biome." },
+        { name: "Where a respawn may appear", formula: "a random floor tile that is not currently visible to you and at least 6 tiles away", note: "Never in sight — a monster blinking into existence in front of you reads as a bug, not a reinforcement." },
       ],
     },
     {
@@ -1195,8 +1207,9 @@
     {
       title: "Floor shape (per biome)",
       rows: [
-        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 4 / 9 / 60 — the numbers the generator used before biomes could shape their own floors. The crypt runs 6 / 13 / 120 for genuinely big chambers." },
-        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, capped at half the rooms", note: "0 means every room is reached down a hallway, which is what makes a biome read as corridors rather than a warren." },
+        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 3 / 8 / 56, giving a mean room of ~30 tiles. That is Shattered Pixel Dungeon's shape read off its source: an SPD standard room is SizeCategory.NORMAL with outer dim 4–10, and Painter.fill insets 1, so its interior is 2×2 to 8×8 — about 25 tiles. The crypt overrides this at 6 / 13 / 120 for deliberately big chambers." },
+        { name: "Room count", formula: "rooms are laid until their total floor reaches roomTarget (default 265), hard-capped at 22", note: "roomTarget ÷ average room size IS the room count — about 9–10 at the defaults, against SPD's ~10 on an equivalent floor. The number of ROOMS is what a floor feels like, because each one is an encounter: the same total floor divided into half as many rooms plays as half as much game." },
+        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, up to attachCap % of all rooms", note: "Defaults 55% / 70% cap, which lands around 60% attached in practice — that shared-wall packing is how SPD's builder fits almost a whole floor together, and it is the difference between a warren and a scatter of chambers on the ends of hallways. 0 means every room is reached down a hall (what the crypt authors)." },
         { name: "Hall length", formula: "a corridor leg runs randInt(3, hallLegMax) tiles before it must bend", note: "The path still alternates axes after every leg — this only sets how far a straight run may go first. Default 6; the crypt runs 14." },
         { name: "Pillars", formula: "a room over 20 tiles gets 1 + (area − 21) / 5 obstacle pillars, capped at 12, each reverted if it would strand any room", note: "The cap exists because the uncapped formula turns a 12×10 crypt hall into twenty obstacles. The reachability check is CLAUDE.md rule 5 applied to the pass that used to entomb bosses." },
         { name: "Sarcophagi", formula: "sarcophagusPct of a room's pillars are DRAWN as stone coffins", note: "Not a new tile: a sarcophagus is a pillar, so it is already solid, sight-blocking and correct in every map predicate. This is only how it is painted (and what Examine calls it)." },
@@ -1205,7 +1218,7 @@
     {
       title: "Monster AI & doors",
       rows: [
-        { name: "Sight", formula: "sees you within 8 tiles AND has line of sight", note: "A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
+        { name: "Sight", formula: "sees you within 6 tiles AND has line of sight — the SAME 6 tiles you see", note: "Deliberately tied to the player's own sight rather than authored separately. The ambush (creep up on a sleeper, strike first, guaranteed hit) only works while neither side sees further than the other; a monster with the longer eyes opens every fight already awake, walking out of a dark you cannot see into. A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
         { name: "Hunting", formula: "in sight → moves straight toward you, refreshing its last-known-position trail every turn", note: "" },
         { name: "Tracking", formula: "out of sight but has a trail → walks to your last known position", note: "It doesn't forget the instant it loses sight — it commits to the spot it saw you last, right through a door or bush along the way." },
         { name: "Searching", formula: "reaches the last known spot, you're not there → 4 turns poking around a random nearby tile before giving up", note: "Mirrors Shattered Pixel Dungeon's Hunting → searching Wandering → idle Wandering chain." },
@@ -1264,6 +1277,16 @@
       rows: [
         { name: "Uses needed", formula: "idNeed = round((tier + plus) × (random 1–10 + rarity rank) × 0.5)", note: "Rarity rank: white 1, green 2, blue 3, purple 4, gold 5. A USE is one swing of that weapon, or one hit taken while wearing that armor — not one turn. So a tier-1 white runs 1–6 uses, a tier-3 blue 6–20, a tier-5 gold +2 21–52. The ×0.5 is the dial; it was ×3, which put an ordinary blue at ~76 connecting blows and meant most gear was replaced before it was ever identified. A plain white item with no plus/stats/enchants starts already identified." },
         { name: "Progress", formula: "gains idXp on use/hits; identified once idXp ≥ idNeed", note: "" },
+        { name: "Potions and scrolls", formula: "each key is dealt a random look for the run — potions a shade + colour, scrolls a rune title + wax-seal colour", note: "Consumables are identified by USE, not by wear, so the look is the only way to tell two unknowns apart. Scrolls had no look at all until now: every unidentified scroll read \"Unidentified Scroll\" on the same parchment, so two DIFFERENT scrolls were indistinguishable — which reads as identical scrolls refusing to stack. (Same-key consumables have always stacked into one slot and still do; the count sits in the slot's corner.) Two items showing the same shade or the same title really are the same item." },
+      ],
+    },
+    {
+      title: "What a floor puts on the ground",
+      rows: [
+        { name: "Random drops", formula: "2–4 per floor (+1 at a 10% chance per drop), split by loot.dropWeights between gold / gear / consumable — NONE on a boss floor", note: "A boss arena gets no scattered loot: the fight is the floor, and gold and gear round the edges only pull you off it. The boss pays out properly on death instead." },
+        { name: "Guaranteed, every floor", formula: "1 Potion of Insight (a skill point)", note: "noDrop, so this placement is its only source. It lands on boss floors too — the arena is not empty, it is just not littered." },
+        { name: "Guaranteed, per biome", formula: "2 Scrolls of Upgrade, on 2 of the biome's 5 floors, picked once on entering it", note: "Also noDrop. Picked across all five floors including the boss floor, so skipping boss floors entirely would silently cost the biome a scroll." },
+        { name: "On a boss's death", formula: "3 Potions of Insight, a blue-or-better trinket, and a weapon + armour + ring/necklace rolled at depth + 10", note: "" },
       ],
     },
     {
@@ -1785,7 +1808,7 @@
   }
   function jsonHint(coll) {
     return ({
-      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them. layout is \"roomSideMin,roomSideMax,roomAreaMax,attachPct,hallLegMax,sarcophagusPct\" and shapes the floors themselves: room width is drawn from (sideMin+1 … sideMax) and height from (sideMin … sideMax−1) under the area cap, attachPct is the share of rooms placed flush against another with only a doorway between (0 = every room is down a hall), hallLegMax is the longest straight run a corridor may take before it must bend, and sarcophagusPct is the share of a room's obstacle pillars painted as sarcophagi. Blank = the old defaults, 4,9,60,30,6,0.",
+      biomes: "Ordered list of the 5 biomes. Each: key, name, floor/wall sprite names, monsters (keys), boss (a bosses key), optional bossCount, spawnInitial/spawnEvery/spawnCap, exitSprite, door (\"bush\"/\"door\"), horror + horrorName, final. The exit always sits embedded in a wall, on every biome — that's not configurable here. Terrain (water/grass/rubble) fields are \"countMin,countMax,sizeMin,sizeMax\" — blank disables that kind; water and rubble cost double to cross, grass hides monsters until you're beside them. layout is \"sideMin,sideMax,areaMax,attachPct,attachCap,hallLegMax,roomTarget,sarcophagusPct\" and shapes the floors themselves: room width is drawn from (sideMin+1 … sideMax) and height from (sideMin … sideMax−1) under the area cap; attachPct is the share of rooms placed flush against another with only a doorway between (0 = every room is down a hall) and attachCap the ceiling on those as a % of all rooms; hallLegMax is the longest straight run a corridor may take before it must bend; roomTarget is how much room floor to lay down before stopping, so roomTarget ÷ average room size IS the room count; sarcophagusPct is the share of a room's obstacle pillars painted as sarcophagi. Blank = the defaults 3,8,56,55,70,6,265,0, which match Shattered Pixel Dungeon's measured shape (~10 rooms averaging ~30 tiles). spawnEvery/spawnCap are the respawn drip: one monster every N turns while the floor holds fewer than the cap.",
       classes: "Player classes and their starting kit + skill trees. Edited as JSON for now (nested structure).",
       loot: "Rarity table, stat pool, and tier-by-floor bands. dropWeights = the gold/gear/consumable split of a floor's random drops (favour gear so weapons aren't drowned out). categoryWeights = odds of each gear slot (no trinket — trinkets are boss-only). trinketRarity = the blue/purple/gold floor for boss trinkets. (Enchants have their own tab.)",
       stats: "Design reference for the six stats (display only).",

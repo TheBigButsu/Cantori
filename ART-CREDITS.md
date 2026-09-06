@@ -22,8 +22,20 @@ the credit above covers it either way.
 Five of the crypt's monsters have no counterpart in the DCSS tileset, so their
 sprites were drawn for Cantori rather than borrowed:
 
-- `red_slime.png`, `black_slime.png`, `hollow_acolyte.png`, `brute.png`,
-  `hollow_bard.png`
+- Crypt monsters: `red_slime.png`, `black_slime.png`, `hollow_acolyte.png`,
+  `brute.png`, `hollow_bard.png`
+- Weapons: `Axe.png`, `big axe.png`, `spear.png`, `bow.png`, `Shitty_sword.png`
+- Light armour: `grass_armor.png`, `cloth_armor.png`, `refined_robe.png`,
+  `mages_robe.png`, `threads_of_fate.png`
+- Medium armour: `padded_jerkin.png`, `studded_leather.png`, `scale_hauberk.png`,
+  `elven_mail.png`, `windwoven_coat.png`
+- Heavy armour: `rusted_mail.png`, `chainmail.png`, `banded_plate.png`,
+  `knights_plate.png`, `adamant_bulwark.png`
+
+The armour sets deliberately share one silhouette per subtype — a hooded robe for
+light, a sleeveless jerkin for medium, a pauldroned breastplate for heavy — and
+differ by palette and surface detail (quilting, studs, scales, mail, bands). A tier
+should read as the same piece of kit made better, not as a different object.
 
 They are original work and are released into the **public domain (CC0 1.0)**, on
 the same terms as the DCSS art beside them, so nothing about the project's

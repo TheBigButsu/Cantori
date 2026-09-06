@@ -21,8 +21,13 @@
   // ---- Map model -----------------------------------------------------------
   const MAP_W = 47;         // a sprawling floor (~15% less area than the old 51×51)
   const MAP_H = 47;         // joined by narrow, winding 1-wide hallways between chambers
-  const FOV_RADIUS = 8;     // max line of sight: you see 8 tiles out (walls/closed
-                            // doors block); rooms reveal as you move into them
+  const FOV_RADIUS = 6;     // max line of sight: you see 6 tiles out (walls/closed
+                            // doors block); rooms reveal as you move into them.
+                            // It was 8, which is a whole ordinary room — you stood in
+                            // the doorway, saw every sleeper in the chamber, and had
+                            // resolved the encounter before entering it. At 6 a room
+                            // has to be walked into, and a big one still has corners
+                            // you have not looked at.
   // What sight actually asks for. FOV_RADIUS stays the constant it always was —
   // this is the one place the Hollow Bard's Blind gets to halve it, so nothing has
   // to remember to check the status separately. Floored at 2: a blind player who
@@ -614,13 +619,30 @@
     const g = GEAR[inst.key];
     if (g.cat === "weapon") {   // base weapon feel is intrinsic — always shown
       if (g.speed != null && g.speed !== 1) parts.push("spd " + g.speed);
-      if (g.accuracy) parts.push("acc " + (g.accuracy > 0 ? "+" : "") + g.accuracy);
+      // `accuracy` has not existed on a gear row since the d20 migration; this
+      // read silently showed nothing for every weapon, including the ones whose
+      // to-hit is the most important thing about them (dagger +3, bow −3, axe −5).
+      if (g.toHit) parts.push("to hit " + (g.toHit > 0 ? "+" : "") + g.toHit);
     }
     if (!itemIdentified(inst)) { parts.push("unidentified"); return parts.join(", "); }
     if (inst.variant === "walk") parts.push("+1 walk speed");
     else if (inst.variant === "attack") parts.push("+1 attack speed");
-    for (const s of inst.stats || []) parts.push("+" + (s.val + (inst.plus || 0)) + " " + s.stat);
-    for (const e of inst.enchants || []) { const d = LOOT.enchants[e]; parts.push((d ? d.icon + " " + d.name : e)); }
+    // Must match gStatBonus, which is triangular in `plus` — the card used a flat
+    // `plus` and so under-reported every upgraded item from +2 on (a +3 affix
+    // reads as val+3 and is really val+6).
+    for (const s of inst.stats || []) parts.push("+" + (s.val + triangular(inst.plus || 0)) + " " + s.stat);
+    // Show the NUMBER, not just the name. Every enchant's strength is read off the
+    // tier of the item carrying it, so "✦ Defense" alone told you nothing — a
+    // tier-1 Defense is +1 and a tier-5 is +8, and the card looked identical. The
+    // sign says which kind of number it is: Defense is flat mitigation added to
+    // every block, everything else multiplies something (a burst, a dose, a speed).
+    for (const e of inst.enchants || []) {
+      const d = LOOT.enchants[e];
+      if (!d) { parts.push(e); continue; }
+      const v = enchantTierValue(d, inst, null);
+      const flat = d.effect && d.effect.type === "defense";
+      parts.push(d.icon + " " + d.name + (v == null ? "" : (flat ? " +" + v : " ×" + v)));
+    }
     return parts.join(", ");
   }
 
@@ -642,16 +664,35 @@
     ["Jade", "#4fbf8f"], ["Ochre", "#c9922e"], ["Indigo", "#5b4fd0"],
     ["Charcoal", "#6a7078"],
   ];
+  // Scrolls needed the same treatment and never got it. Every unidentified scroll
+  // read "Unidentified Scroll" and drew the same parchment in the same colour, so a
+  // Scroll of Mapping and a Scroll of Teleportation sat in the pack as two slots you
+  // could not tell apart — which looks exactly like identical scrolls refusing to
+  // stack. They were never the same item; you just had no way to see that. (Two
+  // scrolls that ARE the same key have always stacked, and still do.)
+  //
+  // Rune names, because a scroll's tell is what is written on it.
+  const SCROLL_TITLES = [
+    ["Fehu", "#c9922e"], ["Uruz", "#8a5a2b"], ["Thurisaz", "#c0392b"], ["Ansuz", "#3d7fd6"],
+    ["Raido", "#2ecc71"], ["Kenaz", "#e0a838"], ["Gebo", "#9b59b6"], ["Wunjo", "#e07aa0"],
+    ["Hagalaz", "#6a7078"], ["Naudiz", "#20b2aa"], ["Isa", "#d8dce2"], ["Jera", "#4fbf8f"],
+    ["Eihwaz", "#5b4fd0"], ["Perth", "#e04a3a"], ["Algiz", "#3454c4"], ["Sowilo", "#ece0c0"],
+  ];
   const potionLook = {};   // key -> { name, color } for the current run
+  const scrollLook = {};   // ditto, for scrolls
   function assignPotionLooks() {
     for (const k of Object.keys(potionLook)) delete potionLook[k];
-    const shades = POTION_SHADES.slice();
-    for (let i = shades.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = shades[i]; shades[i] = shades[j]; shades[j] = t; }
-    let si = 0;
+    for (const k of Object.keys(scrollLook)) delete scrollLook[k];
+    const shuffled = (arr) => {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+      return a;
+    };
+    const shades = shuffled(POTION_SHADES), titles = shuffled(SCROLL_TITLES);
+    let si = 0, ti = 0;
     for (const k of Object.keys(CONSUM)) {
-      if (CONSUM[k].cat !== "potion") continue;
-      const s = shades[si % shades.length]; si++;
-      potionLook[k] = { name: s[0], color: s[1] };
+      if (CONSUM[k].cat === "potion") { const s = shades[si++ % shades.length]; potionLook[k] = { name: s[0], color: s[1] }; }
+      else if (CONSUM[k].cat === "scroll") { const t = titles[ti++ % titles.length]; scrollLook[k] = { name: t[0], color: t[1] }; }
     }
   }
   // The colour a consumable shows at: an unidentified potion wears its scrambled
@@ -660,13 +701,14 @@
     const d = CONSUM[key];
     if (!d) return "#cfc3a0";
     if (d.cat === "potion" && !identified.has(key) && potionLook[key]) return potionLook[key].color;
+    if (d.cat === "scroll" && !identified.has(key) && scrollLook[key]) return scrollLook[key].color;
     return d.color || "#cfc3a0";
   }
   function displayName(key) {
     const d = defOf(key);
     if (d.cat === "weapon" || d.cat === "armor" || d.cat === "tool" || identified.has(key)) return d.name;
     if (d.cat === "potion") return (potionLook[key] ? potionLook[key].name + " Potion" : "Unidentified Potion");
-    return "Unidentified Scroll";
+    return scrollLook[key] ? "Scroll titled \u201c" + scrollLook[key].name + "\u201d" : "Unidentified Scroll";
   }
   function weightedConsumKey() {
     const pool = CONSUM_KEYS.filter((k) => !CONSUM[k].noDrop);   // torch etc. never drop as loot
@@ -930,7 +972,17 @@
   //                    doorway between. 0 means every room is reached down a hall.
   //   hallLegMax       longest straight run a corridor may take before it must bend.
   //   sarcophagusPct   share of a room's pillars painted as sarcophagi.
-  const LAYOUT_DEFAULT = { roomSideMin: 4, roomSideMax: 9, roomAreaMax: 60, attachPct: 30, hallLegMax: 6, sarcophagusPct: 0 };
+  //   roomTarget       total room floor to lay down before stopping. Divided by the
+  //                    average room size, this IS the room count.
+  //   attachCap        ceiling on attached rooms, as a % of all rooms.
+  //
+  // The defaults are Shattered Pixel Dungeon's shape, measured from its source:
+  // a standard SPD room is SizeCategory.NORMAL, outer dim 4–10, and Painter.fill
+  // insets 1, so its INTERIOR is 2×2 to 8×8 — a mean of about 25 tiles. A Caves
+  // floor (its depth 11–15) carries ~10 rooms. Cantori was running 8 rooms of ~38,
+  // which is the same total floor divided into fewer, larger spaces — and the count
+  // of rooms is what a floor feels like, because each one is an encounter.
+  const LAYOUT_DEFAULT = { roomSideMin: 3, roomSideMax: 8, roomAreaMax: 56, attachPct: 55, attachCap: 70, hallLegMax: 6, roomTarget: 265, sarcophagusPct: 0 };
   const layoutOf = (b) => Object.assign({}, LAYOUT_DEFAULT, (b || biome || {}).layout || {});
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
@@ -1595,12 +1647,12 @@
     const bossFloor = isBossDepth(depth);
     // Keep the TOTAL room area about the same as before — the same chambers spread
     // across a big floor, joined by 1-wide winding hallways (or a shared doorway).
-    const roomTarget = 290;   // ~15% less than the old 340, matching the smaller map
+    const roomTarget = layoutOf().roomTarget;
     let roomArea = 0, guard = 0;
-    while (!bossFloor && roomArea < roomTarget && rooms.length < 16 && guard++ < 900) {
-      // Varied aspect ratios (often tall or wide) so rooms don't all read as squares,
-      // but kept to the familiar chamber size (~24–60 tiles) — bigger, arena-scale
-      // on a boss floor.
+    // 22, not 16: smaller rooms mean more of them, and the old cap silently became
+    // the binding constraint the moment the average room shrank.
+    while (!bossFloor && roomArea < roomTarget && rooms.length < 22 && guard++ < 1400) {
+      // Varied aspect ratios (often tall or wide) so rooms don't all read as squares.
       const L = layoutOf();
       let w = randInt(L.roomSideMin + 1, L.roomSideMax), h = randInt(L.roomSideMin, L.roomSideMax - 1);
       if (Math.random() < 0.4) { const t = w; w = h; h = t; }
@@ -1608,7 +1660,10 @@
       // A fraction of rooms are "attached": placed flush against another with just
       // a doorway between (no hallway). Kept under ~half so most rooms are still
       // joined by hallways; the rest are separate.
-      if (rooms.length && Math.random() * 100 < L.attachPct && attachEdges.length < rooms.length * 0.5) {
+      // An attached room shares a wall with its neighbour and opens onto it through
+      // a single doorway — which is how SPD packs almost its whole floor. Raising
+      // this is what turns a scatter of chambers joined by hallways into a warren.
+      if (rooms.length && Math.random() * 100 < L.attachPct && attachEdges.length < rooms.length * (L.attachCap / 100)) {
         const res = placeAdjacent(rooms, w, h);
         if (!res) continue;
         carveRoom(res.rect); roomArea += w * h; rooms.push(res.rect);
@@ -1829,7 +1884,13 @@
   }
 
   function spawnItems(rooms) {
-    let count = randInt(2, 4);
+    // A boss arena gets no scattered loot. The fight IS the floor: gold and gear
+    // strewn round the edges pulls you away from it, and the boss already pays out
+    // properly on death (3 Potions of Insight, a trinket and a full equipment set).
+    // The two GUARANTEED drops below still land — they are the biome's economy, not
+    // clutter, and skipping them would quietly cost a Scroll of Upgrade whenever the
+    // biome happened to pick its 5th floor.
+    let count = isBossDepth(depth) ? 0 : randInt(2, 4);
     if (Math.random() < 0.10 * count) count += 1;     // ~+10% loot per floor
     // Drop-type mix (gold / gear / consumable) is data-driven so it's tunable in
     // the editor. Default favours gear so weapons & armor aren't drowned out by potions.
@@ -1859,6 +1920,15 @@
     }
   }
 
+  // How often a monster placed in a room brings a friend into the SAME room. Taken
+  // straight from Shattered Pixel Dungeon's createMobs, which rolls Random.Int(4)
+  // for a second mob after each successful placement.
+  //
+  // This is the difference between a floor's monsters being a headcount and being
+  // encounters. Scattering N monsters uniformly over the rooms gives you N thin
+  // moments; letting a quarter of them double up gives you fewer moments, but some
+  // of them are a pair — and a pair is a fight, where a lone sleeper is a chore.
+  const PAIR_CHANCE = 0.25;
   function spawnMonsters(rooms) {
     const pool = eligiblePool();
     if (!pool.length) return;
@@ -1867,17 +1937,28 @@
     if (Array.isArray(si)) { const i = floorInBiome(depth) - 1; count = si[i] != null ? si[i] : si[si.length - 1]; }
     else if (si != null) count = si;
     else count = Math.min(9, 3 + Math.floor(depth / 2));
+    // Put one monster somewhere inside `room`, if there is anywhere to put it.
+    const placeIn = (room) => {
+      for (let t = 0; t < 20; t++) {
+        const x = randInt(room.x, room.x + room.w - 1);
+        const y = randInt(room.y, room.y + room.h - 1);
+        if (map[y][x] !== FLOOR) continue;
+        if (x === player.x && y === player.y) continue;
+        if (monsterAt(x, y)) continue;
+        const mk = pickMonster();
+        if (!mk) return false;
+        monsters.push(makeMonster(mk, x, y));   // a floor starts asleep — see makeMonster
+        return true;
+      }
+      return false;
+    };
     let guard = 0;
     while (monsters.length < count && guard++ < 300) {
-      const ri = rooms.length > 1 ? randInt(1, rooms.length - 1) : 0;
+      const ri = rooms.length > 1 ? randInt(1, rooms.length - 1) : 0;   // never the room you start in
       const room = rooms[ri];
-      const x = randInt(room.x, room.x + room.w - 1);
-      const y = randInt(room.y, room.y + room.h - 1);
-      if (map[y][x] !== FLOOR) continue;
-      if (x === player.x && y === player.y) continue;
-      if (monsterAt(x, y)) continue;
-      const mk = pickMonster();
-      if (mk) monsters.push(makeMonster(mk, x, y));   // a floor starts asleep — see makeMonster
+      if (!placeIn(room)) continue;
+      // ...and a quarter of the time, a second one right beside it.
+      if (monsters.length < count && Math.random() < PAIR_CHANCE) placeIn(room);
     }
   }
 
@@ -2429,7 +2510,7 @@
       const icon = def.icon || "✦", color = def.color || "#cfe6ff";
       switch (fx.type) {
         case "burn": {                                  // instant burst + a short DOT that stacks only once
-          const burst = Math.max(1, Math.ceil(power * (fx.burstMult != null ? fx.burstMult : 0.5)));
+          const burst = Math.max(1, Math.ceil(power * enchantTierValue(def, item, fx.burstMult != null ? fx.burstMult : 0.5)));
           target.hp -= burst; flash(target); floatText(target.x, target.y, "🔥-" + burst, "#ff8f4a");
           addDot(target, { tag: "burn", dmg: Math.max(1, Math.ceil(burst / 2)), rounds: fx.dotTurns || 3, icon: "🔥", color: "#ff8f4a" });
           break;
@@ -2442,7 +2523,7 @@
           break;
         }
         case "shock": {                                 // burst + a scaling stun chance
-          const burst = Math.max(1, Math.round(power * (fx.burstMult != null ? fx.burstMult : 1)));
+          const burst = Math.max(1, Math.round(power * enchantTierValue(def, item, fx.burstMult != null ? fx.burstMult : 1)));
           target.hp -= burst; flash(target); floatText(target.x, target.y, "⚡-" + burst, "#9ad0ff");
           const chance = (burst * (fx.stunPer != null ? fx.stunPer : 0.10)) / Math.max(1, target.level || 1);
           if (Math.random() < chance) { target.stun = (target.stun || 0) + 1; floatText(target.x, target.y, "stun!", "#cfe6ff"); }
@@ -2450,7 +2531,7 @@
         }
         case "thorns": {                                // reflect a share of the damage you just took
           const base = incoming != null ? incoming : power;
-          const dmg = Math.max(1, Math.round(base * (fx.mult != null ? fx.mult : 0.5)));
+          const dmg = Math.max(1, Math.round(base * enchantTierValue(def, item, fx.mult != null ? fx.mult : 0.5)));
           target.hp -= dmg; flash(target); floatText(target.x, target.y, icon + "-" + dmg, color);
           break;
         }
@@ -3078,7 +3159,13 @@
   };
   const monWalkSpeed = (m) => monSpeed(m, "walkSpeed");
   const monAtkSpeed = (m) => monSpeed(m, "attackSpeed");
-  const SENSE = 8;          // how far a monster notices the player (needs line of sight)
+  // A monster's eyes are the same as yours. This is deliberately tied to
+  // FOV_RADIUS rather than written as its own number: the ambush — creep up on a
+  // sleeper, strike first, guaranteed hit — only works while neither side can see
+  // further than the other. Leaving this at 8 when sight dropped to 6 would have
+  // meant every fight opening with something already awake and walking out of a
+  // dark you cannot see into.
+  const SENSE = FOV_RADIUS;   // how far a monster notices the player (needs line of sight)
   const CHARGE_MAX = 7;
   let turns = 0;
   let boonPending = false;    // a boss-reward boon choice is open — block play until picked
@@ -3391,7 +3478,16 @@
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
-    if (m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(m.x, m.y, player.x, player.y)) { doCharge(m); return; }
+    if (m.charge && d >= 2 && d <= CHARGE_MAX) {
+      const cdir = straightDir(m);
+      // Sight and movement are different questions — the same split CLAUDE.md rule 5
+      // draws between blocksSight() and passable(). Deep water is transparent and
+      // impassable, so a bear on the far shore of a pond had a clear line to the
+      // player, took this branch every single turn, and doCharge stopped dead on
+      // the first water tile with moved = 0. Turn spent, nothing done, for ever —
+      // and it never reached chargeApproach to try walking round.
+      if (cdir && lineOfSight(m.x, m.y, player.x, player.y) && chargeLane(m, m.x, m.y, cdir)) { doCharge(m); return; }
+    }
     // Kethara's Faith's Pull: a hunting monster caught in the aura paths to its
     // center instead of you, for as long as the pull lasts.
     if (pullZone && pullZone.turns > 0 && cheb(m.x, m.y, pullZone.x, pullZone.y) <= 4) {
@@ -3431,24 +3527,50 @@
       if (moved >= 2) flashScreen("#5a3a1e", 200);
     }
   }
+  // Could `m` actually RUN from (sx, sy) to the player along `dir` — every tile of
+  // the dash steppable, ending adjacent? This is the walkable half of what the
+  // charge gate needs; lineOfSight is the visible half, and they are not the same
+  // test. Takes the start tile explicitly so chargeApproach can ask the question
+  // about a neighbour it is considering moving to, not only about where m stands.
+  function chargeLane(m, sx, sy, dir) {
+    let x = sx, y = sy, steps = 0;
+    while (cheb(x, y, player.x, player.y) > 1 && steps++ <= CHARGE_MAX) {
+      const nx = x + dir[0], ny = y + dir[1];
+      if (nx === player.x && ny === player.y) break;
+      if (!canStep(x, y, dir[0], dir[1], m) || shuns(nx, ny)) return false;
+      if (!(nx === m.x && ny === m.y) && monsterAt(nx, ny)) return false;   // m's own tile doesn't block m
+      x = nx; y = ny;
+    }
+    return cheb(x, y, player.x, player.y) === 1;
+  }
   // A charge monster (bear) that can see you but isn't lined up sidesteps to get on
   // your row / column / diagonal (at range) so it can charge, instead of just
   // trudging straight in and settling for a normal swing.
   function chargeApproach(m) {
-    let best = null, bestScore = -Infinity;
+    // Sidestep ONLY when the sidestep actually buys a lane it can run. The old rule
+    // scored every neighbour by −distance and took the best available, which is a
+    // plain greedy step with no idea what is REACHABLE — the same local-minimum
+    // trap that stepMonsterTo and the wandering AI were each fixed for long ago,
+    // and that this function never got. Against a pond it would have paced the
+    // shoreline; the `else` below was dead code, because a legal neighbour almost
+    // always exists.
+    let lane = null, laneDist = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = m.x + dx, ny = m.y + dy;
       if (!canStep(m.x, m.y, dx, dy, m) || shuns(nx, ny) || monsterAt(nx, ny)) continue;
       if (nx === player.x && ny === player.y) continue;
       const ddx = player.x - nx, ddy = player.y - ny;
       const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
-      const aligned = (ddx === 0 || ddy === 0 || Math.abs(ddx) === Math.abs(ddy));
-      let score = -dist;                                    // closing in is good
-      if (aligned && dist >= 2 && dist <= CHARGE_MAX && lineOfSight(nx, ny, player.x, player.y)) score += 100;  // a charge lane = great
-      if (score > bestScore) { bestScore = score; best = [nx, ny]; }
+      if (dist < 2 || dist > CHARGE_MAX) continue;
+      if (!(ddx === 0 || ddy === 0 || Math.abs(ddx) === Math.abs(ddy))) continue;
+      if (!lineOfSight(nx, ny, player.x, player.y)) continue;
+      if (!chargeLane(m, nx, ny, [Math.sign(ddx), Math.sign(ddy)])) continue;
+      if (dist < laneDist) { laneDist = dist; lane = [nx, ny]; }
     }
-    if (best) moveMonster(m, best[0], best[1]);
-    else stepMonsterTo(m, player.x, player.y);
+    if (lane) { moveMonster(m, lane[0], lane[1]); return; }
+    // No lane to be had from here — approach like anything else. stepMonsterTo
+    // routes with a BFS, which is what walks around the pond.
+    stepMonsterTo(m, player.x, player.y);
   }
 
   function eligiblePool() {
@@ -3491,7 +3613,10 @@
     for (let t = 0; t < 40; t++) {
       const x = randInt(1, MAP_W - 2), y = randInt(1, MAP_H - 2);
       if (map[y][x] !== FLOOR || visible[y][x] || monsterAt(x, y)) continue;
-      if (cheb(x, y, player.x, player.y) < 6) continue;    // arrive out of sight, at a distance
+      // Out of sight AND out of reach. Tied to FOV_RADIUS rather than a literal so
+      // it cannot drift out of step with what "out of sight" means — a hard-coded 6
+      // beside a sight radius of 8 was a reinforcement arriving inside your vision.
+      if (cheb(x, y, player.x, player.y) < FOV_RADIUS) continue;
       const mk = pickMonster();
       if (mk) {
         const mm = makeMonster(mk, x, y);
@@ -4109,17 +4234,23 @@
 
   // ---- Sprites (CC0 Dungeon Crawl Stone Soup tiles) -----------------------
   const SPRITE_NAMES = Array.from(new Set([
-    "player", "dagger", "sword", "mace", "leather", "chain", "plate",
-    "potion", "scroll", "stairs",
+    "player", "potion", "scroll", "stairs",
     ...Object.keys(DATA.monsters),                      // rat … harpy
     ...Object.keys(DATA.bosses),                        // piper … demigod
+    // Weapons and armour, by gear key — renderIconInto has always looked up
+    // SPRITES[key], but this list never contained a single gear key, so every
+    // weapon past the dagger and sword and every one of the fifteen armours fell
+    // through to the vector primitives. Jewelry is deliberately still drawn:
+    // drawJewelInto tints a ring/gem/pendant with the item's own rarity colour,
+    // which a fixed sprite cannot do.
+    ...Object.keys(DATA.gear).filter((k) => DATA.gear[k].cat === "weapon" || DATA.gear[k].cat === "armor"),
     ...DATA.biomes.flatMap((b) => [b.floor, b.wall]),   // per-biome terrain
     ...DATA.biomes.map((b) => b.exitSprite).filter(Boolean),
   ]));
   const SPRITES = {};
   for (const n of SPRITE_NAMES) {
     const img = new Image();
-    img.src = "./assets/tiles/" + n + ".png";
+    img.src = "./assets/tiles/" + encodeURIComponent(n) + ".png";   // a key may contain a space ("big axe")
     SPRITES[n] = img;
   }
   const ready = (img) => img && img.complete && img.naturalWidth > 0;
@@ -4422,8 +4553,18 @@
     }
     if (d.cat === "potion") { drawFlaskInto(c, ox, oy, s, consumColor(key)); return; }
     if (d.cat === "scroll") {
-      if (ready(SPRITES.scroll)) { c.drawImage(SPRITES.scroll, ox, oy, s, s); return; }
-      drawGlyphInto(c, ox, oy, s, "?", consumColor(key)); return;
+      if (!ready(SPRITES.scroll)) { drawGlyphInto(c, ox, oy, s, "?", consumColor(key)); return; }
+      c.drawImage(SPRITES.scroll, ox, oy, s, s);
+      // A wax seal in this scroll's run-scrambled colour. The parchment is the same
+      // for every scroll, so without this the colour assigned to the title would be
+      // invisible and two different unidentified scrolls would still be one picture.
+      const col = consumColor(key);
+      c.fillStyle = col;
+      c.beginPath(); c.arc(ox + s * 0.70, oy + s * 0.70, s * 0.17, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "rgba(0,0,0,0.55)"; c.lineWidth = Math.max(1, s * 0.03); c.stroke();
+      c.fillStyle = "rgba(255,255,255,0.35)";
+      c.beginPath(); c.arc(ox + s * 0.65, oy + s * 0.65, s * 0.05, 0, Math.PI * 2); c.fill();
+      return;
     }
     drawGlyphInto(c, ox, oy, s, d.glyph || "?", d.color || "#cfc3a0");   // tools (torch) etc.
   }
@@ -6526,6 +6667,11 @@
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
     rollItem: (k, f) => rollItem(k, f != null ? f : depth),
+    // The affix line exactly as the pack, the floor and the merchant print it.
+    // Exposed because the card and the engine drifted apart once already: it read
+    // a flat `plus` where gStatBonus is triangular in it, and a gear field
+    // (`accuracy`) that the d20 migration had removed.
+    itemText: (inst) => itemAffixText(inst),
     rollGear: (f) => rollGearDrop(f != null ? f : depth),
     rollTrinket: (f) => rollTrinket(f != null ? f : depth),
     costs: () => ({ walk: walkCost(), attack: attackCost() }),
@@ -6587,6 +6733,10 @@
       };
     },
     tileAt: (x, y) => (inBounds(x, y) ? map[y][x] : -1),
+    // Paint a tile, for tests that need a specific piece of terrain in a specific
+    // place — a pond between a monster and the player, a thorn wall across a
+    // corridor. Recomputes FOV because changing a tile can change what is visible.
+    setTile: (x, y, t) => { if (!inBounds(x, y)) return false; map[y][x] = t; computeFOV(); return true; },
     passableAt: (x, y) => passable(x, y),                          // on foot — deep water says no
     passableFlying: (x, y) => passableFor({ flying: true }, x, y),
     tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),

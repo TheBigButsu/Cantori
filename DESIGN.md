@@ -858,3 +858,214 @@ alongside the CC0 art (see `ART-CREDITS.md`). They are plain, composed from simp
 shapes at 32×32, and exist so that no data row renders as a bare glyph. Any of them
 can be replaced by dropping a better PNG over the same filename — nothing in the
 code needs to know.
+
+## Four ways the item card lied — DONE
+
+Reported as "two Flaming on the same bow". It was that, and pulling on it found
+three more in the same few lines.
+
+**Duplicate affixes.** `rollItem` drew both stats and enchants with replacement, so
+any roll that took two of a kind could take the same one twice. Weapons have only
+**three** eligible enchants and trinkets **two**, so this was not rare: measured over
+81,000 rolls, **29% of every item that rolled two enchants got a duplicate.**
+
+And it was not cosmetic in either direction:
+
+- `procEnchants` walks the array, so two Flamings each roll their own proc and both
+  can fire — a straight double-dip on damage.
+- `gStatBonus` adds `val + triangular(plus)` per matching entry, so two of the same
+  stat count the upgrade bonus twice. On a +3 item that is six points more than the
+  two distinct affixes it replaced.
+
+So the duplicate was quietly the *stronger* roll while reading to the player as a
+bug. Both pools are now drawn without replacement. If a category has fewer distinct
+enchants than the rarity asks for, the extra becomes a stat, so the item still
+carries as many properties as its rarity promises rather than silently rolling one
+fewer.
+
+**The card under-reported every upgraded item.** `itemAffixText` printed
+`val + plus` where `gStatBonus` computes `val + triangular(plus)`. They agree at +0
+and +1 and diverge from +2 on: a tier-1 stat affix at +4 was displayed as +5 and was
+really **+11**.
+
+**The card never showed a weapon's to-hit.** It read `g.accuracy`, a field the d20
+migration removed — no gear row has carried it since. So the dagger's +3, the bow's
+−3 and the axe's −5 were all invisible, which on the bow in the bug report is
+arguably the most important number on the item.
+
+**The editor's proc formula was pre-D&D.** It published `eff(LCK) / 100`; the engine
+does `max(0, mod(LCK)) × 3%`. At LCK 10 the reference promised +10% and the truth was
++0%.
+
+Three new reference rows go with the fixes — the triangular stat-affix formula, the
+affix-per-rarity table with its no-duplicates rule, and how many enchants each
+category actually has eligible — because the last one is the tripwire: a category
+with a small enchant pool is what turns a rich roll into a duplicate, or now into a
+substituted stat. `itemText()` joins the dev surface so the card can be diffed
+against the engine from a test rather than by eye.
+
+## Floors the shape of Shattered Pixel Dungeon's — DONE
+
+The complaint was that floors felt too big and monsters too spread out. Measured
+against SPD's source, Cantori was not actually sparser — ~330 walkable tiles with 8
+monsters is one per 40, against SPD's one per ~60. What differed was structure.
+
+**Floors are now more rooms, smaller.** An SPD standard room is `SizeCategory.NORMAL`,
+outer dim 4–10, and `Painter.fill` insets 1 — so its interior is 2×2 to 8×8, about 25
+tiles, and a Caves floor (its depth 11–15) carries ~10 of them. Cantori was running 8
+rooms of ~38. Same total floor, fewer and larger spaces.
+
+| | before | after | SPD |
+|---|---|---|---|
+| rooms per floor | 8 | **9.5** | ~10 |
+| average room | 38 | **30** | ~25 |
+| walkable tiles | 330 | **300** | ~300 |
+| rooms sharing a wall | 30% cap | **60%** | most of the floor |
+| used extent | 38×37 | **36×36** | sized to fit |
+
+The count of *rooms* is what a floor feels like, because each one is an encounter: the
+same floor divided into half as many rooms plays as half as much game. Two knobs moved
+into the per-biome `layout` block to get there — `roomTarget` (total room floor to lay
+down, so `roomTarget ÷ mean room size` **is** the room count) and `attachCap` (ceiling
+on shared-wall rooms). Raising the attach rate is what turns a scatter of chambers on
+the ends of hallways into SPD's warren.
+
+The crypt keeps its own big-chamber layout and gets an explicit `roomTarget: 290` so
+the smaller global budget does not quietly shrink it from four rooms to three. It is
+the one biome still undesigned.
+
+**Monsters arrive in pairs, and keep arriving.** Two changes, both SPD's:
+
+- 25% of placements put a second monster in the *same room* (`Random.Int(4)` in SPD's
+  `createMobs`). Scattering N monsters one per room gives N thin moments; letting a
+  quarter double up gives fewer moments, but some of them are a pair — and a pair is a
+  fight where a lone sleeper is a chore. It lands at ~45% of occupied rooms holding
+  two or more.
+- **Every biome respawns now**, one monster per 50 turns up to a cap (SPD's
+  `TIME_TO_RESPAWN`). Only the forest had a respawn at all; caves, crypt, town and lake
+  cleared out and stayed cleared, so with a 1000-turn floor clock the back half of a
+  visit was played on an empty map. Caps run 8/10/10/11/12 by biome.
+
+**Sight is 6 tiles, for both sides.** It was 8, which is a whole ordinary room. `SENSE`
+— how far a monster notices you — is now defined *as* `FOV_RADIUS` rather than as its
+own number, because the ambush only works while neither side sees further than the
+other: leaving monsters at 8 against a player at 6 would open every fight with
+something already awake, walking out of a dark you cannot see into. The respawn
+distance is tied to the same constant for the same reason.
+
+Measured effect of the sight cut: tiles visible from a standing position 47.7 → 42.6,
+and the share of positions with no monster in sight 57% → 65%.
+
+**One honest caveat.** The stated goal was to stop seeing a whole room on entering it,
+and 6 tiles does not achieve that on its own, because the rooms shrank in the same
+change. Standing in a room's mouth you still see a median 81% of it (it was 83%). You
+see *fewer tiles* — 24 rather than 32 — but a similar fraction of the room. At ~30-tile
+rooms, a 6-tile radius covers the room; that goal needs either rooms kept larger than
+sight or sight cut below 6, and the two pull against each other.
+
+## The bear that could not path — DONE
+
+Reported from a screenshot: a bear stood on the far shore of a pond, in plain sight
+of the player, and never moved. Reproduced headless — the bear sat on **one tile for
+thirty turns** while a wolf spawned on the same tile routed around the water and
+arrived adjacent.
+
+It was two bugs stacked, and the first hid the second.
+
+**A charge gate that confused seeing with running.** The gate read:
+
+```
+m.charge && d >= 2 && d <= CHARGE_MAX && straightDir(m) && lineOfSight(…)
+```
+
+Deep water is transparent and impassable — `opaque` and `solid` are different rows in
+the `TILE` table, which is the whole point of that table. So the bear had a clear line
+across the pond, took the charge branch, and `doCharge` stopped dead on the first water
+tile with `moved = 0`. Turn spent, nothing done, every turn, for ever. It never reached
+the approach code at all.
+
+The gate now also asks `chargeLane()`, which walks the tiles the dash would cross and
+checks each one is steppable. Sight and movement are separate questions — the same
+split CLAUDE.md rule 5 draws between `blocksSight()` and `passable()`.
+
+**An approach with no pathfinding.** `chargeApproach` scored every neighbour by
+`−distance` and took the best, which is a plain greedy step with no idea what is
+*reachable*. Fixing the gate alone would have turned the freeze into a shuffle: the
+bear would have paced the shoreline instead of standing on it. Its `else
+stepMonsterTo(…)` fallback was dead code, because a legal neighbour almost always
+exists.
+
+This is the same local-minimum trap that `stepMonsterTo` and the wandering AI were each
+fixed for long ago — both of them BFS now, and both carry comments about it.
+`chargeApproach` was written separately and got neither fix, which made the bear the
+only monster in the game that could not path around an obstacle.
+
+It now sidesteps **only when the sidestep actually buys a lane it can run**, and
+otherwise approaches through `stepMonsterTo` like everything else. Measured after:
+
+| | before | after |
+|---|---|---|
+| bear across a pond, 30 turns | 1 tile, never crossed | 12 tiles, reached the player — the wolf's exact route |
+| open ground, lined up at 5 tiles | charges | charges, 12/12, 4 tiles crossed |
+| a wall mid-lane | (would have paced) | steps around it, ends adjacent |
+
+A `setTile` dev hook came with it, so terrain-versus-pathing bugs can be reproduced in a
+test instead of from a screenshot.
+
+## Four small things, and a fourth bug found under one of them — DONE
+
+**The item card shows what an enchant is worth.** `✦ Defense` alone told you nothing:
+a tier-1 Defense is +1 and a tier-5 is +8, and the card looked identical either way.
+It now prints the tiered value, with the sign saying which kind of number it is —
+Defense is flat mitigation added to every block, everything else multiplies something.
+
+```
+Rusted mail (tier 1)     ✦ Defense +1
+Banded plate (tier 3)    ✦ Defense +3
+Adamant bulwark (tier 5) ✦ Defense +8
+Sword                    🔥 Flaming ×0.5
+Short Bow                ✦ Speed   ×1.1
+```
+
+Adding that display could not be done honestly, because **three enchants never read
+their own `tierValues`**. Only Defense, Speed/Swiftness and Poison went through
+`enchantTierValue`; Burn, Shock and Thorns read `fx.burstMult` / `fx.mult` directly,
+so their five-number arrays were dead data and a tier-5 Flaming weapon burst for
+exactly the same as a tier-1. They honour the arrays now. That is a real power
+increase at the top tiers — the intent was clearly authored, and the editor has
+always documented it as working, but the arrays may want retuning.
+
+**No scattered loot on a boss floor.** The fight is the floor; gold and gear round
+the edges only pull you off it, and the boss already pays out properly on death.
+Measured: boss floors now show 0 gold and 0 gear against 2–3.7 gear on a normal
+floor. The two GUARANTEED drops still land — the per-floor Potion of Insight and the
+per-biome Scroll of Upgrade are the economy rather than clutter, and because the two
+scroll floors are picked across all five, skipping boss floors would silently cost a
+biome a scroll whenever it happened to pick the fifth.
+
+**Scrolls already stacked; you just couldn't see which were alike.** Same-key
+consumables have shared a slot since the beginning. The real problem was that every
+unidentified scroll read "Unidentified Scroll" and drew the same parchment in the
+same colour, so a Scroll of Mapping and a Scroll of Teleportation sat in the pack as
+two slots you could not tell apart — which looks exactly like identical scrolls
+refusing to stack. Potions have been dealt a scrambled shade + colour per run since
+they existed; scrolls never got the equivalent. They now draw a rune title and a
+wax-seal colour, so `Scroll titled "Eihwaz"` and `Scroll titled "Kenaz"` are visibly
+different objects, and two that match really are the same scroll.
+
+**Weapons and armour have sprites.** `renderIconInto` has always looked up
+`SPRITES[key]` — but `SPRITE_NAMES` never contained a single gear key. Only `dagger`
+and `sword` resolved, by accident of being in the hardcoded list; **24 of 26 gear
+rows** fell through to the vector primitives, which is why every axe, spear, bow and
+all fifteen armours drew as the same generic blade or shield. Twenty new 32×32 tiles,
+public domain, plus the loader actually asking for gear keys.
+
+Each armour family shares one silhouette — a hooded robe for light, a sleeveless
+jerkin for medium, a pauldroned breastplate for heavy — and tiers differ by palette
+and surface (quilting, studs, scales, mail, bands, a heraldic crest). A tier should
+read as the same kit made better, not as a different object. Jewelry is deliberately
+still drawn by `drawJewelInto`, which tints a ring or pendant with the item's own
+rarity colour; a fixed sprite cannot do that.
+
+`mace.png`, `leather.png`, `chain.png` and `plate.png` are now orphans — no gear row
+has ever used those keys. Left in place; harmless, and a future weapon may want them.
