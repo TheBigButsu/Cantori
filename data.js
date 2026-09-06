@@ -12,7 +12,7 @@ window.CANTORI_DATA = {
       "ac": 13,
       "atkMin": 1,
       "atkMax": 4,
-      "toHit": 0
+      "toHit": 1
     },
     "bat": {
       "name": "Bat",
@@ -24,8 +24,8 @@ window.CANTORI_DATA = {
       "speed": 1,
       "atkMin": 1,
       "atkMax": 4,
-      "ac": 17,
-      "toHit": 1
+      "toHit": 1,
+      "ac": 21
     },
     "snake": {
       "name": "Snake",
@@ -34,10 +34,10 @@ window.CANTORI_DATA = {
       "color": "#7ec98a",
       "minFloor": 3,
       "speed": 1,
-      "toHit": 2,
       "atkMin": 1,
-      "ac": 18,
-      "atkMax": 6
+      "atkMax": 6,
+      "ac": 22,
+      "toHit": 4
     },
     "spider": {
       "walkSpeed": 0.8,
@@ -87,7 +87,7 @@ window.CANTORI_DATA = {
       "hp": 35,
       "atkMin": 2,
       "toHit": 4,
-      "ac": 12,
+      "ac": 13,
       "charge": true,
       "glyph": "B",
       "color": "#8a6a44",
@@ -1176,10 +1176,10 @@ window.CANTORI_DATA = {
       "arena": "ring",
       "name": "The Pied Piper",
       "atkMax": 10,
-      "hp": 200,
       "ac": 14,
       "atkMin": 2,
-      "toHit": 3
+      "toHit": 3,
+      "hp": 150
     },
     "golem": {
       "arena": "hall",
