@@ -927,7 +927,18 @@
     const kind = document.createElement("select");
     // Must list every kind game.js dispatches for a TREE skill; a kind missing here
     // gets silently rewritten to "passive" the moment anyone touches the control.
-    const KINDS = ["passive", "rush", "spin", "smite", "throwmon"];
+    // Kept in step with useSkill()'s dispatch in game.js. It had drifted badly —
+    // five of the twenty-two kinds the engine actually runs — so every mage and
+    // boon skill in the list showed as "passive" the moment this control was
+    // touched. The guard below saves a hand-authored kind on its own cell, but it
+    // cannot offer that kind on any other.
+    const KINDS = [
+      "passive",
+      "rush", "spin", "throwmon", "dragonkick", "meditate", "vanish",
+      "smite", "ragesmite", "healsmite", "spinsmite", "selfheal",
+      "bolt", "burncast", "sleepcast", "blinkcast", "mirrorcast", "madnesscast",
+      "wallcast", "pullcast", "eyecast", "angercast", "sol",
+    ];
     if (cell.kind && KINDS.indexOf(cell.kind) < 0) KINDS.push(cell.kind);   // never lose a hand-authored one
     for (const k of KINDS) { const op = document.createElement("option"); op.value = k; op.textContent = k; kind.appendChild(op); }
     kind.value = cell.kind || "passive";
@@ -1334,6 +1345,15 @@
       title: "Gold",
       rows: [
         { name: "Gold pile", formula: "random(2, 12) + depth × 2", note: "" },
+      ],
+    },
+    {
+      title: "Brynn's tier 2 and 3",
+      rows: [
+        { name: "Dragon Kick", formula: "damage = (a normal attack roll - 1) x squares travelled before the collision", note: "The run-up IS the skill: kicked from six squares out it is worth roughly six blows, kicked at something already touching you it lands at ordinary weight and says so. Rank 2 does not start the cooldown on the first kick, so a second one is free and the clock starts on that (or one turn later if you don't take it). Rank 3 makes both free actions. Rank 4 removes the reduction - the -1 - so every square travelled is worth a whole attack instead of attack minus 1, which is worth exactly one extra point of damage per square." },
+        { name: "Meditate", formula: "HP regeneration x5 (x10 from rank 2) while you hold still; ends on move, strike, or any damage at all", note: "Damage is watched as a total at the end of each turn rather than patched into each source, so a burn, a trap and a blow all break it and so will the next source anyone adds. Rank 3 refunds 2 cooldown turns per point healed; rank 4 leaves +3 damage / to-hit / AC for (character level x 2) turns. It pairs with holding the Wait button, which is how you spend the turns. WARNING: a floor whose spark has gone out at turn 300 regenerates nothing, meditation included - the skill has a deadline." },
+        { name: "Happy Feet", formula: "+2 / +4 / +4 AC and +5% dodge / +4 AC and +10% dodge - only while wearing cloth (light) or medium armour", note: "The first passive in the game to add AC, and the first to buy dodge as a flat percentage rather than in 2%-per-point evasion points, so the card can say '+5%' and mean it. Both dodge routes share the one 50% cap. Heavy armour and bare skin get nothing." },
+        { name: "Now You See Me", formula: "invisible 5 / 10 / 20 turns; rank 4 also grants +5 damage for 5 turns when the veil drops", note: "Same forgetting as the Scroll of Invisibility - everything hunting you drops the trail - and striking still ends it early. The rank-4 payout lands however the veil ends, walked out or spent on a blow." },
       ],
     },
     {

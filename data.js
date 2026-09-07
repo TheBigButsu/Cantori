@@ -1993,6 +1993,98 @@ window.CANTORI_DATA = {
             }
           ],
           "req": []
+        }        ,
+        {
+          "id": "dragon_kick",
+          "x": 0,
+          "y": 1,
+          "name": "Dragon Kick",
+          "icon": "🐉",
+          "kind": "dragonkick",
+          "when": null,
+          "desc": "Choose a direction and launch yourself down it. The blow is the run-up: your attack minus 1 for every square you crossed getting there, so a kick thrown from across the room is worth several ordinary blows and one thrown at a foe already touching you is worth almost nothing. Cooldown 50 turns, 5 MP.",
+          "levels": [
+            "Charge in a straight line and strike, for (attack - 1) per square travelled.",
+            "The first kick does not start the cooldown — you may kick again immediately, and the second one is free.",
+            "Both kicks are free actions: neither spends a turn.",
+            "No reduction: every square is worth a full attack rather than attack - 1."
+          ],
+          "ranks": [
+            { "cd": 50, "mp": 5 },
+            { "cd": 50, "mp": 5, "encore": true },
+            { "cd": 50, "mp": 5, "encore": true, "freeAction": true },
+            { "cd": 50, "mp": 5, "encore": true, "freeAction": true, "full": true }
+          ],
+          "req": []
+        },
+        {
+          "id": "meditate",
+          "x": 1,
+          "y": 1,
+          "name": "Meditate",
+          "icon": "\u262f",
+          "kind": "meditate",
+          "when": null,
+          "desc": "Sit still and mend fast. Moving, striking or being struck ends it at once — and so does pressing the button again. Cooldown 300 turns. Note that a floor whose spark has gone out (300 turns) regenerates nothing at all, meditation included.",
+          "levels": [
+            "Regeneration x5 while you hold still.",
+            "Regeneration x10.",
+            "The cooldown drops by 2 turns for every point of health you mend.",
+            "Rising from the trance leaves you sharpened: +3 damage, to-hit and AC for twice your character level in turns."
+          ],
+          "ranks": [
+            { "cd": 300, "mp": 0, "regenMult": 5 },
+            { "cd": 300, "mp": 0, "regenMult": 10 },
+            { "cd": 300, "mp": 0, "regenMult": 10, "cdRefund": 2 },
+            { "cd": 300, "mp": 0, "regenMult": 10, "cdRefund": 2, "endBuff": 3 }
+          ],
+          "req": []
+        },
+        {
+          "id": "happy_feet",
+          "x": 0,
+          "y": 2,
+          "name": "Happy Feet",
+          "icon": "\ud83d\udc63",
+          "kind": "passive",
+          "when": "softarmor",
+          "desc": "Footwork you cannot do in plate — active only while wearing cloth or medium armour.",
+          "levels": [
+            "+2 AC.",
+            "+4 AC.",
+            "+4 AC and +5% to dodge a blow that already connected.",
+            "+4 AC and +10% to dodge a blow that already connected."
+          ],
+          "ranks": [
+            { "ac": 2 },
+            { "ac": 4 },
+            { "ac": 4, "evaPct": 5 },
+            { "ac": 4, "evaPct": 10 }
+          ],
+          "req": []
+        },
+        {
+          "id": "now_you_see_me",
+          "x": 1,
+          "y": 2,
+          "name": "Now You See Me",
+          "icon": "\u25cc",
+          "kind": "vanish",
+          "when": null,
+          "desc": "Step out of sight. Everything hunting you loses the trail; striking ends it early. Cooldown 100 turns, 5 MP.",
+          "levels": [
+            "Invisible for 5 turns.",
+            "Invisible for up to 10 turns.",
+            "Invisible for up to 20 turns.",
+            "Same, and coming back into view leaves you swinging: +5 damage for 5 turns."
+          ],
+          "ranks": [
+            { "cd": 100, "mp": 5, "turns": 5 },
+            { "cd": 100, "mp": 5, "turns": 10 },
+            { "cd": 100, "mp": 5, "turns": 20 },
+            { "cd": 100, "mp": 5, "turns": 20, "exitDmg": 5, "exitTurns": 5 }
+          ],
+          "req": []
         }
       ]
     },

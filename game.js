@@ -177,11 +177,24 @@
   // reads, and the per-level growth stays the levelUp set's job.
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(1, (cls.baseHp != null ? cls.baseHp : HP_BASE) + mod("VIT") * HP_PER_VIT_MOD + (player.lvlHp || 0)); };
   const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + armorMp() + (player.lvlMp || 0)); };
-  const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc");
+  // Two of Brynn's skills leave a timed bonus behind rather than doing their work
+  // on the spot: Meditate's afterglow (damage, to-hit and AC) and Now You See Me's
+  // payout (damage, when the invisibility drops). They are separate timers on
+  // purpose — one should not cut the other short — and both read through here, so
+  // every formula that already respects a passive picks them up for free.
+  const timedBonus = (field) => {
+    let v = 0;
+    if (player.zen && player.zen.turns > 0) v += player.zen[field] || 0;
+    if (player.unseen && player.unseen.turns > 0) v += player.unseen[field] || 0;
+    return v;
+  };
+  const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
   // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
   // how much DEX it lets through — light takes all of it, medium at most +2, heavy
   // none at all. That cap is what stops heavy armour from being strictly best.
-  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC();
+  // Happy Feet is the first thing that adds AC from a passive, and the Meditate
+  // afterglow the first that adds it on a timer.
+  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac");
   // Evasion is NOT armour class. AC is how hard you are to aim at; Evasion is
   // slipping a blow that was already aimed true — it is rolled AFTER the attack
   // roll has beaten your AC. Keeping them apart is what lets Ourn's Foresight
@@ -191,7 +204,12 @@
   const EVA_PER_POINT = 0.02;   // 2% dodge per point — a d20 AC point is worth ~5%,
   const EVA_CAP = 0.50;         // so Evasion is cheaper per point and hard-capped
   const evasionPoints = () => (player.lvlEva || 0) + (player.boonEva || 0) + passiveMod("eva");
-  const dodgeChance = () => Math.min(EVA_CAP, Math.max(0, evasionPoints()) * EVA_PER_POINT);
+  // A passive may also buy dodge as a flat percentage rather than in points
+  // (`evaPct`). Happy Feet is authored as "+5% evade" and should say +5% on the
+  // card; converting that to 2.5 points would make the data lie about itself.
+  // Both routes share the one cap.
+  const dodgeChance = () => Math.min(EVA_CAP,
+    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100);
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -285,6 +303,8 @@
     player.killCount = 0; player.secondChanceUsed = false;
     player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
     player.invisible = 0;                      // timed buffs don't carry across a new run
+    player.zen = null; player.unseen = null;   // Meditate's afterglow, Now You See Me's payout
+    player.meditate = null; player.vanishPayout = null; player.dragonEncore = null;
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
@@ -535,6 +555,7 @@
   // can strike a monster that far away with line of sight.
   const weaponRange = () => (player.weapon ? (GEAR[player.weapon.key].range || 1) : 1);
   const weaponSub = () => (player.weapon ? (GEAR[player.weapon.key].sub || "") : "");
+  const armorSubName = () => (player.armor ? (GEAR[player.armor.key].sub || "") : "");
   // Armor subtype: lighter armor dodges better (evasion), heavier mitigates more
   // damage on top of the item's def. Tunable here.
   // Armour subtypes are three different answers to "how do I not die", not three
@@ -2224,6 +2245,10 @@
     if (player.poison > 0) chips.push({ t: "☠ " + player.poison, c: "#9ad06a", title: "Poisoned — " + player.poison + " a turn, decaying" });
     if (player.toxin > 0) chips.push({ t: "☠ " + player.toxin, c: "#7ec98a", title: "Poisoned by a draught — " + player.toxin + " this turn, halving after" });
     if (player.para > 0) chips.push({ t: "🧊 " + player.para, c: "#cfd6e6", title: "Paralysed — up to " + player.para + " more turns, RES save vs DC " + paraDc() + " every time you try to act" });
+    if (player.meditate) chips.push({ t: "☯ ×" + player.meditate.mult, c: "#bcd3e6", title: "Meditating — regeneration ×" + player.meditate.mult + ", " + player.meditate.healed + " HP so far. Moving, striking or being struck ends it." });
+    if (player.zen && player.zen.turns > 0) chips.push({ t: "☯ +" + player.zen.dmg, c: "#bcd3e6", title: "Afterglow — +" + player.zen.dmg + " damage, to-hit and AC for " + player.zen.turns + " more turns" });
+    if (player.unseen && player.unseen.turns > 0) chips.push({ t: "◌ +" + player.unseen.dmg, c: "#bfe0ff", title: "Out of the dark — +" + player.unseen.dmg + " damage for " + player.unseen.turns + " more turns" });
+    if (player.dragonEncore) chips.push({ t: "🐉", c: "#ffd98a", title: "Balanced — Dragon Kick may go again before its cooldown starts" });
     const wm = auraMult("auraWalk"), am = auraMult("auraAttack");
     if (wm !== 1) chips.push({ t: "👣 ×" + round2(wm), c: "#e0685a", title: "An aura is making every step cost " + round2(wm) + "× as much time" });
     if (am !== 1) chips.push({ t: "⚔ ×" + round2(am), c: "#c58fd6", title: "An aura is making every swing cost " + round2(am) + "× as much time" });
@@ -2759,7 +2784,15 @@
     if (target.hp <= 0) killMonster(target, "is destroyed");
   }
 
-  function attack(attacker, target, bonus) {
+  // `opts` is how a skill bends the blow it is borrowing rather than rolling its
+  // own damage and losing crits, enchants, identify progress and the ambush rule
+  // with it. Two knobs so far, both Dragon Kick's:
+  //   per  — the blow is dealt once per square crossed. "Damage = attack − 1 per
+  //          square travelled" is exactly that, with per = the squares.
+  //   full — drop that −1, so each square is worth the whole attack. This is what
+  //          "damage reduction is removed" means: the reduction is the −1, and the
+  //          capstone is that every square finally lands at full weight.
+  function attack(attacker, target, bonus, opts) {
     bonus = bonus || 0;
     if (attacker === player) {
       bump(player, target.x, target.y);
@@ -2770,9 +2803,9 @@
       // Striking from invisibility spends it — you land the ambush, then you're
       // visible again. Without this the scroll is simply "win the floor".
       if (player.invisible) {
-        player.invisible = 0;
         floatText(player.x, player.y, "seen!", "#e0d0a0");
         log("You strike, and the shimmer falls away — they can see you again.", "hurt");
+        endInvisible(null);
       }
       // Two ways a blow is certain rather than rolled: the ambush (it has never
       // seen you), and a foe standing in a doorway — the forest's bushes included.
@@ -2802,7 +2835,10 @@
       // "with no floor", so a low-STR character on a weak weapon really could get
       // there. Rolling STR rather than adding it flat lowers the bottom end, which
       // is what brought this within reach rather than merely theoretical.
-      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg"));
+      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg") + timedBonus("dmg"));
+      // The per-square multiplier lands BEFORE the crit, so a critical Dragon Kick
+      // multiplies the whole run-up rather than one square of it.
+      if (opts && opts.per > 0) dmg = Math.max(1, (dmg - (opts.full ? 0 : 1)) * opts.per);
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
@@ -3170,6 +3206,7 @@
   // Returns true if a turn was spent.
   function playerAct(dx, dy) {
     if (dead || (dx === 0 && dy === 0)) return false;
+    if (player.meditate) endMeditate("you move");
     if (paraBlocksPlayer()) return true;
     if (player.stun > 0) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return true; }
     // Berserk takes the decision away entirely, so it is settled before the
@@ -3434,10 +3471,22 @@
     // to magic, and taking both would just end runs quietly.
     if (player.hp < player.maxHp && !sparkGone) {
       const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - mod("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2) * 5);
-      player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult();
+      player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult() * meditateMult();
       while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
       if (player.hp >= player.maxHp) player.regenAcc = 0;
       if (healed) changed = true;
+      // Meditate rank 3 buys its own cooldown back out of what it heals.
+      if (healed && player.meditate) {
+        player.meditate.healed += healed;
+        // The trance's damage watch compares HP against this mark, so the mark has
+        // to climb with the healing. Without it, a turn where 4 damage landed and
+        // 4 HP regenerated nets to zero and reads as "nothing happened" — at ×10
+        // regeneration that is most small hits, and being hit is supposed to end
+        // the trance whether or not the healing covered it.
+        player.meditate.hpMark += healed;
+        const st = player.skills[player.meditate.key];
+        if (st && player.meditate.refund > 0) st.cd = Math.max(0, st.cd - player.meditate.refund * healed);
+      }
     } else player.regenAcc = 0;
     // MP: heals to full over mpRegenTurns, sped by Intelligence.
     if (player.maxMp > 0 && player.mp < player.maxMp) {
@@ -3828,7 +3877,14 @@
     // Fifteen depths across four biomes were spawning nothing at all. A depth is
     // also what anyone reaches for when they type a number into that column, so
     // the field now means what it looks like it means.
-    return biome.monsters.filter((k) => VERMIN[k].minFloor != null && VERMIN[k].minFloor <= depth);
+    // `VERMIN[k] &&` is not defensive programming for its own sake: deleting a
+    // monster row in the editor does not scrub that key out of every biome's
+    // `monsters` list, so a dangling name is a normal consequence of ordinary
+    // content editing. Without the guard it is an uncaught TypeError inside
+    // generateLevel — the floor does not fail to populate, the game stops. Town
+    // still names `jackal` and `hornet`, both of which were deleted, which is
+    // exactly how this was found.
+    return biome.monsters.filter((k) => VERMIN[k] && VERMIN[k].minFloor != null && VERMIN[k].minFloor <= depth);
   }
   // Weighted pick among the eligible monsters for the current biome-floor. Weights
   // come from biome.spawnMix[key][floor-1] (default 1 when unset); a 0 bars that
@@ -4134,7 +4190,10 @@
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }
     if (player.hasteBuff > 0) player.hasteBuff = Math.max(0, player.hasteBuff - 1);   // Speed of Light: decays 1%/turn
-    if (player.invisible > 0 && --player.invisible <= 0) log("The air around you settles — you're visible again.");
+    if (player.invisible > 0 && --player.invisible <= 0) endInvisible("The air around you settles — you're visible again.");
+    if (player.zen && --player.zen.turns <= 0) { player.zen = null; log("The stillness fades from your limbs."); }
+    if (player.unseen && --player.unseen.turns <= 0) { player.unseen = null; log("The edge you brought out of the dark dulls."); }
+    dragonEncoreTick();
     rageTick();
     tickHexes();
     playerDotTick(); if (dead) return;   // what is burning or poisoning YOU, before the monsters move
@@ -4204,6 +4263,7 @@
       if (dead) return;
     }
     charmWatch();     // anything at all that hurt you this turn breaks a Love Song
+    meditateWatch();  // …and so does it break a trance
     auraLogTick();    // tell the player when the field they are standing in changes
     regenTick();
     healQueueTick();
@@ -4280,9 +4340,11 @@
     if (player.stun > 0 && !examineMode) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return; }
     if (examineMode) { describeTile(tx, ty); toggleExamine(false); updateHotbar(); return; }
     if (pendingThrow != null) { const idx = pendingThrow; executeThrow(idx, tx, ty); return; }
-    if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "rush") {
+    if (pendingSkill && skillDef(pendingSkill) && (skillDef(pendingSkill).kind === "rush" || skillDef(pendingSkill).kind === "dragonkick")) {
+      const kk = pendingSkill, kd = skillDef(kk).kind;
       const dir = [Math.sign(tx - player.x), Math.sign(ty - player.y)];
-      if (dir[0] || dir[1]) executeRush(pendingSkill, dir); else { pendingSkill = null; updateHotbar(); }
+      if (dir[0] || dir[1]) { if (kd === "dragonkick") executeDragonKick(kk, dir); else executeRush(kk, dir); }
+      else { pendingSkill = null; updateHotbar(); }
       return;
     }
     if (pendingSkill && skillDef(pendingSkill)) {
@@ -5495,8 +5557,9 @@
     // Both ends move: the low end takes STR's low roll, the high end its high roll,
     // so the number on the pack header is the real spread rather than the old flat
     // band shifted sideways.
-    const lo = Math.max(1, weaponDmgMin() + strDmgLo() + player.atkBonus);
-    const hi = Math.max(lo, weaponDmgMax() + strDmgHi() + player.atkBonus);
+    const b = passiveMod("dmg") + timedBonus("dmg");
+    const lo = Math.max(1, weaponDmgMin() + strDmgLo() + player.atkBonus + b);
+    const hi = Math.max(lo, weaponDmgMax() + strDmgHi() + player.atkBonus + b);
     return lo + "–" + hi;   // clamped to match the floor the swing itself has
   }
   // A colored, affix-annotated label for an equipped/carried gear instance.
@@ -6115,6 +6178,11 @@
       const d = sk[key]; if (d.kind !== "passive") continue;
       const st = player.skills[key]; if (!st || st.rank < 1) continue;
       if (d.when === "unarmed") { if (player.weapon) continue; }
+      // "softarmor": cloth (the light subtype) or medium. Heavy and bare skin get
+      // nothing — Happy Feet is footwork, and you cannot dance in plate. Checked
+      // before the weapon-subtype branch below, which would otherwise read
+      // "softarmor" as the name of a weapon class and never match.
+      else if (d.when === "softarmor") { const a = armorSubName(); if (a !== "light" && a !== "medium") continue; }
       else if (d.when && d.when !== weaponSub()) continue;
       const r = d.ranks[st.rank - 1] || {}; if (r[field] != null) v += r[field];
     }
@@ -6310,8 +6378,12 @@
     const st = player.skills[key], d = skillDef(key);
     if (!st || st.rank < 1 || !d) return;
     if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
-    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
-    if (d.kind === "rush") beginRush(key);
+    // Meditate is the exception: its button doubles as "stand up", and standing up
+    // has to work while the cooldown it already started is running.
+    if (st.cd > 0 && !(d.kind === "meditate" && player.meditate)) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
+    if (d.kind === "rush" || d.kind === "dragonkick") beginRush(key);   // both ask for a direction
+    else if (d.kind === "meditate") executeMeditate(key);
+    else if (d.kind === "vanish") executeVanish(key);
     else if (d.kind === "spin") executeSpin(key);
     else if (d.kind === "spinsmite") executeSpinningSmite(key);          // hits everything in reach — nothing to aim at
     else if (d.kind === "selfheal") executeLayOnHands(key);              // aimed at yourself
@@ -6559,6 +6631,187 @@
         (c.cur.invis ? " You go unseen." : ""), "hit");
     updateHUD(); updateHotbar();
     worldTurn();
+  }
+
+  // ---- Brynn, tiers 2 and 3 ------------------------------------------------
+  //
+  // Dragon Kick. A Rush whose damage is the RUN-UP: (attack − 1) for every square
+  // crossed before the collision, so a kick launched from across the room is worth
+  // several ordinary blows and a kick at a foe already touching you is worth
+  // nothing. That is the whole skill — it asks you to make space before you spend
+  // it, which is the opposite of what every other melee button asks.
+  //
+  // Rank 2's encore is why the cooldown is set from two different places: the
+  // first kick arms `dragonEncore` and deliberately does NOT start the clock, and
+  // the clock starts either on the second kick or when the encore lapses a turn
+  // later. Setting it up front and refunding it would show the player a cooldown
+  // that is about to be a lie.
+  function dragonArm(key) {
+    player.dragonEncore = { key, grace: 1 };
+    log("The kick leaves you balanced — go again.", "hit");
+  }
+  function dragonSpend(key) {
+    const cur = skillCur(key);
+    player.dragonEncore = null;
+    if (player.skills[key]) player.skills[key].cd = (cur && cur.cd) || 0;
+  }
+  // The encore expires on the turn after the kick that armed it. Called from
+  // worldTurn, so a free-action kick (rank 3) still gets its window: nothing it
+  // did advanced the clock.
+  function dragonEncoreTick() {
+    const e = player.dragonEncore; if (!e) return;
+    if (--e.grace >= 0) return;
+    const key = e.key;
+    dragonSpend(key);
+    updateHotbar();
+  }
+  function executeDragonKick(key, dir) {
+    pendingSkill = null;
+    const cur = skillCur(key);
+    if (!cur) { updateHotbar(); return; }
+    const encore = !!(player.dragonEncore && player.dragonEncore.key === key);
+    const cost = cur.mp || 0;
+    // The encore rides free. Rank 2 reads as "kick twice", not "pay twice".
+    if (!encore) {
+      if (player.mp < cost) { log("Not enough MP for " + skillDef(key).name + " (need " + cost + ")."); updateHotbar(); return; }
+      player.mp -= cost;
+    }
+    let steps = 0, landed = false;
+    while (steps <= 60) {
+      const nx = player.x + dir[0], ny = player.y + dir[1];
+      const mon = monsterAt(nx, ny);
+      if (mon) {
+        bump(player, nx, ny);
+        if (steps > 0) {
+          floatText(player.x, player.y, "×" + steps, "#ffd98a");
+          attack(player, mon, 0, { per: steps, full: !!cur.full });
+          landed = true;
+        } else {
+          // Nothing to run up. The kick still connects, at its ordinary weight —
+          // silently doing zero would read as the button being broken.
+          attack(player, mon, 0);
+          landed = true;
+          log("No room to build up — the kick lands flat.");
+        }
+        break;
+      }
+      if (isWall(nx, ny)) { bump(player, nx, ny); break; }   // no self-damage: this is a kick, not a charge into stone
+      player.x = nx; player.y = ny; steps++;
+      if (map[ny][nx] === THORN) {
+        const td = randInt(5, 10);
+        player.hp -= td; flash(player); floatText(player.x, player.y, "-" + td, "#ff8f84");
+        if (player.hp <= 0) { dragonSpend(key); updateHUD(); computeFOV(); die(); updateHotbar(); return; }
+      }
+      computeFOV(); pickUp();
+      if (map[player.y][player.x] === STAIRS) { dragonSpend(key); descend(); updateHotbar(); return; }
+    }
+    computeFOV();
+    if (!landed && steps === 0) log("There is nowhere to kick from here.");
+    // Rank 1 has no encore: spend the cooldown now. Rank 2+ arms it on the first
+    // kick and spends it on the second.
+    if (!cur.encore) dragonSpend(key);
+    else if (encore) dragonSpend(key);
+    else dragonArm(key);
+    updateHUD();
+    if (cur.freeAction) updateHotbar();   // free action: the turn clock does not advance
+    else worldTurn();
+    updateHotbar();
+  }
+
+  // Meditate. Sit still and heal fast — and it ends the instant you stop sitting
+  // still, which is what makes a 300-turn cooldown affordable. It pairs with
+  // hold-to-wait deliberately: the skill is "spend real time", and holding ⏳ is
+  // how you spend it.
+  //
+  // Worth knowing at the table: the floor's spark going out (turn 300) stops ALL
+  // HP regeneration, and Meditate multiplies regeneration rather than replacing
+  // it — so meditating on a floor you have overstayed heals nothing at all. That
+  // is the anti-grind rule working, not a bug, but it does mean the skill has a
+  // deadline.
+  function executeMeditate(key) {
+    const cur = skillCur(key);
+    if (!cur) return;
+    if (player.meditate) { endMeditate("you rise"); updateHotbar(); return; }   // pressing it again stands you up
+    const cost = cur.mp || 0;
+    if (player.mp < cost) { log("Not enough MP to meditate (need " + cost + ")."); return; }
+    player.mp -= cost;
+    player.meditate = {
+      key, mult: Math.max(1, cur.regenMult || 5), healed: 0,
+      refund: cur.cdRefund || 0, buff: cur.endBuff || 0, hpMark: player.hp,
+    };
+    player.skills[key].cd = cur.cd;
+    floatText(player.x, player.y, "☯", "#bcd3e6");
+    log("You settle into stillness — regeneration ×" + player.meditate.mult +
+        ". It breaks the moment you move, strike, or are struck.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  const meditateMult = () => (player.meditate ? player.meditate.mult : 1);
+  // Every exit runs through here so the rank-4 afterglow cannot be skipped by
+  // whichever thing happened to break the trance.
+  function endMeditate(why) {
+    const m = player.meditate;
+    if (!m) return;
+    player.meditate = null;
+    if (m.buff > 0) {
+      const t = Math.max(1, player.level * 2);
+      player.zen = { turns: t, dmg: m.buff, acc: m.buff, ac: m.buff };
+      floatText(player.x, player.y, "☯ +" + m.buff, "#bcd3e6");
+      log("You rise from stillness sharpened — +" + m.buff + " damage, to-hit and AC for " + t + " turns.", "hit");
+    } else {
+      log("The stillness breaks" + (why ? " — " + why + "." : "."));
+    }
+    updateHUD(); updateHotbar();
+  }
+  // Called at the end of every world turn: the trance ends if anything took HP
+  // off you. Watching the total rather than patching a dozen damage sites is the
+  // same trick charmWatch uses, and for the same reason — a burn, a trap, a death
+  // burst and a blow all have to count, and the next source added has to count too.
+  function meditateWatch() {
+    const m = player.meditate; if (!m) return;
+    // hpMark is "what your HP would be if only healing had happened", so falling
+    // short of it means something took HP off you even if regeneration hid it.
+    if (player.hp < m.hpMark) { endMeditate("you are struck"); return; }
+    m.hpMark = player.hp;
+  }
+
+  // Now You See Me. The Scroll of Invisibility's trick on a cooldown, with rank 4
+  // paying you for coming out of it: strike from the veil and the strike after it
+  // hits harder too.
+  function executeVanish(key) {
+    const cur = skillCur(key);
+    if (!cur) return;
+    const cost = cur.mp || 0;
+    if (player.mp < cost) { log("Not enough MP to vanish (need " + cost + ")."); return; }
+    player.mp -= cost;
+    const turns = Math.max(1, cur.turns || 5);
+    player.invisible = Math.max(player.invisible || 0, turns + 1);   // +1: this cast's own worldTurn ticks it once
+    // The payout is armed now and paid when the veil drops, however it drops —
+    // walking it out and stabbing out of it both count.
+    player.vanishPayout = cur.exitDmg ? { dmg: cur.exitDmg, turns: cur.exitTurns || 5 } : null;
+    // Forgetting is the point, same as the scroll: everything hunting you drops
+    // the trail rather than walking to your last known tile.
+    for (const m of monsters) {
+      if (m.state === SLEEPING) continue;
+      setState(m, WANDERING); m.target = null;
+    }
+    floatText(player.x, player.y, "\u25cc", "#bfe0ff");
+    log("You step out of sight. (" + turns + " turns, and striking ends it)", "hit");
+    player.skills[key].cd = cur.cd;
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // One exit for the veil, so the payout lands whether it timed out or you spent
+  // it on a blow.
+  function endInvisible(msg) {
+    player.invisible = 0;
+    if (msg) log(msg);
+    const p = player.vanishPayout;
+    if (!p) return;
+    player.vanishPayout = null;
+    player.unseen = { turns: p.turns, dmg: p.dmg };
+    floatText(player.x, player.y, "+" + p.dmg, "#bfe0ff");
+    log("You come back into the world swinging — +" + p.dmg + " damage for " + p.turns + " turns.", "hit");
   }
 
   function beginRush(key) {
@@ -7075,6 +7328,7 @@
     const dir = BY_CODE[e.code] || BY_KEY[e.key] || BY_KEY[key];
     if (dir) {
       e.preventDefault();
+      if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "dragonkick") { executeDragonKick(pendingSkill, dir); return; }
       if (pendingSkill && skillDef(pendingSkill) && skillDef(pendingSkill).kind === "rush") { executeRush(pendingSkill, dir); return; }
       walkPath = []; playerAct(dir[0], dir[1]);
     }
@@ -7378,6 +7632,28 @@
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },
     setHasteBuff: (n) => { player.hasteBuff = n; },
     setInvisible: (n) => { player.invisible = n; },
+    setMp: (n) => { player.mp = Math.max(0, Math.min(n == null ? player.maxMp : n, player.maxMp)); updateHUD(); return player.mp; },
+    // Clamped, unlike hurt(-n): healing past maxHp silently switches regeneration
+    // off (it only runs while hp < maxHp), which is a very confusing way for a
+    // test to measure zero.
+    setHp: (n) => { player.hp = Math.max(1, Math.min(n == null ? player.maxHp : n, player.maxHp)); updateHUD(); return player.hp; },
+    setCd: (k, n) => { const st = player.skills[k]; if (st) st.cd = Math.max(0, n | 0); updateHotbar(); return st ? st.cd : null; },
+    // The tree is level-gated, so testing anything above tier 1 needs a way up.
+    // Runs the real gainXP path rather than assigning player.level, so the stat,
+    // HP/MP and skill-point gains a level carries all happen as they would in play.
+    setLevel: (n) => { let guard = 0; while (player.level < n && guard++ < 400) gainXP(xpToNext() - player.xp); return player.level; },
+    // ---- Brynn tier 2/3 test hooks ----
+    kick: (dx, dy) => { const k = Object.keys(player.skills).find((x) => (skillDef(x) || {}).kind === "dragonkick"); if (k) executeDragonKick(k, [dx, dy]); return k || null; },
+    brynnState: () => ({
+      ac: playerAC(), toHit: playerToHit(), atk: playerAtk(), dodge: +dodgeChance().toFixed(4),
+      passiveAc: passiveMod("ac"), passiveEvaPct: passiveMod("evaPct"), armorSub: armorSubName(),
+      meditate: player.meditate ? { mult: player.meditate.mult, healed: player.meditate.healed, refund: player.meditate.refund } : null,
+      zen: player.zen ? Object.assign({}, player.zen) : null,
+      unseen: player.unseen ? Object.assign({}, player.unseen) : null,
+      encore: player.dragonEncore ? player.dragonEncore.key : null,
+      invisible: player.invisible || 0, mp: player.mp,
+      cds: Object.keys(player.skills).reduce((o, k) => { o[k] = player.skills[k].cd; return o; }, {}),
+    }),
     useEffect: (fx) => applyEffect(fx),          // fire a consumable's effect straight off, no item needed
     setFleeing: (i, n) => { const m = monsters[i]; if (m) m.fleeing = n; },
     setBerserk: (i, n) => { const m = monsters[i]; if (m) m.berserk = n; },
