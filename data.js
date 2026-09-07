@@ -2007,13 +2007,13 @@ window.CANTORI_DATA = {
             "Charge in a straight line and strike, for (attack - 1) per square travelled.",
             "The first kick does not start the cooldown — you may kick again immediately, and the second one is free.",
             "Both kicks are free actions: neither spends a turn.",
-            "The kick ignores anything shielding your target."
+            "No reduction: every square is worth a full attack rather than attack - 1."
           ],
           "ranks": [
             { "cd": 50, "mp": 5 },
             { "cd": 50, "mp": 5, "encore": true },
             { "cd": 50, "mp": 5, "encore": true, "freeAction": true },
-            { "cd": 50, "mp": 5, "encore": true, "freeAction": true, "pierce": true }
+            { "cd": 50, "mp": 5, "encore": true, "freeAction": true, "full": true }
           ],
           "req": []
         },

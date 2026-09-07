@@ -2787,12 +2787,11 @@
   // `opts` is how a skill bends the blow it is borrowing rather than rolling its
   // own damage and losing crits, enchants, identify progress and the ambush rule
   // with it. Two knobs so far, both Dragon Kick's:
-  //   per    — the blow becomes (damage − 1) × per. "Damage = attack − 1 per square
-  //            travelled" is exactly that, with per = the squares crossed.
-  //   pierce — skip whatever is soaking damage for the target. Today that is only
-  //            a boss playbook's shield (the Golem's healing nodes); ordinary
-  //            monsters have no mitigation at all, so this is narrow by
-  //            construction and will widen on its own if monster armour lands.
+  //   per  — the blow is dealt once per square crossed. "Damage = attack − 1 per
+  //          square travelled" is exactly that, with per = the squares.
+  //   full — drop that −1, so each square is worth the whole attack. This is what
+  //          "damage reduction is removed" means: the reduction is the −1, and the
+  //          capstone is that every square finally lands at full weight.
   function attack(attacker, target, bonus, opts) {
     bonus = bonus || 0;
     if (attacker === player) {
@@ -2839,10 +2838,10 @@
       let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg") + timedBonus("dmg"));
       // The per-square multiplier lands BEFORE the crit, so a critical Dragon Kick
       // multiplies the whole run-up rather than one square of it.
-      if (opts && opts.per > 0) dmg = Math.max(1, (dmg - 1) * opts.per);
+      if (opts && opts.per > 0) dmg = Math.max(1, (dmg - (opts.full ? 0 : 1)) * opts.per);
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
-      if (!(opts && opts.pierce)) dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
+      dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
       target.hp -= dmg;
       flash(target);
       floatText(target.x, target.y, (crit ? "CRIT " : "") + (surprise ? "!" : "") + "-" + dmg, crit ? "#ff6a6a" : (surprise ? "#ffd98a" : "#ffe08a"));
@@ -6685,12 +6684,12 @@
         bump(player, nx, ny);
         if (steps > 0) {
           floatText(player.x, player.y, "×" + steps, "#ffd98a");
-          attack(player, mon, 0, { per: steps, pierce: !!cur.pierce });
+          attack(player, mon, 0, { per: steps, full: !!cur.full });
           landed = true;
         } else {
           // Nothing to run up. The kick still connects, at its ordinary weight —
           // silently doing zero would read as the button being broken.
-          attack(player, mon, 0, { pierce: !!cur.pierce });
+          attack(player, mon, 0);
           landed = true;
           log("No room to build up — the kick lands flat.");
         }

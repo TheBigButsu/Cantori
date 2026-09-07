@@ -1337,13 +1337,18 @@ it wants you to make space before you spend it.
   Measured: first kick spends 5 MP and arms the encore, the encore costs 0 and starts
   the 50-turn clock. Decline it and the clock starts on its own one turn later.
 - **Rank 3** makes both free actions — verified at 0 turns spent for two kicks.
-- **Rank 4** ignores whatever is shielding the target. Against a phased Golem with
-  two healing nodes up, **40 out of 40 rank-3 kicks dealt exactly 1** (the shield
-  floors them) against a rank-4 average of **4.8**.
+- **Rank 4** removes the reduction — the `− 1` — so every square is worth a whole
+  attack instead of one short of it. Worth exactly one extra point per square, which
+  measured out cleanly on a 2–3 attack:
 
-Worth knowing: monsters carry no mitigation at all, so a boss playbook's shield is
-the only thing rank 4 currently pierces. It widens on its own if monster armour ever
-lands.
+| | 2 squares | 4 squares |
+|---|---|---|
+| rank 3 — `(attack − 1) × squares` | 2–4 (median 3) | 4–8 (median 8) |
+| rank 4 — `attack × squares` | 4–6 (median 6) | 8–12 (median 8) |
+
+  (Maxima run one or two above those bands on a crit, which multiplies the whole
+  run-up rather than one square of it.) The whole band shifts up by the number of
+  squares: at 4 squares rank 4's *floor* is rank 3's ceiling.
 
 ### Meditate (tier 2)
 
