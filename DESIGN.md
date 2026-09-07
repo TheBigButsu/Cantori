@@ -1312,3 +1312,115 @@ so the loop is deliberately twitchy. It stops on:
 - death, or any modal, throw or skill-targeting state opening
 
 Ending a rest early costs one more press. Ending it late costs the run.
+
+## Brynn's tiers 2 and 3 — DONE
+
+Brynn had two skills, both in tier 1, and nothing to spend a point on after level 5.
+Four more, and between them they give her a reason to control distance rather than
+close it.
+
+### Dragon Kick (tier 2)
+
+**Damage = (a normal attack roll − 1) × the squares crossed before the collision.**
+The run-up *is* the skill. Kicked from six squares out it is worth roughly six blows;
+kicked at something already touching you it lands at ordinary weight and says so in
+the log, because silently dealing nothing reads as a broken button.
+
+| squares travelled | 0 | 1 | 2 | 4 |
+|---|---|---|---|---|
+| median damage (attack 2–4) | 3 | 2 | 4 | 8 |
+
+That is the opposite of what every other melee button asks for, which is the point:
+it wants you to make space before you spend it.
+
+- **Rank 2** does not start the cooldown on the first kick, so a second one is free.
+  Measured: first kick spends 5 MP and arms the encore, the encore costs 0 and starts
+  the 50-turn clock. Decline it and the clock starts on its own one turn later.
+- **Rank 3** makes both free actions — verified at 0 turns spent for two kicks.
+- **Rank 4** ignores whatever is shielding the target. Against a phased Golem with
+  two healing nodes up, **40 out of 40 rank-3 kicks dealt exactly 1** (the shield
+  floors them) against a rank-4 average of **4.8**.
+
+Worth knowing: monsters carry no mitigation at all, so a boss playbook's shield is
+the only thing rank 4 currently pierces. It widens on its own if monster armour ever
+lands.
+
+### Meditate (tier 2)
+
+Sit still and mend fast; it ends the instant you stop sitting still. Measured over 20
+turns from a wound, on a 116 HP character:
+
+| | healed |
+|---|---|
+| no trance | 6 |
+| rank 1 (×5) | 35 |
+| rank 2 (×10) | 70 |
+
+- **Rank 3** refunds 2 cooldown turns per point healed — 25 turns of ×10 regeneration
+  took a 293-turn cooldown to 102, exactly as the arithmetic predicts.
+- **Rank 4** leaves +3 damage, to-hit and AC for (level × 2) turns: AC 11→14, to-hit
+  13→16, attack 2–4→5–7, for 40 turns at level 20, expiring cleanly.
+
+It pairs with holding ⏳ deliberately — the skill is "spend real time", and holding
+Wait is how you spend it.
+
+**One bug found and fixed while measuring.** The trance watches your HP total rather
+than patching every damage source, the same trick charmWatch uses. But at ×10
+regeneration a small hit is *exactly cancelled* by the healing in the same turn, so
+the net was zero and the watcher saw nothing — 4 damage landed and the trance held.
+The high-water mark now climbs with the healing, so falling short of it means
+something took HP off you even when regeneration hid it.
+
+**And a deadline worth knowing at the table:** a floor whose spark has gone out (turn
+300) regenerates nothing at all, meditation included. That is the anti-grind rule
+working as designed, but it does mean the skill stops existing halfway through a
+floor's patience.
+
+### Happy Feet (tier 3)
+
+Passive, and only while wearing cloth (light) or medium armour — footwork you cannot
+do in plate. Measured at DEX 10 so nothing else moved:
+
+| rank | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| AC | 12 | 14 | 14 | 14 |
+| dodge | — | — | 5% | 10% |
+
+In heavy armour: AC 10, dodge 0 — correctly off.
+
+Two firsts came with it: the first passive that adds **AC** (`passiveMod("ac")` now
+feeds `playerAC`), and the first that buys dodge as a flat **percentage** rather than
+in 2%-per-point evasion points, so the card can say "+5%" and mean it. Both dodge
+routes share the one 50% cap.
+
+### Now You See Me (tier 3)
+
+The Scroll of Invisibility's trick on a 100-turn cooldown: 5 / 10 / 20 turns, and
+everything hunting you drops the trail. Striking still ends it early. Rank 4 pays you
+for coming back: **+5 damage for 5 turns**, landing however the veil ended — walked
+out or spent on a blow. Measured at rank 4: 5 MP, exactly 20 turns invisible, then
++5 damage on the attack readout for 5 turns.
+
+## A dangling monster name stopped the game — FIXED
+
+Not part of the above; found by the smoke test on the way in, and **live on `main`**.
+
+`eligiblePool` read `VERMIN[k].minFloor` for every key in a biome's `monsters` list.
+Town still names `jackal` and `hornet`, both of which have been deleted from the
+monster table — so generating any Town floor threw an uncaught `TypeError` inside
+`generateLevel`. Not "the floor spawns nothing": the game stops.
+
+Deleting a monster row in the editor does not scrub that key out of every biome that
+lists it, so a dangling name is a *normal* consequence of ordinary content editing and
+must never be fatal. The filter now skips unknown keys.
+
+Town is therefore down to one monster (`imp`) until either those two rows come back
+or the names come out of the list — the guard makes it survivable, not good.
+
+## The editor's skill-kind dropdown had drifted — FIXED
+
+`KINDS` in `editor.js` listed five of the twenty-two kinds `useSkill` actually
+dispatches. Its own comment warned what that costs: "a kind missing here gets
+silently rewritten to `passive` the moment anyone touches the control" — which is
+every mage skill, every boon active, and every Smite variant. The list is now
+complete.
