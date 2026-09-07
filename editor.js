@@ -122,6 +122,10 @@
       { f: "cat", type: "select", opts: ["potion", "scroll", "tool"] },
       { f: "name", type: "text", cls: "name" },
       { f: "effect", type: "text" }, { f: "noDrop", label: "no drop", type: "bool" },
+      // Blank = 1 for weight, and blank shopWeight = whatever weight says. Both are
+      // deliberately left empty on most rows so the common case reads as "even odds".
+      { f: "weight", label: "drop weight", type: "num" },
+      { f: "shopWeight", label: "shop weight", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     bosses: [
@@ -584,17 +588,17 @@
   }
   // How this biome's floors are SHAPED. Packed into one field the way terrain is,
   // in LAYOUT_KEYS order. Blank deletes the block and the biome uses the defaults
-  // (3,8,56,55,70,6,265,0) — which are Shattered Pixel Dungeon's measured shape.
-  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "attachCap", "hallLegMax", "roomTarget", "sarcophagusPct"];
+  // (2,7,36,85,90,2,6,180,0) — Shattered Pixel Dungeon's measured shape.
+  const LAYOUT_KEYS = ["roomSideMin", "roomSideMax", "roomAreaMax", "attachPct", "attachCap", "roomPad", "hallLegMax", "roomTarget", "sarcophagusPct"];
   function layoutField(b) {
     const wrap = document.createElement("label"); wrap.className = "bfield";
     const span = document.createElement("span");
-    span.textContent = "layout (side min,max · area max · attach % · attach cap % · hall leg max · room target · sarcophagus %)";
+    span.textContent = "layout (side min,max · area max · attach % · attach cap % · room pad · hall leg max · room target · sarcophagus %)";
     wrap.appendChild(span);
     const inp = document.createElement("input"); inp.type = "text";
     const L = b.layout;
     inp.value = L ? LAYOUT_KEYS.map((k) => (L[k] != null ? L[k] : "")).join(",") : "";
-    inp.placeholder = "3,8,56,55,70,6,265,0";
+    inp.placeholder = "2,7,36,85,90,2,6,180,0";
     inp.oninput = () => {
       const v = inp.value.trim();
       if (v === "") { delete b.layout; return; }
@@ -1208,9 +1212,10 @@
     {
       title: "Floor shape (per biome)",
       rows: [
-        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 3 / 8 / 56, giving a mean room of ~30 tiles. That is Shattered Pixel Dungeon's shape read off its source: an SPD standard room is SizeCategory.NORMAL with outer dim 4–10, and Painter.fill insets 1, so its interior is 2×2 to 8×8 — about 25 tiles. The crypt overrides this at 6 / 13 / 120 for deliberately big chambers." },
-        { name: "Room count", formula: "rooms are laid until their total floor reaches roomTarget (default 265), hard-capped at 22", note: "roomTarget ÷ average room size IS the room count — about 9–10 at the defaults, against SPD's ~10 on an equivalent floor. The number of ROOMS is what a floor feels like, because each one is an encounter: the same total floor divided into half as many rooms plays as half as much game." },
-        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, up to attachCap % of all rooms", note: "Defaults 55% / 70% cap, which lands around 60% attached in practice — that shared-wall packing is how SPD's builder fits almost a whole floor together, and it is the difference between a warren and a scatter of chambers on the ends of hallways. 0 means every room is reached down a hall (what the crypt authors)." },
+        { name: "Room size", formula: "w = randInt(sideMin + 1, sideMax), h = randInt(sideMin, sideMax − 1), rerolled while w × h > areaMax; 40% of rooms swap w and h", note: "Defaults 2 / 7 / 36, a mean room of ~19 tiles. Read off SPD's source: Room.setSize does resize(NormalIntRange(4,10) − 1, …) — \"subtract one because rooms are inclusive to their right and bottom sides\" — and Painter.fill then insets a wall, so an SPD standard room's INTERIOR is (D − 3)², averaging about 17. (An earlier note here said ~25, which is why Cantori's floors read as bigger than SPD's even with a matching room count.) The crypt overrides this at 6 / 13 / 120 for deliberately big chambers." },
+        { name: "Room count", formula: "rooms are laid until their total floor reaches roomTarget (default 180), hard-capped at 22", note: "roomTarget ÷ average room size IS the room count — about 10 at the defaults, against SPD's 9–13. The number of ROOMS is what a floor feels like, because each one is an encounter." },
+        { name: "Room packing", formula: "roomPad tiles must separate two UNATTACHED rooms (default 2; 3 fits a 1-wide hall plus its walls)", note: "This is the knob that decides how BIG a floor feels, and it is not the same as how much floor there is. Shrinking rooms alone just fits more of them into the same 47×47 with more corridor between: the used extent stayed at 36² and the walk to the stairs did not move. SPD sizes its map to its rooms and packs most of them wall-to-wall, so pad 2 plus a high attach rate is what took Cantori's extent to 29² and its walk to the stairs from 30 steps to 24." },
+        { name: "Attached rooms", formula: "attachPct of rooms are placed flush against another with a single doorway between, up to attachCap % of all rooms", note: "Defaults 85% / 90% cap. That shared-wall packing is how SPD's builder fits almost a whole floor together, and it is the difference between a warren and a scatter of chambers on the ends of hallways. 0 means every room is reached down a hall (what the crypt authors)." },
         { name: "Hall length", formula: "a corridor leg runs randInt(3, hallLegMax) tiles before it must bend", note: "The path still alternates axes after every leg — this only sets how far a straight run may go first. Default 6; the crypt runs 14." },
         { name: "Pillars", formula: "a room over 20 tiles gets 1 + (area − 21) / 5 obstacle pillars, capped at 12, each reverted if it would strand any room", note: "The cap exists because the uncapped formula turns a 12×10 crypt hall into twenty obstacles. The reachability check is CLAUDE.md rule 5 applied to the pass that used to entomb bosses." },
         { name: "Sarcophagi", formula: "sarcophagusPct of a room's pillars are DRAWN as stone coffins", note: "Not a new tile: a sarcophagus is a pillar, so it is already solid, sight-blocking and correct in every map predicate. This is only how it is painted (and what Examine calls it)." },
@@ -1290,6 +1295,16 @@
       ],
     },
     {
+      title: "Draughts that hurt",
+      rows: [
+        { name: "Potion of Poison", formula: "first tick = 25–50% of the target's max HP; every tick after is floor(previous / 2), until 0", note: "It was a flat 4–8, which is a real decision on floor 1 and free by floor 15. A share of the drinker keeps mattering. The whole draught costs about twice the opening tick (64 bleeds 64/32/16/8/4/2/1 = 127) and almost all of it lands in the first two turns — the answer is to act now, not to walk it off. Thrown, it does exactly the same thing to whatever it bursts over." },
+        { name: "…against a boss", formula: "the opening tick is capped at 10% of the boss's max HP", note: "A percentage of a 600-HP pool is not a status effect, it is a kill button, and one bought potion should not be a boss fight." },
+        { name: "Potion of Paralysis", formula: "holds for randInt(depth, depth × 2) turns; the subject rolls d20 + RES modifier vs DC 10 + floor(depth / 2) EVERY turn to break out early", note: "Longer the deeper you are because what it has to hold gets worse at the same rate, but never a sentence — the victim keeps flipping the coin. It also cancels a telegraphed attack (a wound-up slam or aim line) outright: letting one land out of a frozen body would read as broken at exactly the moment the potion matters most. For the player the save is rolled when you TRY to act; the clock still runs on the world turn, so waiting it out works too." },
+        { name: "…against a boss", formula: "the hold is capped at 5 turns", note: "A bad RES roll could otherwise buy twelve free swings on the fight the whole floor is built around. That is not a consumable, that is a skip." },
+        { name: "A monster's RES", formula: "the row's `res` if it has one, otherwise floor(level / 2)", note: "No monster carries a RES score, and a column read by one potion would be a field in every row that nothing else uses. Its level stands in — the same assumption the fear roll already makes: deeper things hold themselves together better." },
+      ],
+    },
+    {
       title: "What a floor puts on the ground",
       rows: [
         { name: "Random drops", formula: "2–4 per floor (+1 at a 10% chance per drop), split by loot.dropWeights between gold / gear / consumable — NONE on a boss floor", note: "A boss arena gets no scattered loot: the fight is the floor, and gold and gear round the edges only pull you off it. The boss pays out properly on death instead." },
@@ -1327,6 +1342,7 @@
         { name: "When it appears", formula: "inserted right after every non-final boss kill, before the next biome's floor 1", note: "A peaceful, monster-free floor — doesn't consume a depth number." },
         { name: "Sell price", formula: "gearTier(item) × 2 gold", note: "Gear only, from your pack (not equipped slots). Flat — rarity/plus/enchants don't change it." },
         { name: "Potion price", formula: "20 gold flat", note: "3 stock slots, any potion except Insight; a slot restocks the instant it's bought." },
+        { name: "What it stocks", formula: "weighted by the consumable's `shopWeight`, falling back to its drop `weight`, falling back to 1", note: "The two harmful draughts are the only rows that set it, and they set it downward: poison and paralysis sit at 1.5 against a drop weight of 2, so the shelf offers them about 25% less often than the floor drops them and less often than a stat potion. A shelf is a choice the player pays for — a stall offering poison as often as Strength is selling one potion and two coin flips. Finding a bad potion is a discovery; buying one is a mugging." },
         { name: "Fountain full heal", formula: "(biome index + 1) × 20 gold", note: "20g after Forest, 40g after Caves, and so on." },
       ],
     },
@@ -1810,7 +1826,7 @@
       monsters: "minFloor is the ON/OFF switch: leave it EMPTY to disable a monster, or set the DEPTH it starts appearing on (1–25, the floor number in the HUD — not a position within the biome). A monster must also be listed in a biome (Biomes tab) to show up there. speed (>1 acts more often, <1 less; blank = 1) is the base for BOTH axes; walk spd / atk spd override it one at a time, so a bear can lumber between tiles (walk 0.8) and still swing normally, or a hornet dart in AND sting fast. Blank to-hit / AC / range / charge / ranged use engine defaults (to-hit +3, AC 11). Auras, death bursts and hexes are on the second table below. Sprite = assets/tiles/<key>.png — a row with no PNG falls back to its glyph in its colour, which works but is not the finished article.",
       abilities: "What a creature DOES, over and above hitting you. All of it optional, all of it blank by default. AURA: auraRange is the Chebyshev radius, aura ×step multiplies what a player's move costs (Red Slime 2) and aura ×swing what an attack costs (Black Slime 1.5); several auras compound. An aura only bites while the creature is IN SIGHT — an unexplained tax arriving from an unlit room is a bug report, not a mechanic — and the tiles it covers are tinted with aura colour. BURST (on death): burst r is the radius, burst dmg the top of a 1..N roll (0 = use the current DEPTH), and burn/poison/MP % are shares of the damage that victim actually took; stun min/max is rolled on top. It catches monsters as well as the player, so a pack can chain. HEXES (on a connecting hit): hex % is the chance one lands, hexes is a comma-separated pick from hex, blind, vertigo, charm, berserk — hex makes half your CONNECTING blows slide off, blind halves sight, vertigo scrambles the direction you press, charm stops you attacking the singer until something hurts you, berserk hands your turns to the AI. hex and charm last the floor number, vertigo 3 turns, berserk 3–5.",
       gear: "cat sets the equip slot; subtype classifies it (weapons: dagger/sword/axe/spear/bow — armor: light/medium/heavy). WEAPONS use dmg min/max, speed, and to-hit (added to the d20 attack roll); ARMOR uses mit min/max (each hit blocks a random amount in that range) and, if LIGHT, its INT and MP columns; JEWELRY uses neither (value = rolled affixes). speed = attacks per turn: >1 attacks faster (cost 1/speed), <1 slower. range = reach: blank/1 is melee, 2+ lets you tap a monster that far away with line of sight to strike (spear 2, bow 5). Armour grants NO flat AC — the subtype IS the identity: light pays in INT/MP, MEDIUM is the only one that turns DEX into AC (up to tier + plus of it), heavy just soaks. tier drives affix size AND groups drops (it also scales any Speed/Poison/Defense enchant the item rolls). rarity % = this type's drop chance within its tier+category; blank = a 'default' that splits the remaining %. Tier-by-floor and category odds live in the Loot tab. Sprites: assets/tiles/<key>.png, else the glyph.",
-      consumables: "effect is what it does: heal, strength, poison, map, teleport, burn. Droppable potions/scrolls appear as loot at equal odds; tick 'no drop' to keep one out of the pool (e.g. the torch).",
+      consumables: "effect is what it does: heal, strength, vitality, intelligence, stone_skin, poison, paralysis, map, teleport, burn, invisibility, thunderclap, upgrade_item, skill_point. Tick 'no drop' to keep one out of the loot pool (e.g. the torch). Drop weight is that row's share of the loot roll (blank = 1); shop weight overrides it on the merchant's shelf only (blank = same as drop weight), which is how poison and paralysis are stocked more rarely than they drop.",
       bosses: "One boss guards floor 5 of each biome. Which biome uses which boss is set on the Biomes tab. `arena` picks the hand-laid floor it is fought on — \"ring\" is 4–5 chambers in a closed loop with the boss opposite the way in, \"hall\" is an antechamber leading to one great pillared room. Blank means hall.",
       boons: "After each boss, the player is offered 3 of these at random and picks 1 (lasts the run). name / icon / color / description are all editable here. The EFFECT of each boon is wired in code by its key — guild (on-hit proc +level%), kethara (grant a purple armor), maelon (heal on kill), ourn (grants the Ourn's Blink freeze skill). Renaming/retuning text is safe; a brand-new key will show and be pickable but has no effect until it's coded.",
     })[coll] || "";

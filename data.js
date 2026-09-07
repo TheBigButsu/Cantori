@@ -947,8 +947,18 @@ window.CANTORI_DATA = {
       "name": "Potion of Poison",
       "effect": "poison",
       "weight": 2,
+      "shopWeight": 1.5,
       "glyph": "!",
       "color": "#7ec98a"
+    },
+    "paralysis": {
+      "cat": "potion",
+      "name": "Potion of Paralysis",
+      "effect": "paralysis",
+      "weight": 2,
+      "shopWeight": 1.5,
+      "glyph": "!",
+      "color": "#cfd6e6"
     },
     "mapping": {
       "cat": "scroll",
@@ -1422,6 +1432,8 @@ window.CANTORI_DATA = {
         "roomSideMax": 13,
         "roomAreaMax": 120,
         "attachPct": 0,
+        "attachCap": 70,
+        "roomPad": 3,
         "hallLegMax": 14,
         "roomTarget": 290,
         "sarcophagusPct": 55

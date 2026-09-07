@@ -280,6 +280,7 @@
     player.shield = 0;                         // Healing Smite's overflow
     clearHexes();                              // the crypt's songs don't survive a death
     player.burn = null; player.poison = 0;     // nor does anything still burning in you
+    player.toxin = 0; player.para = 0;         // nor a draught still working through you
     player.boons = new Set();                  // boons are earned fresh each run
     player.killCount = 0; player.secondChanceUsed = false;
     player.boonAcc = 0; player.boonEva = 0; player.boonHaste = 0; player.hasteBuff = 0;
@@ -754,14 +755,25 @@
     return pool[pool.length - 1];
   }
   // The merchant's stock: any potion except Potion of Insight (that one's earned,
-  // never bought), same weight-honouring pick as floor loot.
+  // never bought), same weight-honouring pick as floor loot — except that a row
+  // may set `shopWeight` to be stocked at a different rate than it drops.
+  //
+  // Only the harmful draughts use it, and they use it downward. A shelf is a
+  // choice the player pays for, and a stall that offers poison as often as it
+  // offers Strength is not selling three potions, it is selling one potion and
+  // two coin flips. Floor loot can keep the odds it has: finding a bad potion is
+  // a discovery, buying one is a mugging.
+  const shopWeightOf = (k) => {
+    const c = CONSUM[k];
+    return Math.max(0, c.shopWeight != null ? Number(c.shopWeight) : (c.weight != null ? c.weight : 1));
+  };
   function weightedShopPotionKey() {
     const pool = CONSUM_KEYS.filter((k) => CONSUM[k].cat === "potion" && k !== "skill_point");
     if (!pool.length) return null;
-    let total = 0; for (const k of pool) total += Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1);
+    let total = 0; for (const k of pool) total += shopWeightOf(k);
     if (total <= 0) return pool[randInt(0, pool.length - 1)];
     let r = Math.random() * total;
-    for (const k of pool) { r -= Math.max(0, CONSUM[k].weight != null ? CONSUM[k].weight : 1); if (r <= 0) return k; }
+    for (const k of pool) { r -= shopWeightOf(k); if (r <= 0) return k; }
     return pool[pool.length - 1];
   }
 
@@ -1014,7 +1026,25 @@
   // floor (its depth 11–15) carries ~10 rooms. Cantori was running 8 rooms of ~38,
   // which is the same total floor divided into fewer, larger spaces — and the count
   // of rooms is what a floor feels like, because each one is an encounter.
-  const LAYOUT_DEFAULT = { roomSideMin: 3, roomSideMax: 8, roomAreaMax: 56, attachPct: 55, attachCap: 70, hallLegMax: 6, roomTarget: 265, sarcophagusPct: 0 };
+  //   roomPad          tiles that must separate two UNATTACHED rooms. 3 fits a 1-wide
+  //                    hall plus its walls between them; 2 packs them tighter and
+  //                    leans on the attach path instead.
+  // These are Shattered Pixel Dungeon's shape, measured from its source rather than
+  // eyeballed. An SPD standard room is SizeCategory.NORMAL, and Room.setSize does
+  // `resize(NormalIntRange(4, 10) - 1, ...)` with the comment "subtract one because
+  // rooms are inclusive to their right and bottom sides"; Painter.fill then insets a
+  // wall. So its INTERIOR is (D − 3)², a mean of about 17 tiles — not the ~25 an
+  // earlier pass here assumed, which is why Cantori's floors read as bigger than
+  // SPD's even while the room COUNT matched.
+  //
+  // Room size was never the whole story though. Shrinking rooms alone just made more
+  // of them inside the same 47×47 footprint, with more corridor in between: extent
+  // stayed at 36² and the walk to the stairs did not move. SPD sizes its map TO its
+  // rooms (bounding box + 1 padding) and packs most of them wall-to-wall, so the
+  // packing knobs — attachPct, attachCap, roomPad — matter as much as the sizes.
+  // Together they take the used extent from 36² to 29² and the walk to the stairs
+  // from 30 steps to 24, which is what "the floor feels empty" was actually about.
+  const LAYOUT_DEFAULT = { roomSideMin: 2, roomSideMax: 7, roomAreaMax: 36, attachPct: 85, attachCap: 90, roomPad: 2, hallLegMax: 6, roomTarget: 180, sarcophagusPct: 0 };
   const layoutOf = (b) => Object.assign({}, LAYOUT_DEFAULT, (b || biome || {}).layout || {});
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
@@ -1704,7 +1734,7 @@
       }
       const x = randInt(2, MAP_W - w - 3), y = randInt(2, MAP_H - h - 3);
       const room = { x, y, w, h };
-      if (rooms.some((r) => overlaps(r, room, 3))) continue;   // ≥3 apart so a 1-wide hall + walls fit between
+      if (rooms.some((r) => overlaps(r, room, L.roomPad))) continue;   // far enough apart for a hall + its walls
       carveRoom(room); roomArea += w * h; rooms.push(room);
     }
     // A boss floor is a hand-laid arena instead: connectivity comes from the shape.
@@ -1903,6 +1933,13 @@
     if (m.horror) return m.name || "Horror";        // the floor's anger, not the animal it wears
     return m.boss ? m.name : (VERMIN[m.type] ? VERMIN[m.type].name : m.type);
   }
+  // Vermin want an article, named things already have one ("The Pied Piper" is not
+  // "the The Pied Piper"). Anything that already starts with a capital is a name.
+  const theMon = (m) => {
+    const n = monName(m);
+    return /^[A-Z]/.test(n) ? n : "the " + n;
+  };
+  const upFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
   function spawnBoss(room) {
     const key = biome.boss;
     bossName = DATA.bosses[key].name;
@@ -2185,6 +2222,8 @@
     }
     if (player.burn) chips.push({ t: "🔥 " + player.burn.dmg, c: "#ff8f4a", title: "Burning — " + player.burn.dmg + " a turn, cooling, " + player.burn.rounds + " turns left" });
     if (player.poison > 0) chips.push({ t: "☠ " + player.poison, c: "#9ad06a", title: "Poisoned — " + player.poison + " a turn, decaying" });
+    if (player.toxin > 0) chips.push({ t: "☠ " + player.toxin, c: "#7ec98a", title: "Poisoned by a draught — " + player.toxin + " this turn, halving after" });
+    if (player.para > 0) chips.push({ t: "🧊 " + player.para, c: "#cfd6e6", title: "Paralysed — up to " + player.para + " more turns, RES save vs DC " + paraDc() + " every time you try to act" });
     const wm = auraMult("auraWalk"), am = auraMult("auraAttack");
     if (wm !== 1) chips.push({ t: "👣 ×" + round2(wm), c: "#e0685a", title: "An aura is making every step cost " + round2(wm) + "× as much time" });
     if (am !== 1) chips.push({ t: "⚔ ×" + round2(am), c: "#c58fd6", title: "An aura is making every swing cost " + round2(am) + "× as much time" });
@@ -2335,6 +2374,93 @@
     const ex = m.dots.find((d) => d.tag === "poison");
     if (ex) ex.dmg += amount;
     else m.dots.push({ tag: "poison", dmg: amount, icon: "☠", color: "#9ad06a" });
+  }
+
+  // A draught of poison is a different animal from a poisoned blade, and used to
+  // be the same flat 4–8 it was on floor 1 — which by floor 5 was a rounding error
+  // and by floor 15 was free. The dose is now a SHARE OF THE DRINKER: the opening
+  // tick is 25–50% of max HP and every tick after is half the last, rounded down,
+  // so the whole draught costs roughly twice the opening tick and you feel all of
+  // it in the first two turns. That is the point — an unidentified potion should
+  // be able to end a run, and the halving means the answer is to act NOW (heal,
+  // run, cure) rather than to walk it off.
+  //
+  // Bosses are capped at 10% of max HP for the same reason ordinary monsters
+  // aren't: a percentage of a 600-HP pool is not a status effect, it's a kill
+  // button, and one bought potion should not be a boss fight.
+  const TOXIN_PCT_MIN = 0.25, TOXIN_PCT_MAX = 0.50;
+  const TOXIN_BOSS_CAP = 0.10;
+  function toxinDose(maxHp, boss) {
+    const top = Math.max(1, Number(maxHp) || 1);
+    let d = Math.round(top * (TOXIN_PCT_MIN + Math.random() * (TOXIN_PCT_MAX - TOXIN_PCT_MIN)));
+    if (boss) d = Math.min(d, Math.floor(top * TOXIN_BOSS_CAP));
+    return Math.max(1, d);
+  }
+  // Doses don't stack — the strongest one wins. Two potions on one body should be
+  // wasteful, not multiplicative.
+  function addToxin(m, dose) {
+    if (dose <= 0) return;
+    if (!m.dots) m.dots = [];
+    const ex = m.dots.find((d) => d.tag === "toxin");
+    if (ex) ex.dmg = Math.max(ex.dmg, dose);
+    else m.dots.push({ tag: "toxin", dmg: dose, halve: true, icon: "☠", color: "#7ec98a" });
+  }
+
+  // ---- Paralysis -----------------------------------------------------------
+  // Potion of Paralysis. Longer the deeper you are (depth..depth*2 turns) because
+  // the things it has to hold get worse at the same rate, but it is never a
+  // sentence: the subject rolls a RES save EVERY turn against DC 10 + depth/2, so
+  // even a long hold is a coin the victim keeps flipping. That cuts both ways —
+  // it is why throwing one is a gamble rather than a win button, and why drinking
+  // one unidentified is survivable rather than a death.
+  //
+  // Five turns is all a boss ever gives you. Not because the save would fail — a
+  // boss with a bad RES roll could sit there for twelve turns otherwise, and a
+  // twelve-turn free hit on the fight the whole floor is built around is not a
+  // consumable, it's a skip.
+  const PARA_BOSS_MAX = 5;
+  const paraDc = () => 10 + Math.floor(depth / 2);
+  const paraTurns = () => randInt(depth, depth * 2);
+  const paraSave = (resMod) => randInt(1, 20) + resMod >= paraDc();
+  // No monster carries a RES score, and inventing a column for one potion would
+  // put a field in every row that nothing else reads. Its level stands in for it,
+  // which is the same thing the fear roll already assumes: deeper things hold
+  // themselves together better. A `res` field on the row wins if one ever lands.
+  const monResMod = (m) => (m && m.res != null ? Number(m.res) : Math.floor((m.level || 1) / 2));
+
+  function paralyzeMonster(m) {
+    if (!m || m.hp <= 0) return;
+    let t = paraTurns();
+    if (m.boss) t = Math.min(t, PARA_BOSS_MAX);
+    m.para = Math.max(m.para || 0, t);
+    // A telegraph is a promise the monster made last turn; paralysis breaks it.
+    // Letting a wound-up slam land out of a frozen body would make the potion
+    // read as broken at exactly the moment it matters most.
+    if (m.windup) { m.windup = null; log(upFirst(theMon(m)) + "'s attack comes apart mid-swing!", "hit"); }
+    if (m.beam) m.beam = null;
+    floatText(m.x, m.y, "held", "#cfd6e6");
+  }
+  // True if the paralysis ate the player's turn. The save is rolled on the ATTEMPT
+  // rather than at the top of the turn so that trying to move is what tests it —
+  // and the clock in playerDotTick runs either way, so waiting it out still works.
+  function paraBlocksPlayer() {
+    if (!(player.para > 0)) return false;
+    if (paraSave(mod("RES"))) {
+      player.para = 0;
+      floatText(player.x, player.y, "free", "#cfe6b0");
+      log("You wrench yourself free of the paralysis.", "hit");
+      return false;
+    }
+    floatText(player.x, player.y, "held", "#cfd6e6");
+    log("You cannot move a muscle!", "hurt");
+    worldTurn();
+    return true;
+  }
+  function paralyzePlayer() {
+    const t = paraTurns();
+    player.para = Math.max(player.para || 0, t);
+    floatText(player.x, player.y, "held", "#cfd6e6");
+    log("Your limbs lock solid — you cannot move! (up to " + t + " turns, RES save each turn vs DC " + paraDc() + ")", "hurt");
   }
 
   // ---- Auras: a field a monster simply HAS ---------------------------------
@@ -2501,6 +2627,13 @@
     if (amount <= 0) return;
     player.poison = (player.poison || 0) + amount;
   }
+  // The drunk-draught version, kept apart from the stacking poison above because
+  // it decays the other way: halving, not shedding 1 a turn. Mixing them would
+  // make a potion's opening tick soften a knife's poison, which is backwards.
+  function toxinPlayer(dose) {
+    if (dose <= 0) return;
+    player.toxin = Math.max(player.toxin || 0, dose);
+  }
   function playerDotTick() {
     if (dead) return;
     if (player.burn) {
@@ -2513,6 +2646,14 @@
     if (player.poison > 0) {
       player.hp -= player.poison; flash(player); floatText(player.x, player.y, "☠-" + player.poison, "#9ad06a");
       if (--player.poison <= 0) { player.poison = 0; log("The poison works itself out of you."); }
+      if (player.hp <= 0) { updateHUD(); die(); return; }
+    }
+    if (player.para > 0 && --player.para <= 0) { player.para = 0; log("The paralysis lets go of you."); }
+    if (player.toxin > 0) {
+      const t = player.toxin;
+      player.hp -= t; flash(player); floatText(player.x, player.y, "☠-" + t, "#7ec98a");
+      player.toxin = Math.floor(t / 2);
+      if (player.toxin <= 0) { player.toxin = 0; log("The draught finally burns itself out."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
     }
   }
@@ -3029,6 +3170,7 @@
   // Returns true if a turn was spent.
   function playerAct(dx, dy) {
     if (dead || (dx === 0 && dy === 0)) return false;
+    if (paraBlocksPlayer()) return true;
     if (player.stun > 0) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return true; }
     // Berserk takes the decision away entirely, so it is settled before the
     // direction is even looked at. It outranks Charmed on purpose: rage beats love,
@@ -3802,6 +3944,7 @@
       if (turns !== st.at) continue;
       horrorWarned = true;
       log(st.msg, "hurt");
+      restBreak();                                            // never rest through the floor losing patience
       flashScreen("#3a1e1e", 420);
       if (st.spark) { sparkGone = true; player.regenAcc = 0; }
     }
@@ -3812,6 +3955,7 @@
     if (spawnHorror()) {
       horrorDeadAt = -1;
       log("Something is coming for you.", "hurt");
+      restBreak();
       flashScreen("#5a1e1e", 500);
     }
   }
@@ -3883,12 +4027,21 @@
         // rounds AND cools by 1 a turn, to a floor of 1: it hits hardest the moment
         // it lands. Everything else burns at a flat rate for its rounds.
         if (dot.tag === "poison") { if (--dot.dmg <= 0) m.dots = m.dots.filter((x) => x !== dot); }
+        // A drunk/thrown draught halves instead of shedding 1: the same curve the
+        // player feels, so a potion reads the same whichever end of it you're on.
+        else if (dot.halve) { dot.dmg = Math.floor(dot.dmg / 2); if (dot.dmg <= 0) m.dots = m.dots.filter((x) => x !== dot); }
         else {
           if (dot.decay) dot.dmg = Math.max(1, dot.dmg - 1);
           if (--dot.rounds <= 0) m.dots = m.dots.filter((x) => x !== dot);
         }
-        if (m.hp <= 0) { killMonster(m, dot.tag === "poison" ? "succumbs to poison" : "burns away"); return; }
+        if (m.hp <= 0) { killMonster(m, (dot.tag === "poison" || dot.tag === "toxin") ? "succumbs to poison" : "burns away"); return; }
       }
+    }
+    // Paralysis, before the stun check: a save that lands frees it to act THIS
+    // turn, so the roll is worth something on the final turn of the hold too.
+    if (m.para && m.para > 0) {
+      if (paraSave(monResMod(m))) { m.para = 0; floatText(m.x, m.y, "shakes free", "#cfe6b0"); }
+      else { m.para--; floatText(m.x, m.y, "held", "#cfd6e6"); return; }
     }
     if (m.stun && m.stun > 0) { m.stun--; floatText(m.x, m.y, "zzz", "#cfe6ff"); return; }  // stunned: skip
     if (m.type === "healing_node") return;                       // passive — never acts, just shields the golem
@@ -4123,6 +4276,7 @@
 
   function walkTo(tx, ty) {
     if (dead) return;
+    if (!examineMode && paraBlocksPlayer()) return;
     if (player.stun > 0 && !examineMode) { player.stun--; floatText(player.x, player.y, "stunned", "#e0a848"); log("You're too dazed to act!", "hurt"); worldTurn(); return; }
     if (examineMode) { describeTile(tx, ty); toggleExamine(false); updateHotbar(); return; }
     if (pendingThrow != null) { const idx = pendingThrow; executeThrow(idx, tx, ty); return; }
@@ -5608,10 +5762,12 @@
       floatText(tx, ty, "✸", consumColor(one.key));
       const m = monsterAt(tx, ty);
       if (m && CONSUM[one.key].effect === "poison") {
-        const d = randInt(3, 6); m.hp -= d; flash(m); floatText(m.x, m.y, "☠-" + d, "#9ad06a");
-        addPoison(m, 2);
+        addToxin(m, toxinDose(m.maxHp, m.boss));
+        floatText(m.x, m.y, "☠", "#7ec98a");
         log("The " + nm + " bursts over the " + monName(m) + "!", "hit");
-        if (m.hp <= 0) killMonster(m, "succumbs to poison");
+      } else if (m && CONSUM[one.key].effect === "paralysis") {
+        paralyzeMonster(m);
+        log("The " + nm + " bursts over " + theMon(m) + " — it seizes up!", "hit");
       } else {
         log("The " + nm + " shatters, its magic wasted.");
       }
@@ -5684,11 +5840,12 @@
       if (player.boons && player.boons.has("leper")) {
         log("Your body shrugs off the poison — Maelon's Leper Colony holds.", "hit");
       } else {
-        const amt = randInt(4, 8);
-        player.hp -= amt;
-        log("It was poison! (-" + amt + ")", "hurt");
-        if (player.hp <= 0) die();
+        const dose = toxinDose(player.maxHp, false);
+        toxinPlayer(dose);
+        log("It was poison! It burns through you — " + dose + " this turn, and half again each turn after.", "hurt");
       }
+    } else if (fx === "paralysis") {
+      paralyzePlayer();
     } else if (fx === "invisibility") {
       player.invisible = INVIS_TURNS;
       // Forgetting is the point: wipe what every monster currently knows, so the
@@ -6714,21 +6871,33 @@
     };
     // Only tiers that actually hold something. An empty tier is not information —
     // it was five dashed circles telling the player nothing at all.
-    let html = "";
+    //
+    // The detail card is spliced in DIRECTLY BELOW the row it belongs to, not
+    // parked at the bottom of the screen. It used to sit under every tier, which
+    // meant tapping a tier-1 node and then scrolling past four more tiers to find
+    // out what it does and to reach the button that spends the point. On a phone
+    // that is the whole screen twice over, and the thing you tapped is off the top
+    // by the time you can read about it.
+    const detail = charSkillDetailHTML(sk, charSelSkill);
+    const holds = (arr) => charSelSkill != null && arr.indexOf(charSelSkill) >= 0;
+    let html = "", placed = false;
     for (const t of [...tiers.keys()].sort((a, b) => a - b)) {
       const need = tierLevel(t - 1), open = player.level >= need;
       const gate = !need ? "from the start" : open ? "level " + need : "needs level " + need;
       html += `<div class="sktr${open ? "" : " shut"}">` +
         `<div class="sktr-h"><b>Tier ${t}</b><span>${gate}</span></div>` +
         `<div class="sktr-row">${tiers.get(t).map(cell).join("")}</div></div>`;
+      if (holds(tiers.get(t))) { html += `<div class="skdet">${detail}</div>`; placed = true; }
     }
     if (loose.length) {
       html += `<div class="sktr"><div class="sktr-h"><b>Blessings</b><span>granted by a god</span></div>` +
         `<div class="sktr-row">${loose.map(cell).join("")}</div></div>`;
+      if (holds(loose)) { html += `<div class="skdet">${detail}</div>`; placed = true; }
     }
+    // Nothing selected (or a node that vanished with a class switch): the prompt
+    // still belongs at the bottom, where it reads as a hint rather than a card.
     return `<div class="cline"><span class="cpts">${player.statPoints}</span> points to spend · a tier opens every ${TIER_LEVELS} character levels</div>` +
-      `<div class="sktiers">${html}</div>` +
-      charSkillDetailHTML(sk, charSelSkill);
+      `<div class="sktiers">${html}${placed ? "" : detail}</div>`;
   }
   function charBoonsHTML() {
     const boons = DATA.boons || {};
@@ -6746,19 +6915,90 @@
   }
 
   // ---- Hotbar --------------------------------------------------------------
-  function makeSlot(icon, label, ready, cd, arming, onClick) {
+
+  // Holding ⏳ spends turns until something earns your attention. Waiting out a
+  // wound used to be sixty separate taps, which is not a decision the player is
+  // making, it is a toll they are paying to make one — but a rest that runs THROUGH
+  // the thing it should have noticed is far worse than the toll. So the loop is
+  // deliberately twitchy: it stops the moment a foe comes into view, the moment a
+  // single point of damage lands, the moment the floor says anything, and the
+  // moment the player's hand touches anything at all. Ending a rest early costs
+  // one more press. Ending it late costs the run.
+  const REST_MS = 90;      // one turn per tick — fast enough to read as "held down"
+  const REST_HOLD_MS = 300; // press-and-hold threshold, so a tap is still one turn
+  let restTimer = null, restSeen = 0, restHp = 0, restBreakMsg = null;
+  const visibleFoes = () =>
+    monsters.reduce((n, m) => n + (m.hp > 0 && inBounds(m.x, m.y) && visible[m.y][m.x] ? 1 : 0), 0);
+  // Anything in the engine can end a rest by naming its reason — the floor's Horror
+  // is the first caller, and anything that logs something the player must read
+  // should be the next. A no-op when nobody is resting, so callers needn't check.
+  function restBreak(msg) { if (restTimer) restBreakMsg = msg || ""; }
+  const restStopEv = () => stopRest();
+  function restBusy() {
+    return dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen ||
+      fountainOpen || examineMode || pendingThrow != null || !!pendingSkill;
+  }
+  function startRest() {
+    if (restTimer || restBusy()) return;
+    restSeen = visibleFoes(); restHp = player.hp; restBreakMsg = null;
+    restTimer = setInterval(restTick, REST_MS);
+    // Capture phase, on the document: a rest ends on ANY input, not just input
+    // aimed at the game. Reaching for the inventory should stop the clock before
+    // the inventory opens, not after three more turns have gone by.
+    document.addEventListener("keydown", restStopEv, true);
+    document.addEventListener("pointerdown", restStopEv, true);
+  }
+  function stopRest(msg) {
+    if (!restTimer) return;
+    clearInterval(restTimer); restTimer = null; restBreakMsg = null;
+    document.removeEventListener("keydown", restStopEv, true);
+    document.removeEventListener("pointerdown", restStopEv, true);
+    if (msg) log(msg);
+  }
+  function restTick() {
+    if (!restTimer) return;
+    if (restBusy()) { stopRest(); return; }
+    waitTurn();
+    if (dead) { stopRest(); return; }
+    // The floor spoke (or something else called restBreak) during that turn.
+    if (restBreakMsg != null) { const m = restBreakMsg; stopRest(); if (m) log(m); return; }
+    if (player.hp < restHp) { stopRest("Something is hurting you — you stop waiting."); return; }
+    restHp = player.hp;                       // regen counts as a change too, just not a reason to stop
+    const foes = visibleFoes();
+    if (foes > restSeen) { stopRest("Something moves into view — you stop waiting."); return; }
+    restSeen = foes;
+  }
+
+  // `hold` wires press-and-hold on top of the tap. The tap's turn is spent on
+  // pointerdown rather than on click, because the repeat has to start from the
+  // same event — waiting for click would mean the first turn of a hold landed
+  // only once the finger came back up.
+  function makeSlot(icon, label, ready, cd, arming, onClick, hold) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "slot" + (ready ? " ready" : " cool") + (arming ? " arming" : "");
     b.innerHTML = `<span>${icon}</span><span class="lbl">${label}</span>` + (cd ? `<span class="cd">${cd}</span>` : "");
-    b.addEventListener("click", onClick);
+    if (!hold) { b.addEventListener("click", onClick); return b; }
+    let armed = null;
+    const end = () => { clearTimeout(armed); armed = null; stopRest(); };
+    b.addEventListener("pointerdown", (e) => {
+      e.preventDefault();                     // no synthetic click, no text selection on a long press
+      onClick();
+      clearTimeout(armed);
+      armed = setTimeout(startRest, REST_HOLD_MS);
+    });
+    b.addEventListener("pointerup", end);
+    b.addEventListener("pointercancel", end);
+    b.addEventListener("pointerleave", end);
+    // preventDefault above costs the button its keyboard activation, so hand it back.
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } });
     return b;
   }
   function updateHotbar() {
     const bar = document.getElementById("hotbar");
     if (!bar) return;
     bar.innerHTML = "";
-    bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn()));
+    bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn(), true));   // tap = a turn, hold = rest
     for (const key of Object.keys(player.skills || {})) {
       const st = player.skills[key], d = skillDef(key);
       if (!st || st.rank < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
@@ -7016,7 +7256,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, para: m.para || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -7062,6 +7302,10 @@
     nearestWall: (x, y) => nearestRoomWallSpot(bossRoom, x, y),
     stairsAt: () => findStairs(),
     genRepaired: () => _genRepaired,
+    // Tuning hook: override the default floor-shape block at runtime so a layout can
+    // be measured without an edit-reload cycle. Mutates the defaults in place.
+    setLayout: (o) => Object.assign(LAYOUT_DEFAULT, o || {}),
+    layoutDefaults: () => Object.assign({}, LAYOUT_DEFAULT),
     // Can the player physically walk to (tx, ty)? Terrain-only flood fill, the same
     // one the generator uses to guarantee connectivity — so tests/smoke.js can prove
     // a floor is completable without depending on monster positions or explored state.
@@ -7088,6 +7332,7 @@
       }));
     },
     turns: () => turns,
+    shopRoll: () => weightedShopPotionKey(),
     decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },
@@ -7099,7 +7344,7 @@
     },
     // ---- Biome 3 test hooks: auras, hexes, death bursts ----
     hexState: () => {
-      const out = { stun: player.stun | 0, burn: player.burn ? Object.assign({}, player.burn) : null, poison: player.poison | 0 };
+      const out = { stun: player.stun | 0, burn: player.burn ? Object.assign({}, player.burn) : null, poison: player.poison | 0, toxin: player.toxin | 0, para: player.para | 0 };
       for (const k of HEX_KEYS) out[k] = player[k] | 0;
       out.charmSrc = player.charmSrc ? player.charmSrc.type : null;
       return out;
@@ -7110,7 +7355,15 @@
     auraState: () => ({ walk: auraMult("auraWalk"), attack: auraMult("auraAttack"), tiles: auraTiles().size,
                         sources: auraSources("auraWalk").concat(auraSources("auraAttack")).map((m) => m.type) }),
     burnPlayer: (n) => { burnPlayer(n); updateHUD(); },
-    curePlayer: () => { player.burn = null; player.poison = 0; player.stun = 0; updateHUD(); },
+    curePlayer: () => { player.burn = null; player.poison = 0; player.toxin = 0; player.stun = 0; player.para = 0; updateHUD(); },
+    toxinPlayer: (n) => { toxinPlayer(n != null ? n : toxinDose(player.maxHp, false)); updateHUD(); },
+    toxinDose: (maxHp, boss) => toxinDose(maxHp, !!boss),
+    paralyzePlayer: () => { paralyzePlayer(); updateHUD(); },
+    paralyzeAt: (x, y) => { const m = monsterAt(x, y); if (!m) return 0; m.para = 0; paralyzeMonster(m); return m.para; },
+    paraInfo: () => ({ dc: paraDc(), bossMax: PARA_BOSS_MAX, player: player.para | 0 }),
+    startRest: () => startRest(),
+    stopRest: () => stopRest(),
+    resting: () => !!restTimer,
     poisonPlayer: (n) => { poisonPlayer(n); updateHUD(); },
     sarcophagi: () => Array.from(sarcophagi).map((k) => ({ x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W })),
     layout: () => layoutOf(),

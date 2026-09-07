@@ -461,6 +461,12 @@ body{
 .sktr.shut .sktr-h b{color:var(--ink-dim)}
 .sktr-h span{color:var(--ink-dim);font-size:10.5px;font-variant-numeric:tabular-nums}
 .sktr-row{display:flex;flex-wrap:wrap;gap:8px}
+/* The detail card sits directly under the tier that owns the selected node, so
+   it is pulled up over that row's gap and railed in amber down its left edge:
+   the card has to read as belonging to the row above it rather than as the next
+   thing in a list. */
+.skdet{margin:-4px 0 12px 0;padding-left:10px;border-left:2px solid var(--amber)}
+.skdet .skillrow{margin-bottom:0}
 .skcell{
   flex:0 0 auto;width:76px;
   display:flex;flex-direction:column;align-items:center;gap:5px;

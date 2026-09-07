@@ -1194,3 +1194,121 @@ Reachable, not theoretical: Ourn's Pride takes a point off every stat every 15 k
 "with no floor". Rolling STR lowers the bottom end, which is what brought it within
 reach rather than leaving it a curiosity. Outgoing damage is now floored at 1 like
 everything else, and the Atk readout clamps to match rather than promising a negative.
+
+## Floors that are the size Shattered Pixel Dungeon's are — DONE
+
+Cantori felt empty next to SPD and Shiren. The spawns were not the problem; the
+floors were.
+
+**First, a correction to an earlier measurement here.** A previous pass put SPD's
+standard room interior at ~25 tiles. That was an estimate, and it was wrong.
+`Room.setSize` does `resize(NormalIntRange(4, 10) − 1, …)` with the comment *"subtract
+one because rooms are inclusive to their right and bottom sides"*, and `Painter.fill`
+then insets a wall — so the interior is **(D − 3)², a mean of about 17**. Cantori's
+rooms were 29. Nearly double, while the earlier note claimed near-parity.
+
+**Second, and more useful: room size was never the whole story.** Shrinking rooms
+alone just fits more of them into the same fixed 47×47 grid, with more corridor in
+between. Measured across four candidate sizings, the used extent stayed at 36² and the
+walk to the stairs did not move at all. SPD sizes its map *to* its rooms (bounding box
+plus one tile of padding) and packs most of them wall-to-wall; Cantori scatters them
+across a fixed grid with a 3-tile gap. So the packing knobs matter as much as the
+sizes, and `roomPad` joined the layout block to make that tunable.
+
+| | before | after | SPD |
+|---|---|---|---|
+| rooms per floor | 9.6 | **10.2** | 9–13 |
+| average room | 29 | **19** | ~17 |
+| walkable tiles | 309 | **212** | ~190–280 |
+| used extent | 36² | **29²** | sized to the rooms |
+| walkable tiles per monster | 44 | **30** | ~30 |
+| steps from start to stairs | 30 | **24** | — |
+
+Monster counts are untouched — 7 alive on a mid-game floor either way. The floor
+shrank around them.
+
+The crypt keeps its own big-chamber block and is pinned at `roomPad: 3` and
+`attachCap: 70` so the new packing defaults do not quietly reshape the one biome that
+is still undesigned.
+
+**The exit backstop is now earning its keep.** Across the same 14,000-floor sweep it
+fired **5 times** rather than 2 — tighter packing does strand more floors — and not
+one ended unreachable.
+
+## The skill card sits under the skill — DONE
+
+The tiered skill selector put the detail card — description, requirements, "Now/Next",
+and the button that actually spends the point — below *every* tier. Tapping a tier-1
+node meant scrolling past four more tiers to find out what it does, by which point the
+node you tapped was two screens off the top.
+
+The card is now spliced in directly beneath the tier row that owns the selected node,
+railed in amber down its left edge so it reads as belonging to that row. With nothing
+selected the "tap a node above" prompt stays at the bottom, where it is a hint rather
+than a card.
+
+## Potion of Poison: a share of you, halving — DONE
+
+It was a flat 4–8. That is a real decision on floor 1, a rounding error by floor 5 and
+free by floor 15, which made "drink the unknown potion" a strictly correct play for
+most of a run.
+
+The dose is now a share of the drinker: **25–50% of max HP on the first tick, halved
+(rounded down) every tick after, until 0.** The whole draught costs about twice the
+opening tick — a 64 opener bleeds 64/32/16/8/4/2/1 for 127 total — and almost all of
+it lands in the first two turns. That is the point. The answer to a bad potion should
+be *act now* (heal, run, cure), not *walk it off*.
+
+**Bosses cap at 10% of max HP.** A percentage of a 600-HP pool is not a status effect,
+it is a kill button, and one bought potion should not be a boss fight.
+
+Thrown, it does the same thing to whatever it bursts over — the monster tick grew a
+`halve` mode so a draught reads the same whichever end of it you are on.
+
+## Potion of Paralysis — DONE
+
+Holds the subject for **depth..depth×2 turns**, with a **RES save every turn at DC
+10 + depth/2**. Longer the deeper you are, because what it has to hold gets worse at
+the same rate — but never a sentence, because the victim keeps flipping the coin. That
+cuts both ways: throwing one is a gamble, and drinking one unidentified is survivable.
+
+- **Bosses cap at 5 turns.** A bad RES roll could otherwise buy twelve free swings on
+  the fight the whole floor is built around; that is not a consumable, that is a skip.
+- **It breaks a telegraph.** A wound-up slam or aim line is cancelled outright. Letting
+  one land out of a frozen body would read as broken at exactly the moment it matters.
+- Monsters carry no RES score, so their level stands in for one (`floor(level/2)`) —
+  the same assumption the fear roll already makes. A `res` field on the row wins if
+  one ever lands.
+- For the player the save is rolled when you *try* to act, so trying is what tests it;
+  the clock runs on the world turn either way, so waiting it out still works.
+
+## Poison and paralysis are rarer on the shelf than in the dungeon — DONE
+
+Consumable rows gained an optional **`shopWeight`**, used by the merchant in place of
+`weight`. Only the harmful draughts set it, and only downward: both sit at 1.5 against
+a drop weight of 2.
+
+A shelf is a choice the player pays for. A stall that offers poison as often as it
+offers Strength is not selling three potions, it is selling one potion and two coin
+flips. Floor loot keeps its odds — *finding* a bad potion is a discovery, *buying* one
+is a mugging. Measured over 20,000 rolls the stall now stocks poison 11.5% of the time
+against Strength's 15.6%.
+
+## Hold ⏳ to rest — DONE
+
+Waiting a wound off was sixty separate taps: not a decision the player is making, a
+toll they are paying to make one. Holding the Wait button now spends turns
+continuously (a tap is still exactly one turn).
+
+A rest that runs *through* the thing it should have noticed is far worse than the toll,
+so the loop is deliberately twitchy. It stops on:
+
+- a foe coming into view that was not in view before
+- a single point of damage
+- the floor speaking up — any `restBreak()` caller, which today is every Horror stage
+  message and the Horror's arrival
+- **any** input at all, captured on the document rather than the game, so reaching for
+  the inventory stops the clock before the inventory opens
+- death, or any modal, throw or skill-targeting state opening
+
+Ending a rest early costs one more press. Ending it late costs the run.
