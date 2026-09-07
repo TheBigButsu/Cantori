@@ -52,7 +52,8 @@ window.CANTORI_DATA = {
       "range": 4,
       "ranged": true,
       "atkMin": 1,
-      "hp": 12
+      "hp": 12,
+      "burstPoison": 25
     },
     "wolf": {
       "name": "Wolf",
@@ -94,7 +95,9 @@ window.CANTORI_DATA = {
       "speed": 1,
       "minFloor": 4,
       "walkSpeed": 1,
-      "atkMax": 8
+      "atkMax": 8,
+      "burstStunMax": 2,
+      "burstStunMin": 1
     },
     "harpy": {
       "name": "Harpy",
@@ -111,28 +114,6 @@ window.CANTORI_DATA = {
       "speed": 1,
       "atkMin": 2
     },
-    "jackal": {
-      "walkSpeed": 1.2,
-      "speed": 1,
-      "name": "Jackal",
-      "hp": 3,
-      "atkMin": 1,
-      "atkMax": 2,
-      "glyph": "j",
-      "color": "#b79a6b"
-    },
-    "hornet": {
-      "walkSpeed": 1.2,
-      "attackSpeed": 1.2,
-      "speed": 1,
-      "name": "Hornet",
-      "flying": true,
-      "hp": 2,
-      "atkMin": 2,
-      "atkMax": 3,
-      "glyph": "h",
-      "color": "#e0a13c"
-    },
     "ghoul": {
       "walkSpeed": 0.8,
       "attackSpeed": 0.8,
@@ -144,40 +125,47 @@ window.CANTORI_DATA = {
       "glyph": "G",
       "color": "#9fb07a",
       "minFloor": 11,
-      "charge": true
+      "charge": true,
+      "ac": 18
     },
     "wraith": {
       "walkSpeed": 1.2,
       "speed": 1,
       "name": "Wraith",
-      "hp": 6,
-      "atkMin": 3,
-      "atkMax": 4,
+      "hp": 28,
+      "atkMin": 2,
+      "atkMax": 15,
       "glyph": "W",
       "color": "#8fa0c0",
-      "minFloor": 12
+      "minFloor": 12,
+      "toHit": 8,
+      "ac": 20
     },
     "phantom": {
-      "walkSpeed": 1.2,
+      "walkSpeed": 10,
       "speed": 1,
       "name": "Phantom",
       "hp": 5,
-      "atkMin": 2,
-      "atkMax": 4,
+      "atkMin": 6,
+      "atkMax": 18,
       "glyph": "P",
       "color": "#7ee0d0",
-      "minFloor": 13
+      "minFloor": 13,
+      "ac": 35
     },
     "imp": {
       "walkSpeed": 1.2,
       "speed": 1,
       "name": "Imp",
-      "hp": 5,
-      "atkMin": 3,
-      "atkMax": 5,
+      "atkMax": 25,
       "glyph": "i",
       "color": "#c0c0e0",
-      "minFloor": 14
+      "minFloor": 14,
+      "hp": 35,
+      "atkMin": 0,
+      "toHit": 10,
+      "ac": 25,
+      "range": 3
     },
     "red_slime": {
       "name": "Red Slime",
@@ -188,7 +176,7 @@ window.CANTORI_DATA = {
       "attackSpeed": 0.8,
       "speed": 1,
       "toHit": 3,
-      "ac": 11,
+      "ac": 15,
       "minFloor": 11,
       "auraRange": 3,
       "auraWalk": 2,
@@ -206,7 +194,7 @@ window.CANTORI_DATA = {
       "attackSpeed": 0.8,
       "speed": 1,
       "toHit": 3,
-      "ac": 11,
+      "ac": 20,
       "minFloor": 12,
       "auraRange": 3,
       "auraAttack": 1.5,
@@ -223,7 +211,7 @@ window.CANTORI_DATA = {
       "walkSpeed": 1,
       "speed": 1,
       "toHit": 4,
-      "ac": 12,
+      "ac": 15,
       "minFloor": 11,
       "burstRadius": 1,
       "burstDmg": 0,
@@ -244,7 +232,7 @@ window.CANTORI_DATA = {
       "attackSpeed": 1,
       "speed": 1,
       "toHit": 5,
-      "ac": 11,
+      "ac": 18,
       "minFloor": 12,
       "charge": true,
       "glyph": "B",
@@ -271,21 +259,25 @@ window.CANTORI_DATA = {
       "walkSpeed": 1.2,
       "speed": 1,
       "name": "Keener",
-      "hp": 4,
-      "atkMin": 2,
-      "atkMax": 4,
+      "hp": 40,
+      "atkMin": 8,
+      "atkMax": 12,
       "minFloor": 16,
       "glyph": "u",
-      "color": "#6fb0d0"
+      "color": "#6fb0d0",
+      "toHit": 15,
+      "ac": 15
     },
     "emberfiend": {
       "name": "Ember Fiend",
-      "hp": 10,
+      "hp": 50,
       "atkMin": 4,
-      "atkMax": 7,
+      "atkMax": 12,
       "glyph": "d",
       "color": "#e07030",
-      "minFloor": 17
+      "minFloor": 17,
+      "toHit": 5,
+      "ac": 15
     },
     "healing_node": {
       "name": "Healing Node",
@@ -306,7 +298,7 @@ window.CANTORI_DATA = {
       "walkSpeed": 1,
       "attackSpeed": 1,
       "toHit": 2,
-      "ac": 12,
+      "ac": 18,
       "minFloor": 7
     },
     "Goblin_archer": {
@@ -317,7 +309,7 @@ window.CANTORI_DATA = {
       "glyph": "?",
       "color": "#c0c0c0",
       "toHit": 5,
-      "ac": 10,
+      "ac": 16,
       "range": 4,
       "ranged": true,
       "minFloor": 8
@@ -533,7 +525,10 @@ window.CANTORI_DATA = {
       "rarity": 40,
       "glyph": "[",
       "color": "#c9a86a",
-      "defMin": 0
+      "defMin": 0,
+      "req": {
+        "STR": 10
+      }
     },
     "studded_leather": {
       "cat": "armor",
@@ -544,7 +539,7 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
-        "STR": 2
+        "STR": 12
       },
       "defMin": 1,
       "defMax": 5
@@ -558,7 +553,7 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
-        "STR": 4
+        "STR": 14
       },
       "defMin": 2,
       "defMax": 8
@@ -572,7 +567,7 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
-        "STR": 6
+        "STR": 16
       },
       "defMin": 3,
       "defMax": 13
@@ -587,7 +582,7 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#c9a86a",
       "req": {
-        "STR": 8
+        "STR": 16
       },
       "defMin": 4
     },
@@ -601,9 +596,9 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 12
+        "STR": 15
       },
-      "defMin": 0
+      "defMin": 1
     },
     "chainmail": {
       "cat": "armor",
@@ -615,9 +610,9 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 14
+        "STR": 16
       },
-      "defMin": 1
+      "defMin": 2
     },
     "banded_plate": {
       "cat": "armor",
@@ -629,9 +624,9 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 16
+        "STR": 20
       },
-      "defMin": 2
+      "defMin": 3
     },
     "knights_plate": {
       "cat": "armor",
@@ -643,9 +638,9 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 18
+        "STR": 22
       },
-      "defMin": 3
+      "defMin": 5
     },
     "adamant_bulwark": {
       "cat": "armor",
@@ -657,9 +652,9 @@ window.CANTORI_DATA = {
       "glyph": "[",
       "color": "#9aa6b8",
       "req": {
-        "STR": 20
+        "STR": 25
       },
-      "defMin": 4
+      "defMin": 8
     }
   },
   "loot": {
@@ -1210,7 +1205,7 @@ window.CANTORI_DATA = {
     },
     "mummy": {
       "name": "The Mummy",
-      "hp": 90,
+      "hp": 900,
       "atkMin": 7,
       "atkMax": 10,
       "ac": 15,
@@ -1218,11 +1213,11 @@ window.CANTORI_DATA = {
     },
     "demigod": {
       "name": "The Demi-God",
-      "hp": 150,
+      "hp": 1500,
       "atkMin": 9,
       "atkMax": 13,
-      "ac": 17,
-      "toHit": 9
+      "ac": 25,
+      "toHit": 15
     }
   },
   "biomes": [
@@ -1283,15 +1278,13 @@ window.CANTORI_DATA = {
       },
       "boss": "piper",
       "spawnInitial": [
-        3,
-        5,
-        5,
-        5
+        8,
+        10,
+        10,
+        10
       ],
       "exitSprite": "exit_forest",
       "door": "bush",
-      "spawnEvery": 50,
-      "spawnCap": 8,
       "terrain": {
         "water": {
           "pools": [
@@ -1313,7 +1306,10 @@ window.CANTORI_DATA = {
             6
           ]
         }
-      }
+      },
+      "spawnEvery": 35,
+      "spawnCap": 12,
+      "horror": "Goblin"
     },
     {
       "key": "cave",
@@ -1341,8 +1337,15 @@ window.CANTORI_DATA = {
           ]
         }
       },
-      "spawnEvery": 50,
-      "spawnCap": 10
+      "spawnCap": 10,
+      "spawnInitial": [
+        8,
+        10,
+        10,
+        10
+      ],
+      "spawnEvery": 35,
+      "horror": "rat"
     },
     {
       "key": "crypt",
@@ -1438,8 +1441,14 @@ window.CANTORI_DATA = {
         "roomTarget": 290,
         "sarcophagusPct": 55
       },
-      "spawnEvery": 50,
-      "spawnCap": 10
+      "spawnCap": 15,
+      "spawnInitial": [
+        8,
+        10,
+        10,
+        10
+      ],
+      "spawnEvery": 35
     },
     {
       "key": "town",
@@ -1539,7 +1548,7 @@ window.CANTORI_DATA = {
       },
       "baseHp": 18,
       "baseMp": 5,
-      "regenTurns": 350,
+      "regenTurns": 400,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
@@ -1898,7 +1907,7 @@ window.CANTORI_DATA = {
       },
       "baseHp": 16,
       "baseMp": 6,
-      "regenTurns": 350,
+      "regenTurns": 400,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
@@ -2272,7 +2281,7 @@ window.CANTORI_DATA = {
       "regenTurns": 350,
       "vitRegen": 2,
       "mpRegenTurns": 450,
-      "intRegen": 2
+      "intRegen": 3
     }
   },
   "gods": {
