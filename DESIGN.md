@@ -1294,24 +1294,45 @@ flips. Floor loot keeps its odds — *finding* a bad potion is a discovery, *buy
 is a mugging. Measured over 20,000 rolls the stall now stocks poison 11.5% of the time
 against Strength's 15.6%.
 
-## Hold ⏳ to rest — DONE
+## Rest is its own button — DONE (and the hold-to-wait it replaces was broken)
 
 Waiting a wound off was sixty separate taps: not a decision the player is making, a
-toll they are paying to make one. Holding the Wait button now spends turns
-continuously (a tap is still exactly one turn).
+toll they are paying to make one. That first shipped as press-and-hold on the ⏳ slot,
+**and it was broken in a way worth recording.**
 
-A rest that runs *through* the thing it should have noticed is far worse than the toll,
-so the loop is deliberately twitchy. It stops on:
+`worldTurn()` calls `updateHotbar()`, which empties the hotbar and rebuilds every slot
+from scratch. So a single tap on Wait ran its turn, and that turn *destroyed the
+button the finger was still resting on*. The element was detached before its own
+`pointerup` could fire, the cleanup that cancels the hold timer never ran, and 300ms
+later the rest started by itself and ran until something interrupted it. One tap, and
+the monsters took a hundred actions.
+
+The lesson generalises: **nothing wired to a hotbar slot may outlive the turn it
+spends**, because the slot does not. `makeSlot` is a plain button again.
+
+Rest now has its own 🏕 button beside Character, Pack, Examine and Map — outside the
+hotbar, so it cannot be destroyed by the turn it starts. One press starts it, the same
+press stops it, and the `R` key does both too. Measured: one tap on Wait is exactly one
+turn and starts nothing; five taps are five turns.
+
+The loop stays deliberately twitchy, because a rest that runs *through* the thing it
+should have noticed is far worse than the taps it saves. It stops on:
 
 - a foe coming into view that was not in view before
 - a single point of damage
 - the floor speaking up — any `restBreak()` caller, which today is every Horror stage
   message and the Horror's arrival
-- **any** input at all, captured on the document rather than the game, so reaching for
-  the inventory stops the clock before the inventory opens
+- **any** input at all, captured on the `document` rather than on the game, so
+  reaching for the inventory stops the clock before the inventory opens
 - death, or any modal, throw or skill-targeting state opening
 
-Ending a rest early costs one more press. Ending it late costs the run.
+And it refuses to start at all with something already in sight, *out loud* — "You
+cannot rest with something in sight." A button that does nothing and says nothing is
+the bug this section is about.
+
+Two inputs are exempt from the any-input stop: the Rest button itself and the `R` key.
+Both already mean "stop resting", and without the exemption they would stop the rest
+and then be re-read as a fresh "start resting" by the toggle a moment later.
 
 ## Brynn's tiers 2 and 3 — DONE
 
