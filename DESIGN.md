@@ -1482,3 +1482,38 @@ no reason to wear cloth at all.
 The screenshot case measured: DEX 17, nothing worn, **AC 10 → 13**, and the stats
 screen agrees — "Armour Class 13 (~45% to be missed)" with the DEX cell reading
 "to-hit +7 / AC 13".
+
+## Magic Mapping revealed the bedrock instead of the layout — FIXED
+
+The scroll fired, the log said the right thing, and the floor map came back as a
+solid uniform block with the rooms showing as *holes* in it. It read as broken.
+
+Two things compounded:
+
+1. **It marked every tile explored, rock included.** A depth-4 forest floor is 2,209
+   tiles, of which **2,000 are solid rock** — 90.5%. So "reveal everything" is
+   overwhelmingly a command to draw rock.
+2. **On the floor map an unvisited WALL is drawn brighter than a floor.** That is
+   fine in normal play, where the only wall you have explored is the thin shell
+   around corridors you actually walked. Reveal all of it and the relationship
+   inverts: the screen fills with the bright colour and the rooms inside it are the
+   dark parts.
+
+A wall now earns its place on the map only by bounding something you could stand in,
+so what floods in is rooms and corridors with outlines and the rock between them
+stays dark:
+
+| | before | after |
+|---|---|---|
+| tiles marked known | 2,209 (100%) | **418 (18.9%)** |
+| of which wall | 2,000 | 209 — the outlines only |
+| walkable tiles left off the map | 0 | **0** |
+
+That last row is the constraint that matters: auto-travel paths only across explored
+tiles, so every walkable tile still has to be marked or the scroll would strand it.
+
+The map's floor colours were lifted too (`#151009` → `#241c11` merely-mapped,
+`#221b12` → `#332a1c` walked). Both sat within a hair of the near-black map
+background, which nothing noticed while every floor on screen was ringed by bright
+explored wall — and which made room interiors indistinguishable from the void the
+moment a magic map drew rooms nobody had walked into yet.

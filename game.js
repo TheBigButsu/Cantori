@@ -5413,7 +5413,12 @@
         const t = map[y][x];
         const been = beenSeen[y][x];       // been there in person vs. only magic-mapped
         const px = ox + x * cell, py = oy + y * cell, sz = cell - gap;
-        mctx.fillStyle = t === WALL ? (been ? "#4b3d27" : "#2c2417") : (been ? "#221b12" : "#151009");
+        // Floor was #221b12 walked / #151009 merely mapped, both within a hair of
+        // the near-black map background — fine while the only floor on screen sat
+        // inside a bright ring of explored wall, useless the moment a magic map
+        // drew rooms whose interiors were indistinguishable from the void around
+        // them. Lifted enough to read as "you know what is here".
+        mctx.fillStyle = t === WALL ? (been ? "#4b3d27" : "#3a2f1d") : (been ? "#332a1c" : "#241c11");
         mctx.fillRect(px, py, sz, sz);
         if (t === STAIRS) { mctx.fillStyle = been ? "#f6b845" : "#7c6231"; mctx.fillRect(px, py, sz, sz); }
         else if (t === DOOR) { mctx.fillStyle = been ? "#8a6a3a" : "#4e3e24"; mctx.fillRect(px, py, sz, sz); }
@@ -5951,7 +5956,27 @@
               : "THUNDERCLAP — the air detonates around you, and nothing is close enough to care.",
           hit ? "hit" : "");
     } else if (fx === "map") {
-      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
+      // Reveal the LAYOUT, not the bedrock.
+      //
+      // This marked every tile explored, rock included — and on the floor map an
+      // unvisited WALL is drawn brighter than a floor is, because in normal play
+      // you only ever explore a thin shell of wall around the corridors you walk.
+      // Magic-map the whole level and that inverts: better than three quarters of
+      // the map is solid rock, so the screen filled with a uniform bright block and
+      // the rooms inside it read as unmapped holes. The scroll worked; the map it
+      // produced was unreadable, which is the same thing from where the player sits.
+      //
+      // A wall now earns its place on the map only by bounding something you could
+      // stand in, so what floods in is rooms and corridors with outlines, and the
+      // rock between them stays dark. Every walkable tile is still marked, so
+      // auto-travel (which paths only across explored tiles) reaches all of it.
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+        if (map[y][x] !== WALL) { explored[y][x] = true; continue; }
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx, ny = y + dy;
+          if (inBounds(nx, ny) && map[ny][nx] !== WALL) { explored[y][x] = true; break; }
+        }
+      }
       log("The layout of this level floods into your mind.");
     } else if (fx === "teleport") {
       const reach = floodReach(player.x, player.y, true);   // only tiles you could walk to (never into a thorn vault)
@@ -7663,6 +7688,20 @@
     // test to measure zero.
     setHp: (n) => { player.hp = Math.max(1, Math.min(n == null ? player.maxHp : n, player.maxHp)); updateHUD(); return player.hp; },
     setCd: (k, n) => { const st = player.skills[k]; if (st) st.cd = Math.max(0, n | 0); updateHotbar(); return st ? st.cd : null; },
+    // What the floor map has to work with: how much of the level is rock, how much
+    // of it is marked known, and whether anything walkable was left off the map
+    // (which would strand auto-travel, since it only paths across explored tiles).
+    mapStats: () => {
+      let wall = 0, open = 0, known = 0, openUnknown = 0, wallKnown = 0;
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+        const isWallTile = map[y][x] === WALL, ex = !!explored[y][x];
+        if (isWallTile) wall++; else open++;
+        if (ex) { known++; if (isWallTile) wallKnown++; }
+        else if (!isWallTile) openUnknown++;
+      }
+      return { tiles: MAP_W * MAP_H, wall, open, known, wallKnown, openUnknown,
+               pctKnown: +(known / (MAP_W * MAP_H) * 100).toFixed(1) };
+    },
     unequip: (slot) => { unequipSlot(slot); return player[slot] ? player[slot].key : null; },
     // The tree is level-gated, so testing anything above tier 1 needs a way up.
     // Runs the real gainXP path rather than assigning player.level, so the stat,
