@@ -1352,6 +1352,13 @@
       ],
     },
     {
+      title: "ToneTum's openers",
+      rows: [
+        { name: "Magic Missile", formula: "no aiming — it strikes the NEAREST visible foe, one bolt per target, next-nearest for each extra bolt. 1 bolt, 2 from character level 3, 3 from 7, 4 from 12. Each bolt rolls 1–4 (2–8 from level 18) plus your character level.", note: "Innate, known from the start, 5 MP for the whole volley however many bolts it throws. One bolt per body, never two on the same one: it reads as a spray that finds what is closest, and stacking the volley on a single foe would make it a 4x nuke at level 12 rather than a crowd answer. It cannot find a foe around a corner any more than you can — targets must be in sight." },
+        { name: "Burning Sensation", formula: "opening tick = 2 × INT modifier (+ the rank's dmgBonus), cooling by 1 a turn, and it lasts as many turns as its opening tick", note: "Because the duration IS the opening tick, the total is triangular in it — doubling the tick roughly quadruples the spell. At INT modifier +4 that is 8 a turn for 8 turns (8+7+…+1 = 36) where the old single-modifier version was 4 for 4 (= 10). Deliberate: this is the mage's opener and it was not worth a 20-turn cooldown before." },
+      ],
+    },
+    {
       title: "Cooldowns",
       rows: [
         { name: "Ticking down", formula: "every skill on cooldown falls by 1 each turn", note: "One turn is one tick regardless of how fast the action was — a hasted swing does not cool your skills any quicker." },

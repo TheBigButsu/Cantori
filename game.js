@@ -4452,11 +4452,10 @@
         if (pk === "ragesmite") executeRagingSmite(pendingSkill, tx, ty); else executeHealingSmite(pendingSkill, tx, ty);
         return;
       }
-      if (pk === "bolt" || pk === "sleepcast" || pk === "madnesscast" || pk === "burncast") {
+      if (pk === "sleepcast" || pk === "madnesscast" || pk === "burncast") {
         const m = monsterAt(tx, ty);
         if (!m || !inBounds(tx, ty) || !visible[ty][tx]) { log("No target there."); return; }
-        if (pk === "bolt") executeMagicMissile(pendingSkill, tx, ty);
-        else if (pk === "sleepcast") executeSleep(pendingSkill, tx, ty);
+        if (pk === "sleepcast") executeSleep(pendingSkill, tx, ty);
         else if (pk === "burncast") executeBurningSensation(pendingSkill, tx, ty);
         else executeMadness(pendingSkill, tx, ty);
         return;
@@ -6480,6 +6479,7 @@
     // has to work while the cooldown it already started is running.
     if (st.cd > 0 && !(d.kind === "meditate" && player.meditate)) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
     if (d.kind === "rush" || d.kind === "dragonkick") beginRush(key);   // both ask for a direction
+    else if (d.kind === "bolt") executeMagicMissile(key);        // no aiming — it finds the nearest
     else if (d.kind === "meditate") executeMeditate(key);
     else if (d.kind === "vanish") executeVanish(key);
     else if (d.kind === "spin") executeSpin(key);
@@ -6489,7 +6489,7 @@
     else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
     else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
              d.kind === "smite" || d.kind === "ragesmite" || d.kind === "healsmite" || d.kind === "throwmon" ||
-             d.kind === "bolt" || d.kind === "sleepcast" || d.kind === "blinkcast" ||
+             d.kind === "sleepcast" || d.kind === "blinkcast" ||
              d.kind === "madnesscast" || d.kind === "burncast") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
@@ -6594,9 +6594,16 @@
   }
   function payCast(key, c) { player.mp -= c.cost; player.skills[key].cd = c.cur.cd || 0; }
 
-  // Burning Sensation — a cast, not a rider on every blow. It opens at the INT
-  // modifier and cools by 1 a turn, so its whole value is front-loaded: it is worth
-  // spending on something you expect to still be alive next turn.
+  // Burning Sensation — a cast, not a rider on every blow. It opens at TWICE the
+  // INT modifier and cools by 1 a turn, so its whole value is front-loaded: it is
+  // worth spending on something you expect to still be alive next turn.
+  //
+  // Doubling the opening tick more than doubles the spell, because the burn's
+  // DURATION has always been its opening tick — so the total is triangular in it.
+  // At INT +4 that is 8 a turn for 8 turns (8+7+6+…+1 = 36) where it used to be
+  // 4 for 4 (= 10). Deliberate: this is ToneTum's opener and it was not worth a
+  // 20-turn cooldown.
+  const BURN_INT_MULT = 2;   // Burning Sensation's opening tick, per point of INT modifier
   function executeBurningSensation(key, tx, ty) {
     pendingSkill = null;
     const c = castCheck(key);
@@ -6604,7 +6611,7 @@
     const m = monsterAt(tx, ty);
     if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
     payCast(key, c);
-    const dmg = Math.max(1, mod("INT") + (c.cur.dmgBonus || 0));
+    const dmg = Math.max(1, mod("INT") * BURN_INT_MULT + (c.cur.dmgBonus || 0));
     addDot(m, { tag: "burn", dmg, rounds: dmg + (c.cur.turnBonus || 0), decay: true, icon: "🔥", color: "#ff8f4a" });
     spawnProjectile(player.x, player.y, tx, ty, "#ff8f4a");
     floatText(m.x, m.y, "🔥" + dmg, "#ff8f4a");
@@ -6620,21 +6627,52 @@
     return d.ranks[st.rank - 1] || null;
   }
 
-  // Magic Missile — the mage's answer to "I have no weapon worth swinging".
-  function executeMagicMissile(key, tx, ty) {
+  // Magic Missile — the mage's answer to "I have no weapon worth swinging", and
+  // ToneTum's whole early game, so it no longer asks you to aim. It picks the
+  // nearest thing you can see and fires; the volley widens with character level,
+  // taking the next-nearest visible foe with each extra bolt.
+  //
+  //   level 1   one bolt
+  //   level 3   two
+  //   level 7   three
+  //   level 12  four
+  //   level 18  every bolt rolls 2–8 instead of 1–4
+  //
+  // One bolt per target, never two on the same body: the spell reads as a spray
+  // that finds what is closest, and stacking the whole volley on one foe would
+  // make it a 4x nuke at level 12 rather than a crowd answer.
+  const MISSILE_TIERS = [[12, 4], [7, 3], [3, 2]];   // level, bolts — first match wins
+  const MISSILE_BIG_AT = 18;                         // level the die grows at
+  const missileBolts = () => {
+    for (const [lvl, n] of MISSILE_TIERS) if (player.level >= lvl) return n;
+    return 1;
+  };
+  const missileRoll = () => (player.level >= MISSILE_BIG_AT ? randInt(2, 8) : randInt(1, 4)) + player.level;
+  function executeMagicMissile(key) {
     pendingSkill = null;
-    const m = monsterAt(tx, ty);
     const c = castCheck(key);
     if (!c) { updateHotbar(); return; }
-    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    // Nearest first, and only what you can actually see — the spell cannot find a
+    // foe around a corner any more than you can.
+    const seen = monsters
+      .filter((m) => m.hp > 0 && inBounds(m.x, m.y) && visible[m.y][m.x])
+      .sort((a, b) => cheb(a.x, a.y, player.x, player.y) - cheb(b.x, b.y, player.x, player.y));
+    if (!seen.length) { log("Nothing in sight to strike."); updateHotbar(); return; }
     payCast(key, c);
-    spawnProjectile(player.x, player.y, tx, ty, "#9ad0ff");
-    const dmg = randInt(1, 4) + player.level;
-    m.hp -= dmg; flash(m);
-    floatText(m.x, m.y, "✦-" + dmg, "#9ad0ff");
-    log("A bolt of force strikes the " + monName(m) + ". (-" + dmg + ")", "hit");
-    startHunting(m); makeNoise(m.x, m.y);
-    if (m.hp <= 0) killMonster(m, "is unmade");
+    const targets = seen.slice(0, missileBolts());
+    let total = 0;
+    for (const m of targets) {
+      const dmg = missileRoll();
+      total += dmg;
+      spawnProjectile(player.x, player.y, m.x, m.y, "#9ad0ff");
+      m.hp -= dmg; flash(m);
+      floatText(m.x, m.y, "✦-" + dmg, "#9ad0ff");
+      startHunting(m); makeNoise(m.x, m.y);
+      if (m.hp <= 0) killMonster(m, "is unmade");
+    }
+    log(targets.length === 1
+      ? "A bolt of force strikes the " + monName(targets[0]) + ". (-" + total + ")"
+      : targets.length + " bolts of force fan out. (-" + total + " across " + targets.length + " foes)", "hit");
     updateHUD(); updateHotbar();
     worldTurn();
   }
@@ -7730,6 +7768,7 @@
     paralyzePlayer: () => { paralyzePlayer(); updateHUD(); },
     paralyzeAt: (x, y) => { const m = monsterAt(x, y); if (!m) return 0; m.para = 0; paralyzeMonster(m); return m.para; },
     paraInfo: () => ({ dc: paraDc(), bossMax: PARA_BOSS_MAX, player: player.para | 0 }),
+    missileInfo: () => ({ bolts: missileBolts(), bigAt: MISSILE_BIG_AT, level: player.level }),
     startRest: () => startRest(),
     toggleRest: () => toggleRest(),
     stopRest: () => stopRest(),

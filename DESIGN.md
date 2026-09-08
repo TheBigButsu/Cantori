@@ -1844,3 +1844,42 @@ to −2 across the line is a one-cell change if it reads badly in play.
 
 The real mitigating factor is still to come: an axe skill for Chadwick, or a barbarian
 who carries the line properly.
+
+## ToneTum's openers — DONE
+
+The mage was too weak to start with. Both of his level-1 spells were the reason.
+
+### Magic Missile no longer asks you to aim
+
+It picks the **nearest thing you can see** and fires. The volley widens with
+character level, each extra bolt taking the next-nearest visible foe:
+
+| character level | 1 | 3 | 7 | 12 | 18 |
+|---|---|---|---|---|---|
+| bolts | 1 | 2 | 3 | 4 | 4 |
+| per bolt | 1–4 +level | | | | **2–8 +level** |
+
+Verified: the thresholds land exactly at 3 / 7 / 12 (level 2 still fires one, level
+6 two, level 11 three), and the die changes at 18 and not 17 — sampled 40 casts either
+side, 1–4 at 17 and 2–8 at 18. A level-12 mage into four foes logged
+*"4 bolts of force fan out. (-60 across 4 foes)"*.
+
+**One bolt per body, never two on the same one.** It reads as a spray that finds what
+is closest, and stacking the whole volley on a single target would make it a 4× nuke
+at level 12 rather than a crowd answer. 5 MP buys the whole volley however many bolts
+it throws.
+
+### Burning Sensation opens at twice the INT modifier
+
+`mod(INT)` → `mod(INT) × 2`. Measured opening ticks: **+1 → 2, +3 → 6, +4 → 8,
++5 → 10.**
+
+**This more than doubles the spell**, and that is worth stating plainly: the burn's
+*duration* has always been its opening tick, so the total is triangular in it. At INT
+modifier +4 it is now 8 a turn for 8 turns — **36 total against the old 10**. A 20-turn
+cooldown was never worth 10 damage; it is worth 36.
+
+A note for anyone measuring it: the cast spends a world turn, and the burn is a
+`decay` DOT, so the first value you can read is always one lower than the opening
+tick. An 8 reads as 7 on the very next inspection. That is the same "first seen at
+n−1" effect Burning Sensation has always had, not a rounding bug.

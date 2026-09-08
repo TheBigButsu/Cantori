@@ -2420,9 +2420,9 @@ window.CANTORI_DATA = {
           "icon": "✦",
           "kind": "bolt",
           "innate": true,
-          "desc": "A bolt of force, always at hand. 1–4 damage plus 1 for every character level, for 5 MP.",
+          "desc": "A bolt of force, always at hand — no aiming, it finds the nearest thing you can see. The volley widens as you grow: two bolts at level 3, three at 7, four at 12, each seeking the next-nearest visible foe. 5 MP.",
           "levels": [
-            "5 MP · 1–4 damage +1 per character level · known from the start"
+            "5 MP · 1–4 damage +1 per character level, at the nearest foe in sight · 2 bolts at level 3, 3 at 7, 4 at 12 · 2–8 a bolt from level 18 · known from the start"
           ],
           "ranks": [
             {
@@ -2438,9 +2438,9 @@ window.CANTORI_DATA = {
           "name": "Burning Sensation",
           "icon": "🔥",
           "kind": "burncast",
-          "desc": "Set a foe alight. It burns for your INT modifier a turn and cools by 1 each turn after — all its bite is in the first few turns.",
+          "desc": "Set a foe alight. It burns for twice your INT modifier a turn and cools by 1 each turn after — all its bite is in the first few turns, and it lasts as many turns as its opening tick.",
           "levels": [
-            "7 MP · burns for INT modifier a turn, cooling by 1 · 20 turn cooldown",
+            "7 MP · burns for 2× INT modifier a turn, cooling by 1 · 20 turn cooldown",
             "+1 burn damage a turn",
             "+1 burn damage a turn, and it lasts 1 turn longer",
             "+3 burn damage a turn, and it lasts 3 turns longer"
