@@ -1348,6 +1348,13 @@
       ],
     },
     {
+      title: "Cooldowns",
+      rows: [
+        { name: "Ticking down", formula: "every skill on cooldown falls by 1 each turn", note: "One turn is one tick regardless of how fast the action was — a hasted swing does not cool your skills any quicker." },
+        { name: "Ourn's Rhythm of the Universe", formula: "the tick becomes 1 + (how many of your skills are currently on cooldown), applied to all of them", note: "Two waiting is 3 a turn, five is 6. The count is taken BEFORE anything ticks, so a skill coming off cooldown partway through cannot slow the rest down and every skill moves at the same rate that turn. It snowballs on purpose: the more you have spent, the faster it all comes back, so it pays a caster who commits rather than one who hoards a single button." },
+      ],
+    },
+    {
       title: "Brynn's tier 2 and 3",
       rows: [
         { name: "Dragon Kick", formula: "damage = (a normal attack roll - 1) x squares travelled before the collision", note: "The run-up IS the skill: kicked from six squares out it is worth roughly six blows, kicked at something already touching you it lands at ordinary weight and says so. Rank 2 does not start the cooldown on the first kick, so a second one is free and the clock starts on that (or one turn later if you don't take it). Rank 3 makes both free actions. Rank 4 removes the reduction - the -1 - so every square travelled is worth a whole attack instead of attack minus 1, which is worth exactly one extra point of damage per square." },

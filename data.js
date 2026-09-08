@@ -1157,6 +1157,12 @@ window.CANTORI_DATA = {
       "icon": "🔮",
       "color": "#9ad0ff"
     },
+    "rhythm": {
+      "name": "Rhythm of the Universe",
+      "desc": "Every skill already on cooldown makes all of them tick faster: cooldowns fall by 1 a turn, plus 1 more for each skill waiting. Two on cooldown is 3 a turn, five is 6 — the more you have spent, the faster it all comes back.",
+      "icon": "\u266b",
+      "color": "#8fd6e0"
+    },
     "timed_blow": {
       "name": "Perfectly Timed Blow",
       "desc": "Critical chance rises by 1% for every character level.",

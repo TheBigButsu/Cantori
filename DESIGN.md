@@ -1702,3 +1702,43 @@ supporting it.
 Measured: **4.2 HP a kill at level 10** (expected 4), **6.5 at level 20** (expected 6)
 — the overshoot is the ordinary kill-counter boons firing alongside it — and it never
 heals past full.
+
+## Rhythm of the Universe — DONE
+
+Ourn's replacement for the deleted Ourn Blinks. **Cooldowns fall by 1 a turn, plus 1
+more for every skill currently waiting** — and the bonus applies to all of them.
+
+| skills on cooldown | 1 | 2 | 3 | 5 | 6 |
+|---|---|---|---|---|---|
+| points drained per turn | 2 | 3 | 4 | 6 | 7 |
+
+The count is taken **before** anything ticks, so a skill coming off cooldown partway
+through the loop cannot slow the rest of it down, and every skill moves at the same
+rate that turn. Verified: without the boon it is a flat 1 whatever the count.
+
+It snowballs deliberately. The more you have spent, the faster it all comes back — so
+it pays a caster who commits to a rotation rather than one who hoards a single button,
+which is the opposite of how cooldowns usually punish you.
+
+Note on the spec: the brief said "6 skills on cooldown, each reduces by 6". Under
+"+1 per skill on cooldown" six waiting is **7** a turn, which is what the worked
+example of "2 on cooldown → 3 a turn" implies. The rule is implemented; the 6 → 6
+figure looks like a slip in the example rather than a second rule.
+
+## The gear tables, as CSV
+
+`docs/gear.csv` — every gear row the game has, with the values the current formulas
+produce at +0 through +5 so the ladder can be read rather than derived:
+
+- weapon `dmgMin + (tier − 1) × plus`, `dmgMax + tier × 2 × plus`
+- armour `defMin + floor((plus + 1) / 2)`, `defMax` capped at double the base
+
+**One flaw that falls straight out of writing it down: a tier-1 weapon gains no damage
+floor from upgrades at all.** `(tier − 1) × plus` is zero at tier 1, so a +5 sword is
+2–16 — the ceiling nearly triples and the floor never moves, which makes upgrading an
+early weapon a swingier gamble rather than a better weapon. Every starting weapon in
+the game is tier 1.
+
+`docs/gear-proposed-weapons.csv` holds a proposed 5-tier ladder for four subtypes —
+20 weapons, mirroring the armour tables' shape — with a `current_+N` column showing
+what today's formula does to each and a blank `WANT_+N` column to fill in instead.

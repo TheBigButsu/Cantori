@@ -4221,7 +4221,22 @@
     turnMeter -= cost;
     while (turnMeter <= 0) turnMeter += 5;
     lastActionCost = cost;
-    for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
+    // Ourn's Rhythm of the Universe: every skill already on cooldown makes ALL of
+    // them tick faster — base 1, plus 1 per skill waiting. Two on cooldown is 3 a
+    // turn, five is 6. The count is taken BEFORE anything ticks, so a skill coming
+    // off cooldown partway through the loop cannot slow the rest of it down, and
+    // every skill in the same turn moves at the same rate.
+    //
+    // It reads as a snowball and it is meant to: the more you have spent, the
+    // faster it all comes back, so the boon pays a caster who commits rather than
+    // one who hoards a single button.
+    let cdTick = 1;
+    if (player.boons && player.boons.has("rhythm")) {
+      let waiting = 0;
+      for (const k in player.skills) if (player.skills[k].cd > 0) waiting++;
+      cdTick = 1 + waiting;
+    }
+    for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd = Math.max(0, player.skills[k].cd - cdTick);
     if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }
