@@ -1589,3 +1589,61 @@ The beam is not even the problem: those runs recorded **zero beam hits**. The de
 are ordinary melee plus three summoned adds. The spike is arithmetic, not tactics —
 150 HP against 2–3 damage a turn is fifty-plus turns of exposure to a thing that
 kills you in fifteen.
+
+## The three armours get their identities straight — DONE
+
+**Medium is the DEX-build armour.** Its DEX cap was `tier + plus`, which meant a
+tier-1 piece held a nimble character to +1 — a tax on the exact build it is supposed
+to serve. It is now **`2 + tier + plus`**, so a tier-1 piece already carries +3 and
+each tier and each upgrade scroll adds another:
+
+| armour | tier | plus | cap | AC at DEX 10 / 14 / 18 / 22 / 26 / 30 |
+|---|---|---|---|---|
+| padded jerkin | 1 | 0 | **+3** | 10 / 12 / 13 / 13 / 13 / 13 |
+| padded jerkin | 1 | 2 | +5 | 10 / 12 / 14 / 15 / 15 / 15 |
+| studded leather | 2 | 0 | +4 | 10 / 12 / 14 / 14 / 14 / 14 |
+| studded leather | 2 | 2 | +6 | 10 / 12 / 14 / 16 / 16 / 16 |
+| scale hauberk | 3 | 0 | +5 | 10 / 12 / 14 / 15 / 15 / 15 |
+| scale hauberk | 3 | 2 | +7 | 10 / 12 / 14 / 16 / 17 / 17 |
+
+It soaks a little and mostly makes you hard to hit, which is the point.
+
+**Heavy cannot dodge.** `dodgeChance()` is zero while heavy armour is worn, whatever
+Evasion you own. Plate answers a blow by absorbing it — that is what its mitigation
+range is for — and "no AC, no DEX, no dodge, biggest soak in the game" is a clean
+identity where "no AC and no DEX" alone was just a smaller version of medium.
+
+The points are **suppressed, not spent**: take the plate off and every one of them is
+still there. That matters because Ourn's Foresight coin and Happy Feet are chosen
+long before you know what armour you will find, and a build-defining choice should
+never become a trap.
+
+Measured at DEX 18 with Happy Feet maxed: dodge **40% in medium, 40% in light, 30%
+bare** (Happy Feet needs cloth or medium), and **0% in heavy**.
+
+**Light is unchanged and already what it should be** — a caster's stat stick, granting
+INT and MP outright (grass armour +1 INT / +5 MP up to threads of fate at +5 / +23),
+thin mitigation, no AC.
+
+## Correcting the first-boss measurement
+
+The earlier table in this file measured a level-5 character **still wearing the
+starting kit** — `Shitty_sword`, `rusted_mail` — which nobody actually reaches the
+Piper in. The harness rolled five floors of drops and then failed to equip any of
+them: `peek().inv` is an array of key *strings*, and the chooser was comparing
+`inv[i].key`, so it matched nothing and silently kept the starting gear.
+
+Re-measured with the floor's own drops equipped, a warrior arrives with something
+like a blue or green Axe and takes:
+
+| weapon | armour | attack | AC | to-hit | your dmg/turn | its dmg/turn | turns to kill it | turns to kill you |
+|---|---|---|---|---|---|---|---|---|
+| Axe blue | grass armour | 1–15 | 10 | +2 | 4.2 | 3.4 | 36 | 12 |
+| Axe blue | rusted mail +1 | 1–15 | 10 | +2 | 3.6 | 2.9 | 41 | 14 |
+| Axe green | padded jerkin +1 | 2–17 | 11 | +2 | 5.4 | 1.9 | 28 | 21 |
+| Axe +1 green | padded jerkin +1 | 1–17 | 11 | +2 | 6.0 | 3.7 | 25 | 11 |
+
+So the real figure is **25–41 turns to kill it against 11–21 to kill you**, not the
+45–88 the first pass claimed. The fight is roughly **twice** as long as it should be
+rather than five times, and the gap now swings hard on the weapon roll — which is the
+more interesting finding, and one the broken harness hid completely.

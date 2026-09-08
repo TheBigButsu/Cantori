@@ -207,8 +207,12 @@
   // (`evaPct`). Happy Feet is authored as "+5% evade" and should say +5% on the
   // card; converting that to 2.5 points would make the data lie about itself.
   // Both routes share the one cap.
-  const dodgeChance = () => Math.min(EVA_CAP,
-    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100);
+  // Plate does not dodge. Every point of Evasion you own is still there the moment
+  // you take the plate off — it is suppressed while worn, not spent — which keeps
+  // Ourn's coin and Happy Feet meaningful choices rather than traps for a heavy
+  // build that has to commit before it knows what it will find.
+  const dodgeChance = () => (armorSubName() === "heavy" ? 0 : Math.min(EVA_CAP,
+    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100));
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -562,14 +566,17 @@
   //
   //   light   — a caster's robe. Grants INT and MP outright; mitigation is thin and
   //             it offers no AC at all.
-  //   medium  — the only armour that turns DEX into AC, and the only one where AC
-  //             is a live stat. How much it lets through is TIER + the item's plus,
-  //             so a tier-1 robe caps you at +1 no matter how nimble you are, and
-  //             upgrade scrolls literally widen what your DEX is allowed to do.
-  //             Spending past your own modifier is wasted — the cap never invents
-  //             DEX you do not have.
-  //   heavy   — no AC and no DEX, just the largest mitigation range in the game.
-  //             You get hit; it barely matters.
+  //   medium  — the DEX-heavy answer, and the only armour where AC is a live stat.
+  //             It soaks a little; mostly it makes you hard to HIT. The cap starts
+  //             at +3 on a tier-1 piece and climbs by one per tier AND one per
+  //             plus, so a nimble character is not held to a beginner's ceiling and
+  //             an upgrade scroll literally widens what their DEX is allowed to do.
+  //             Spending past your own modifier is still wasted — the cap never
+  //             invents DEX you do not have.
+  //   heavy   — no AC, no DEX, AND NO DODGE, in exchange for the largest mitigation
+  //             range in the game. You get hit; it barely matters. Evasion is a
+  //             thing you do with your feet, and plate is the one armour that
+  //             answers a blow by absorbing it rather than by not being there.
   //   none    — WEARING NOTHING lets all of your DEX through, uncapped. Armour caps
   //             DEX because it is in the way; there is nothing in the way of a bare
   //             body, so there is nothing to cap. AC 10 flat for a DEX-17 monk was
@@ -583,11 +590,15 @@
   const ARMOR_SUB = { light: { dex: false }, medium: { dex: true }, heavy: { dex: false } };
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
   // Only medium armour converts DEX into AC, and only up to tier + plus of it.
+  // Tier 1 lets +3 through, and every tier and every plus adds one on top: t1 +0
+  // is 3, t3 +2 is 7, t5 +5 is 12. Medium armour has to be able to carry a DEX
+  // build's whole modifier or it is not the DEX-build armour, it is a tax on one.
+  const MEDIUM_DEX_BASE = 2;   // + tier + plus, so the floor is +3 on a tier-1 piece
   const armorDexCap = () => {
     if (!player.armor) return Infinity;      // nothing in the way — all of it
     const a = armorSub();
     if (!a || !a.dex) return 0;
-    return gearTier(player.armor.key) + (player.armor.plus || 0);
+    return MEDIUM_DEX_BASE + gearTier(player.armor.key) + (player.armor.plus || 0);
   };
   const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
   const armorSubMit = () => 0;   // mitigation lives entirely in the item's defMin/defMax now
