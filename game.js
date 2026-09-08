@@ -452,19 +452,28 @@
   // with its tier: min rises by (tier-1) per point, max by tier*2 per point — so
   // a tier-1 item's +1 is worth +0~2 and a tier-2 item's +1 is worth +1~4.
   const gearTier = (key) => GEAR[key].tier || 1;
-  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (gearTier(inst.key) - 1) * (inst.plus || 0);
-  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + gearTier(inst.key) * 2 * (inst.plus || 0);
+  // One rule for every upgradeable number in the game, weapons and armour alike:
+  //
+  //     max = base_max + tier x plus        min never moves
+  //
+  // The floor staying put is deliberate — an upgrade widens what a piece CAN do
+  // rather than lifting the whole band. It also replaces a formula that gave
+  // tier-1 weapons no floor growth at all (`(tier - 1) x plus` is zero at tier 1)
+  // while doubling their ceiling, so upgrading a starting weapon bought variance
+  // instead of power — and every starting weapon in the game is tier 1.
+  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0);
+  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + gearTier(inst.key) * (inst.plus || 0);
   // Armor blocks a random amount each hit, rolled between defMin and defMax. A
   // legacy flat `def` still works — it becomes both ends of the range. Its +X
   // scales the same way as weapon damage, by tier.
   const baseDefMin = (key) => { const g = GEAR[key]; return g.defMin != null ? g.defMin : (g.def || 0); };
   const baseDefMax = (key) => { const g = GEAR[key]; return g.defMax != null ? g.defMax : (g.def != null ? g.def : (g.defMin || 0)); };
-  // Armour upgrades raise the FLOOR quickly and the ceiling slowly, and the ceiling
-  // can at most double. That is what makes a +3 tier-1 robe a reliable 2–4 rather
-  // than a wild 0–8: upgrading armour should make it dependable, not spiky. (A
-  // weapon's +X still works the other way, opening its top end — see gDmgMax.)
-  const gDefMin = (inst) => baseDefMin(inst.key) + Math.floor(((inst.plus || 0) + 1) / 2);
-  const gDefMax = (inst) => { const b = baseDefMax(inst.key); return Math.min(b * 2, b + (inst.plus || 0)); };
+  // Armour follows the same rule as a weapon — top end by tier x plus, floor fixed.
+  // The old "ceiling can at most double" clamp is gone: it held a tier-5 plate to
+  // 68 when the authored ladder wants 60 at +5 and more beyond, so the clamp was
+  // silently overriding the table it existed to serve.
+  const gDefMin = (inst) => baseDefMin(inst.key);
+  const gDefMax = (inst) => baseDefMax(inst.key) + gearTier(inst.key) * (inst.plus || 0);
   const gDef = (inst) => gDefMax(inst);   // top-end block (enchant power, parallels weapon dmgMax)
   // A stat affix's +X is additive-triangular: +1 = 1, +2 = 1+2 = 3, +3 = 1+2+3 = 6…
   const triangular = (n) => (n * (n + 1)) / 2;
@@ -596,18 +605,31 @@
   // is 3, t3 +2 is 7, t5 +5 is 12. Medium armour has to be able to carry a DEX
   // build's whole modifier or it is not the DEX-build armour, it is a tax on one.
   const MEDIUM_DEX_BASE = 2;   // + tier + plus, so the floor is +3 on a tier-1 piece
+  // Each armour row authors its own ceiling on how much DEX reaches your AC
+  // (`dexCap`), and every upgrade raises it by one — a scale hauberk allows 9 at
+  // +0 and 14 at +5. A row with no `dexCap` falls back to its subtype: light
+  // uncapped, medium the old 2 + tier + plus, heavy none. Spending past your own
+  // modifier is still wasted; the cap never invents DEX you do not have.
   const armorDexCap = () => {
     if (!player.armor) return Infinity;      // nothing in the way — all of it
+    const g = GEAR[player.armor.key] || {};
     const a = armorSub();
+    // A row authored at 0 means NONE, and upgrades do not open it — otherwise a +5
+    // rusted mail would quietly let 5 DEX through and heavy armour would stop being
+    // the armour that gives up AC. Rows that already allow some (knight's plate 1,
+    // adamant bulwark 2) still widen by one per upgrade like everything else.
+    if (g.dexCap != null) return g.dexCap > 0 ? Number(g.dexCap) + (player.armor.plus || 0) : 0;
     if (!a || !a.dex) return 0;
     if (a.dex === "all") return Infinity;    // light: a robe caps nothing
     return MEDIUM_DEX_BASE + gearTier(player.armor.key) + (player.armor.plus || 0);
   };
   const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
   const armorSubMit = () => 0;   // mitigation lives entirely in the item's defMin/defMax now
-  // Armour grants no flat AC — see ARMOR_SUB. Medium's contribution is the DEX it
-  // unlocks; light and heavy pay you in INT/MP and mitigation instead.
-  const armorAC = () => 0;
+  // Armour DOES carry a flat AC of its own now, authored per row: medium leads it
+  // (+2 at tier 1 up to +6 at tier 5), light trails (+0 to +4), heavy barely
+  // bothers (+0, +0, +1, +1, +2) because its answer to a blow is to absorb it.
+  // On top of whatever DEX the piece lets through.
+  const armorAC = () => (player.armor ? (GEAR[player.armor.key].ac || 0) : 0);
   // Passive haste from worn enchants, tiered by the item bearing it. There are two
   // independent kinds and an enchant carries exactly one: `haste` quickens the
   // weapon, `walkHaste` quickens the feet. Kit that speeds your swing does nothing

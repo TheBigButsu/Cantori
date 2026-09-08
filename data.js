@@ -321,16 +321,80 @@ window.CANTORI_DATA = {
       "sub": "dagger",
       "name": "Dagger",
       "dmgMin": 1,
-      "speed": 1.25,
+      "dmgMax": 4,
+      "toHit": 3,
+      "speed": 1.0,
       "tier": 1,
       "req": {
-        "STR": 0
+        "STR": 8
       },
+      "rarity": 40,
       "glyph": "/",
-      "color": "#cfc3a0",
+      "color": "#cfc3a0"
+    },
+    "dirk": {
+      "cat": "weapon",
+      "sub": "dagger",
+      "name": "Dirk",
+      "dmgMin": 2,
+      "dmgMax": 6,
       "toHit": 3,
-      "dmgMax": 4,
-      "rarity": 25
+      "speed": 1.0,
+      "tier": 2,
+      "req": {
+        "STR": 9
+      },
+      "rarity": 28,
+      "glyph": "/",
+      "color": "#c9d2b8"
+    },
+    "stiletto": {
+      "cat": "weapon",
+      "sub": "dagger",
+      "name": "Stiletto",
+      "dmgMin": 3,
+      "dmgMax": 9,
+      "toHit": 4,
+      "speed": 1.0,
+      "tier": 3,
+      "req": {
+        "STR": 10
+      },
+      "rarity": 18,
+      "glyph": "/",
+      "color": "#b8d2cc"
+    },
+    "fang_of_the_hollow": {
+      "cat": "weapon",
+      "sub": "dagger",
+      "name": "Fang of the Hollow",
+      "dmgMin": 4,
+      "dmgMax": 13,
+      "toHit": 4,
+      "speed": 1.0,
+      "tier": 4,
+      "req": {
+        "STR": 11
+      },
+      "rarity": 10,
+      "glyph": "/",
+      "color": "#c0b8e0"
+    },
+    "toothpick": {
+      "cat": "weapon",
+      "sub": "dagger",
+      "name": "Toothpick",
+      "dmgMin": 6,
+      "dmgMax": 20,
+      "toHit": 5,
+      "speed": 1.0,
+      "tier": 5,
+      "req": {
+        "STR": 12
+      },
+      "rarity": 4,
+      "glyph": "/",
+      "color": "#e8d9a8"
     },
     "sword": {
       "cat": "weapon",
@@ -338,31 +402,510 @@ window.CANTORI_DATA = {
       "name": "Sword",
       "dmgMin": 2,
       "dmgMax": 6,
-      "speed": 1,
-      "glyph": "/",
-      "color": "#d8e0ec",
+      "toHit": 2,
+      "speed": 1.0,
       "tier": 1,
       "req": {
         "STR": 10
       },
-      "rarity": 25,
-      "toHit": 2
-    },
-    "big axe": {
-      "cat": "weapon",
-      "sub": "axe",
-      "name": "Big axe",
-      "dmgMin": 6,
-      "dmgMax": 15,
-      "speed": 0.9,
+      "rarity": 40,
       "glyph": "/",
-      "color": "#c8a878",
+      "color": "#d8e0ec"
+    },
+    "broadsword": {
+      "cat": "weapon",
+      "sub": "sword",
+      "name": "Broadsword",
+      "dmgMin": 3,
+      "dmgMax": 9,
+      "toHit": 2,
+      "speed": 1.0,
       "tier": 2,
+      "req": {
+        "STR": 12
+      },
+      "rarity": 28,
+      "glyph": "/",
+      "color": "#c8d6e8"
+    },
+    "falchion": {
+      "cat": "weapon",
+      "sub": "sword",
+      "name": "Falchion",
+      "dmgMin": 5,
+      "dmgMax": 13,
+      "toHit": 2,
+      "speed": 1.0,
+      "tier": 3,
+      "req": {
+        "STR": 13
+      },
+      "rarity": 18,
+      "glyph": "/",
+      "color": "#bcc9e4"
+    },
+    "runed_blade": {
+      "cat": "weapon",
+      "sub": "sword",
+      "name": "Runed Blade",
+      "dmgMin": 7,
+      "dmgMax": 18,
+      "toHit": 3,
+      "speed": 1.0,
+      "tier": 4,
       "req": {
         "STR": 15
       },
-      "toHit": -5,
-      "rarity": 4
+      "rarity": 10,
+      "glyph": "/",
+      "color": "#a9bcf0"
+    },
+    "kingsmourn": {
+      "cat": "weapon",
+      "sub": "sword",
+      "name": "Kingsmourn",
+      "dmgMin": 10,
+      "dmgMax": 25,
+      "toHit": 3,
+      "speed": 1.0,
+      "tier": 5,
+      "req": {
+        "STR": 16
+      },
+      "rarity": 4,
+      "glyph": "/",
+      "color": "#e6c76a"
+    },
+    "hatchet": {
+      "cat": "weapon",
+      "sub": "axe",
+      "name": "Hatchet",
+      "dmgMin": 3,
+      "dmgMax": 8,
+      "toHit": -4,
+      "speed": 0.8,
+      "tier": 1,
+      "req": {
+        "STR": 12
+      },
+      "rarity": 40,
+      "glyph": "/",
+      "color": "#c8a878"
+    },
+    "axe": {
+      "cat": "weapon",
+      "sub": "axe",
+      "name": "Axe",
+      "dmgMin": 4,
+      "dmgMax": 12,
+      "toHit": -3,
+      "speed": 0.85,
+      "tier": 2,
+      "req": {
+        "STR": 14
+      },
+      "rarity": 28,
+      "glyph": "/",
+      "color": "#cbb083"
+    },
+    "great_axe": {
+      "cat": "weapon",
+      "sub": "axe",
+      "name": "Great Axe",
+      "dmgMin": 6,
+      "dmgMax": 17,
+      "toHit": -3,
+      "speed": 0.9,
+      "tier": 3,
+      "req": {
+        "STR": 16
+      },
+      "rarity": 18,
+      "glyph": "/",
+      "color": "#c39a63"
+    },
+    "headsman": {
+      "cat": "weapon",
+      "sub": "axe",
+      "name": "Headsman's Axe",
+      "dmgMin": 9,
+      "dmgMax": 23,
+      "toHit": -2,
+      "speed": 0.95,
+      "tier": 4,
+      "req": {
+        "STR": 18
+      },
+      "rarity": 10,
+      "glyph": "/",
+      "color": "#b8834e"
+    },
+    "worldcleaver": {
+      "cat": "weapon",
+      "sub": "axe",
+      "name": "Worldcleaver",
+      "dmgMin": 12,
+      "dmgMax": 32,
+      "toHit": -2,
+      "speed": 1.0,
+      "tier": 5,
+      "req": {
+        "STR": 20
+      },
+      "rarity": 4,
+      "glyph": "/",
+      "color": "#e0a03c"
+    },
+    "shortbow": {
+      "cat": "weapon",
+      "sub": "bow",
+      "name": "Shortbow",
+      "dmgMin": 2,
+      "dmgMax": 5,
+      "toHit": -1,
+      "speed": 1.0,
+      "tier": 1,
+      "req": {
+        "STR": 10
+      },
+      "rarity": 40,
+      "glyph": "}",
+      "color": "#b08a4a",
+      "range": 5
+    },
+    "hunting_bow": {
+      "cat": "weapon",
+      "sub": "bow",
+      "name": "Hunting Bow",
+      "dmgMin": 3,
+      "dmgMax": 8,
+      "toHit": -1,
+      "speed": 1.0,
+      "tier": 2,
+      "req": {
+        "STR": 11
+      },
+      "rarity": 28,
+      "glyph": "}",
+      "color": "#a8925c",
+      "range": 5
+    },
+    "recurve_bow": {
+      "cat": "weapon",
+      "sub": "bow",
+      "name": "Recurve Bow",
+      "dmgMin": 4,
+      "dmgMax": 11,
+      "toHit": 0,
+      "speed": 1.0,
+      "tier": 3,
+      "req": {
+        "STR": 12
+      },
+      "rarity": 18,
+      "glyph": "}",
+      "color": "#9d9a70",
+      "range": 5
+    },
+    "longbow": {
+      "cat": "weapon",
+      "sub": "bow",
+      "name": "Longbow",
+      "dmgMin": 6,
+      "dmgMax": 15,
+      "toHit": 0,
+      "speed": 1.05,
+      "tier": 4,
+      "req": {
+        "STR": 13
+      },
+      "rarity": 10,
+      "glyph": "}",
+      "color": "#93a184",
+      "range": 5
+    },
+    "stormcaller": {
+      "cat": "weapon",
+      "sub": "bow",
+      "name": "Stormcaller",
+      "dmgMin": 8,
+      "dmgMax": 21,
+      "toHit": 1,
+      "speed": 1.05,
+      "tier": 5,
+      "req": {
+        "STR": 14
+      },
+      "rarity": 4,
+      "glyph": "}",
+      "color": "#7fc4d8",
+      "range": 5
+    },
+    "Shitty_sword": {
+      "cat": "weapon",
+      "sub": "sword",
+      "name": "Shitty sword",
+      "dmgMin": 1,
+      "dmgMax": 2,
+      "toHit": 2,
+      "tier": 0,
+      "req": {
+        "STR": 0
+      },
+      "speed": 1.2,
+      "rarity": 0,
+      "glyph": "/",
+      "color": "#cccccc"
+    },
+    "grass_armor": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Grass armor",
+      "defMin": 0,
+      "defMax": 2,
+      "ac": 0,
+      "dexCap": 10,
+      "tier": 1,
+      "req": {
+        "STR": 0
+      },
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#7ea86a",
+      "int": 1,
+      "mp": 5
+    },
+    "cloth_armor": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Cloth armor",
+      "defMin": 0,
+      "defMax": 3,
+      "ac": 1,
+      "dexCap": 10,
+      "tier": 2,
+      "req": {
+        "STR": 0
+      },
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#c9bfa0",
+      "int": 2,
+      "mp": 8
+    },
+    "refined_robe": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Refined robe",
+      "defMin": 0,
+      "defMax": 4,
+      "ac": 2,
+      "dexCap": 10,
+      "tier": 3,
+      "req": {
+        "STR": 0
+      },
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#a9b6d8",
+      "int": 3,
+      "mp": 12
+    },
+    "mages_robe": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Mages robe",
+      "defMin": 0,
+      "defMax": 5,
+      "ac": 3,
+      "dexCap": 10,
+      "tier": 4,
+      "req": {
+        "STR": 0
+      },
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#8f7ed8",
+      "int": 4,
+      "mp": 17
+    },
+    "threads_of_fate": {
+      "cat": "armor",
+      "sub": "light",
+      "name": "Threads of fate",
+      "defMin": 0,
+      "defMax": 6,
+      "ac": 4,
+      "dexCap": 10,
+      "tier": 5,
+      "req": {
+        "STR": 0
+      },
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#d8b0e8",
+      "int": 5,
+      "mp": 23
+    },
+    "padded_jerkin": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Padded jerkin",
+      "defMin": 0,
+      "defMax": 3,
+      "ac": 2,
+      "dexCap": 3,
+      "tier": 1,
+      "req": {
+        "STR": 10
+      },
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#b09068"
+    },
+    "studded_leather": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Studded leather",
+      "defMin": 1,
+      "defMax": 5,
+      "ac": 3,
+      "dexCap": 6,
+      "tier": 2,
+      "req": {
+        "STR": 12
+      },
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#9a7850"
+    },
+    "scale_hauberk": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Scale hauberk",
+      "defMin": 2,
+      "defMax": 8,
+      "ac": 4,
+      "dexCap": 9,
+      "tier": 3,
+      "req": {
+        "STR": 14
+      },
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#8fa0a8"
+    },
+    "elven_mail": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Elven mail",
+      "defMin": 3,
+      "defMax": 13,
+      "ac": 5,
+      "dexCap": 12,
+      "tier": 4,
+      "req": {
+        "STR": 16
+      },
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#a8c8b0"
+    },
+    "windwoven_coat": {
+      "cat": "armor",
+      "sub": "medium",
+      "name": "Windwoven coat",
+      "defMin": 4,
+      "defMax": 21,
+      "ac": 6,
+      "dexCap": 15,
+      "tier": 5,
+      "req": {
+        "STR": 16
+      },
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#9fd8d0"
+    },
+    "rusted_mail": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Rusted mail",
+      "defMin": 1,
+      "defMax": 5,
+      "ac": 0,
+      "dexCap": 0,
+      "tier": 1,
+      "req": {
+        "STR": 15
+      },
+      "rarity": 40,
+      "glyph": "[",
+      "color": "#8a7a6a"
+    },
+    "chainmail": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Chainmail",
+      "defMin": 3,
+      "defMax": 9,
+      "ac": 0,
+      "dexCap": 0,
+      "tier": 2,
+      "req": {
+        "STR": 16
+      },
+      "rarity": 28,
+      "glyph": "[",
+      "color": "#b0b6bc"
+    },
+    "banded_plate": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Banded plate",
+      "defMin": 5,
+      "defMax": 15,
+      "ac": 1,
+      "dexCap": 0,
+      "tier": 3,
+      "req": {
+        "STR": 20
+      },
+      "rarity": 18,
+      "glyph": "[",
+      "color": "#9aa4b0"
+    },
+    "knights_plate": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Knight's plate",
+      "defMin": 7,
+      "defMax": 23,
+      "ac": 1,
+      "dexCap": 1,
+      "tier": 4,
+      "req": {
+        "STR": 22
+      },
+      "rarity": 10,
+      "glyph": "[",
+      "color": "#c2ccd8"
+    },
+    "adamant_bulwark": {
+      "cat": "armor",
+      "sub": "heavy",
+      "name": "Adamant bulwark",
+      "defMin": 9,
+      "defMax": 35,
+      "ac": 2,
+      "dexCap": 2,
+      "tier": 5,
+      "req": {
+        "STR": 25
+      },
+      "rarity": 4,
+      "glyph": "[",
+      "color": "#dfe6ef"
     },
     "ring_copper": {
       "cat": "ring",
@@ -401,260 +944,6 @@ window.CANTORI_DATA = {
       "glyph": "\"",
       "color": "#7ec9a0",
       "tier": 3
-    },
-    "Axe": {
-      "cat": "weapon",
-      "sub": "axe",
-      "name": "Axe",
-      "dmgMax": 12,
-      "tier": 1,
-      "req": {
-        "STR": 10
-      },
-      "glyph": "/",
-      "color": "#cccccc",
-      "rarity": 25,
-      "dmgMin": 0,
-      "speed": 1,
-      "toHit": -2
-    },
-    "bow": {
-      "cat": "weapon",
-      "sub": "bow",
-      "name": "Short Bow",
-      "speed": 1,
-      "tier": 1,
-      "req": {
-        "STR": 5
-      },
-      "range": 5,
-      "glyph": "}",
-      "color": "#b08a4a",
-      "dmgMin": 0,
-      "dmgMax": 8,
-      "toHit": -3,
-      "rarity": 15
-    },
-    "Shitty_sword": {
-      "cat": "weapon",
-      "name": "Shitty sword",
-      "dmgMin": 1,
-      "dmgMax": 2,
-      "toHit": 2,
-      "tier": 0,
-      "req": {
-        "STR": 0
-      },
-      "glyph": "/",
-      "color": "#cccccc",
-      "sub": "sword",
-      "speed": 1.2,
-      "rarity": 0
-    },
-    "grass_armor": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Grass armor",
-      "defMin": 0,
-      "defMax": 2,
-      "tier": 1,
-      "rarity": 40,
-      "glyph": "[",
-      "color": "#8fd6a8",
-      "int": 1,
-      "mp": 5
-    },
-    "cloth_armor": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Cloth armor",
-      "defMin": 0,
-      "tier": 2,
-      "rarity": 28,
-      "glyph": "[",
-      "color": "#8fd6a8",
-      "int": 2,
-      "mp": 8,
-      "defMax": 3
-    },
-    "refined_robe": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Refined robe",
-      "defMin": 1,
-      "tier": 3,
-      "rarity": 18,
-      "glyph": "[",
-      "color": "#8fd6a8",
-      "int": 3,
-      "mp": 12,
-      "defMax": 5
-    },
-    "mages_robe": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Mages robe",
-      "defMin": 2,
-      "tier": 4,
-      "rarity": 10,
-      "glyph": "[",
-      "color": "#8fd6a8",
-      "int": 4,
-      "mp": 17,
-      "defMax": 8
-    },
-    "threads_of_fate": {
-      "cat": "armor",
-      "sub": "light",
-      "name": "Threads of fate",
-      "defMin": 3,
-      "defMax": 13,
-      "tier": 5,
-      "rarity": 4,
-      "glyph": "[",
-      "color": "#8fd6a8",
-      "int": 5,
-      "mp": 23
-    },
-    "padded_jerkin": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Padded jerkin",
-      "defMax": 3,
-      "tier": 1,
-      "rarity": 40,
-      "glyph": "[",
-      "color": "#c9a86a",
-      "defMin": 0,
-      "req": {
-        "STR": 10
-      }
-    },
-    "studded_leather": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Studded leather",
-      "tier": 2,
-      "rarity": 28,
-      "glyph": "[",
-      "color": "#c9a86a",
-      "req": {
-        "STR": 12
-      },
-      "defMin": 1,
-      "defMax": 5
-    },
-    "scale_hauberk": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Scale hauberk",
-      "tier": 3,
-      "rarity": 18,
-      "glyph": "[",
-      "color": "#c9a86a",
-      "req": {
-        "STR": 14
-      },
-      "defMin": 2,
-      "defMax": 8
-    },
-    "elven_mail": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Elven mail",
-      "tier": 4,
-      "rarity": 10,
-      "glyph": "[",
-      "color": "#c9a86a",
-      "req": {
-        "STR": 16
-      },
-      "defMin": 3,
-      "defMax": 13
-    },
-    "windwoven_coat": {
-      "cat": "armor",
-      "sub": "medium",
-      "name": "Windwoven coat",
-      "defMax": 21,
-      "tier": 5,
-      "rarity": 4,
-      "glyph": "[",
-      "color": "#c9a86a",
-      "req": {
-        "STR": 16
-      },
-      "defMin": 4
-    },
-    "rusted_mail": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Rusted mail",
-      "defMax": 5,
-      "tier": 1,
-      "rarity": 40,
-      "glyph": "[",
-      "color": "#9aa6b8",
-      "req": {
-        "STR": 15
-      },
-      "defMin": 1
-    },
-    "chainmail": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Chainmail",
-      "defMax": 9,
-      "tier": 2,
-      "rarity": 28,
-      "glyph": "[",
-      "color": "#9aa6b8",
-      "req": {
-        "STR": 16
-      },
-      "defMin": 2
-    },
-    "banded_plate": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Banded plate",
-      "defMax": 15,
-      "tier": 3,
-      "rarity": 18,
-      "glyph": "[",
-      "color": "#9aa6b8",
-      "req": {
-        "STR": 20
-      },
-      "defMin": 3
-    },
-    "knights_plate": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Knight's plate",
-      "defMax": 23,
-      "tier": 4,
-      "rarity": 10,
-      "glyph": "[",
-      "color": "#9aa6b8",
-      "req": {
-        "STR": 22
-      },
-      "defMin": 5
-    },
-    "adamant_bulwark": {
-      "cat": "armor",
-      "sub": "heavy",
-      "name": "Adamant bulwark",
-      "defMax": 34,
-      "tier": 5,
-      "rarity": 4,
-      "glyph": "[",
-      "color": "#9aa6b8",
-      "req": {
-        "STR": 25
-      },
-      "defMin": 8
     }
   },
   "loot": {

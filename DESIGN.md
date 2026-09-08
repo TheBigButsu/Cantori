@@ -1742,3 +1742,73 @@ the game is tier 1.
 `docs/gear-proposed-weapons.csv` holds a proposed 5-tier ladder for four subtypes —
 20 weapons, mirroring the armour tables' shape — with a `current_+N` column showing
 what today's formula does to each and a blank `WANT_+N` column to fill in instead.
+
+## The gear ladder, from your spreadsheet — DONE
+
+**One rule now governs every upgradeable number in the game:**
+
+> **max = base_max + (tier × plus). The floor never moves.**
+
+Weapons and armour both. It replaces two different formulas that disagreed with each
+other and with the tables they served — the old weapon rule gave tier-1 weapons *no*
+floor growth while doubling their ceiling (so upgrading a starting weapon bought
+variance, not power), and the old armour rule clamped the ceiling at double the base,
+which would have held a tier-5 plate to 68 when the authored ladder wants 60 at +5.
+The clamp is gone.
+
+### Weapons — 20 across four subtypes, five tiers each
+
+| | t1 | t2 | t3 | t4 | t5 |
+|---|---|---|---|---|---|
+| **dagger** | Dagger 1–4 | Dirk 2–6 | Stiletto 3–9 | Fang of the Hollow 4–13 | Toothpick 6–20 |
+| **sword** | Sword 2–6 | Broadsword 3–9 | Falchion 5–13 | Runed Blade 7–18 | Kingsmourn 10–25 |
+| **axe** | Hatchet 3–8 | Axe 4–12 | Great Axe 6–17 | Headsman's 9–23 | Worldcleaver 12–32 |
+| **bow** | Shortbow 2–5 | Hunting Bow 3–8 | Recurve 4–11 | Longbow 6–15 | Stormcaller 8–21 |
+
+Verified in the engine: a tier-1 sword steps 1 a plus (2–6 → 2–11 at +5), a tier-5
+Kingsmourn steps 5 (10–25 → **10–50**), Worldcleaver 12–32 → **12–57**.
+
+**Axes speed UP with tier** (0.8 → 1.0), because slowness hurts more the deeper you
+get. **Daggers are flat 1.0 and deliberately the weakest line** — stat sticks for
+ToneTum, junk for everyone else. **Bows hold range 5 at every tier.**
+
+Toothpick's base max is **20**, not the 18 in the sheet: the sheet's own +1…+5 series
+(25/30/35/40/45) steps by 5 from a base of 20, and 18 was the only figure in the file
+that did not fit its own rule. Banded plate's alternating `6-18 / 5-16 / 6-19` row was
+a drag-fill and is now the clean 5-15 → 5-30.
+
+### Armour — flat AC and an authored DEX ceiling
+
+`armorAC()` returned 0 for everything; armour now carries a **flat AC** of its own,
+and each row authors its own **`dexCap`** — how much of your DEX modifier reaches your
+AC — which every upgrade widens by one.
+
+| | flat AC t1→t5 | dexCap t1→t5 |
+|---|---|---|
+| light | +0 +1 +2 +3 +4 | 10 (uncapped in practice) |
+| medium | +2 +3 +4 +5 +6 | 3 / 6 / 9 / 12 / 15 |
+| heavy | +0 +0 +1 +1 +2 | 0 / 0 / 0 / 1 / 2 |
+
+Measured AC at DEX 10 / 16 / 20 / 26 / 34:
+
+| armour | | |
+|---|---|---|
+| grass armor (light t1) | 10 / 13 / 15 / 18 / 20 | |
+| threads of fate (light t5) | 14 / 17 / 19 / 22 / 24 | |
+| padded jerkin (medium t1) | 12 / 15 / 15 / 15 / 15 | plateaus at its cap of 3 |
+| windwoven coat (medium t5) | 16 / 19 / 21 / 24 / 28 | |
+| rusted mail (heavy t1) | 10 / 10 / 10 / 10 / 10 | |
+
+**A `dexCap` of 0 means none, and upgrades do not open it.** Without that exception a
++5 rusted mail would quietly let 5 DEX through and heavy would stop being the armour
+that gives up AC. Rows authored above zero (knight's plate 1, adamant bulwark 2) still
+widen by one per upgrade like everything else.
+
+### Sprites
+
+Eighteen new weapon sprites, each its subtype's silhouette recoloured to the tier's
+palette — the same trick the armour families already use, so a line reads as one kit
+made better rather than five unrelated objects.
+
+`docs/gear.csv` is regenerated from the shipped tables and now carries the AC and
+dexCap columns too.

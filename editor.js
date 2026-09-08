@@ -98,6 +98,10 @@
       { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
+      // Armour only: a flat AC the piece grants, and the ceiling it puts on how
+      // much of your DEX modifier reaches your AC. Blank dexCap falls back to the
+      // subtype (light uncapped, medium 2 + tier + plus, heavy none).
+      { f: "ac", label: "AC", type: "num" }, { f: "dexCap", label: "max DEX→AC", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     // Armour's own column set. There is no AC column: armour grants no flat AC.
