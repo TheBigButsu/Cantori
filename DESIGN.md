@@ -1883,3 +1883,90 @@ A note for anyone measuring it: the cast spends a world turn, and the burn is a
 `decay` DOT, so the first value you can read is always one lower than the opening
 tick. An 8 reads as 7 on the very next inspection. That is the same "first seen at
 n−1" effect Burning Sensation has always had, not a rounding bug.
+
+## Magic Missile spreads, then wraps — DONE
+
+Confirmed and fixed: extra bolts now land on the only visible target. They spread
+across distinct foes first and wrap around when they run out, so **three foes and
+four bolts is 2/1/1, and one foe and four bolts is all four on it.**
+
+Measured at level 12: **58 damage into a single rat** (four bolts, ~14.5 each) and
+40 across three. A volley that fizzled to one bolt in a duel would have made the
+spell worse the moment a fight got serious — good against a crowd and good against
+one thing was the whole ask.
+
+It re-reads the living between bolts, so a target that dies mid-volley does not eat
+the rest of the volley.
+
+## Burning Sensation burns for three turns — DONE
+
+Duration is a flat 3 (plus a rank's `turnBonus`) rather than "as many turns as the
+opening tick". Tying the two together made the spell quadratic in INT; a fixed window
+keeps it linear and readable.
+
+| INT modifier | opening tick | total |
+|---|---|---|
+| +3 | 6 | 6 + 5 + 4 = **15** |
+| +4 | 8 | 8 + 7 + 6 = **21** |
+
+Both measured. Every point of INT modifier is now worth exactly three more damage.
+
+## Keen Intellect — ToneTum, tier 1 — DONE
+
+Passive. Mana equal to a multiple of the INT modifier, on top of the base mana every
+character already gets from INT: **×1, ×2, ×4 (level 6), ×5 (level 10)**, the top rank
+also handing over a robe of tier 3 or better in green–purple.
+
+Measured at an INT modifier of +8: max MP **77 → 85 → 93 → 109 → 117**, gains of
+8 / 8 / 16 / 8 against an expected 8 / 8 / 16 / 8, total **+40 = 8 × 5**. Rank 4
+delivered a `refined_robe`.
+
+`grantGear` now accepts a **list** of rarities, because "green to purple" is a band
+rather than one colour and that belongs in the data.
+
+**One real bug fixed to make this work.** `learnSkill` never recomputed `maxHp` /
+`maxMp`, and both are stored rather than derived on read — so a passive that buys
+mana bought nothing at all until the next level-up or stat potion happened to rebuild
+the pool. Any rank change now re-derives both, and grants the freshly-gained points.
+
+## Retribution — Chadwick, tier 1 — DONE
+
+Brace for **5 HP** (never lethal — the button refuses rather than killing you) and
+reflect every blow that lands, for 50 turns, on a 100-turn cooldown.
+
+| rank | reflect | regeneration |
+|---|---|---|
+| 1 | ×0.5 | — |
+| 2 | ×1 | — |
+| 3 | ×2 | ×2 |
+| 4 (level 10) | ×3 | ×5 |
+
+It reflects off the damage that **actually landed**, after RES and armour — bracing
+behind a shield should not turn you into a bigger mirror — and before the gear's own
+thorns enchants, which still stack on top.
+
+Measured at rank 2 (×1): 22 damage taken against 25 reflected. Those should match, and
+do: the 3-point gap is regeneration topping the player up inside the same turn, so the
+*measured* damage is net while the reflect works off the gross hit.
+
+## Breaking line of sight is a tactic again — DONE
+
+`HUNT_PATIENCE` **10 → 2**. A hunting monster that cannot see you for two consecutive
+turns gives up, drops to searching near where the trail went cold, and `aware` goes
+false with it — which is what makes your next blow a guaranteed hit.
+
+At 10 this was not a tactic: you had to stay hidden for a third of a fight before
+anything forgot you, so nobody ever did it, and the deliberately evasive monsters had
+no counterplay but swinging and missing. At 2 it is the Shattered Pixel Dungeon move —
+step behind a pillar, let it lose you, come back and land one for free. **That is what
+makes a bat at AC 21 and a snake at 22 fair rather than merely annoying:** they are
+supposed to be hit by playing well, not by rolling well.
+
+Measured: a hunting rat forgets the player on the **third** turn out of sight, exactly
+as `++huntBlind > 2` implies.
+
+A searching monster re-spots you the instant it can see you, with no roll, so the free
+hit has to be taken from concealment — stepping into the open first hands the
+awareness straight back. And `stopHunting` now floats a **"?"** over the monster when
+it loses you, because an ambush window the player cannot see is luck rather than a
+mechanic.

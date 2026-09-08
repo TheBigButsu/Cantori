@@ -176,7 +176,10 @@
   // at level 20 against 20 at level 1. A modifier is a flat bonus, exactly as it
   // reads, and the per-level growth stays the levelUp set's job.
   const computeMaxHp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(1, (cls.baseHp != null ? cls.baseHp : HP_BASE) + mod("VIT") * HP_PER_VIT_MOD + (player.lvlHp || 0)); };
-  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + armorMp() + (player.lvlMp || 0)); };
+  // `mpPerInt` is Keen Intellect's currency: a passive multiple of the INT modifier
+  // on top of the base one every character already gets. Floored at 0 so a negative
+  // modifier cannot have the passive take mana away.
+  const computeMaxMp = () => { const cls = DATA.classes[player.cls] || {}; return Math.max(0, (cls.baseMp != null ? cls.baseMp : 0) + mod("INT") * MP_PER_INT_MOD + Math.max(0, mod("INT")) * passiveMod("mpPerInt") + armorMp() + (player.lvlMp || 0)); };
   // Two of Brynn's skills leave a timed bonus behind rather than doing their work
   // on the spot: Meditate's afterglow (damage, to-hit and AC) and Now You See Me's
   // payout (damage, when the invisibility drops). They are separate timers on
@@ -307,6 +310,7 @@
     player.invisible = 0;                      // timed buffs don't carry across a new run
     player.zen = null; player.unseen = null;   // Meditate's afterglow, Now You See Me's payout
     player.meditate = null; player.vanishPayout = null; player.dragonEncore = null;
+    player.retribution = null;                 // Chadwick's braced guard
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
     _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
@@ -2288,6 +2292,7 @@
     if (player.poison > 0) chips.push({ t: "☠ " + player.poison, c: "#9ad06a", title: "Poisoned — " + player.poison + " a turn, decaying" });
     if (player.toxin > 0) chips.push({ t: "☠ " + player.toxin, c: "#7ec98a", title: "Poisoned by a draught — " + player.toxin + " this turn, halving after" });
     if (player.para > 0) chips.push({ t: "🧊 " + player.para, c: "#cfd6e6", title: "Paralysed — up to " + player.para + " more turns, RES save vs DC " + paraDc() + " every time you try to act" });
+    if (player.retribution && player.retribution.turns > 0) chips.push({ t: "✵ ×" + player.retribution.thorns, c: "#e0a848", title: "Braced — reflecting " + Math.round(player.retribution.thorns * 100) + "% of every blow" + (player.retribution.regenMult > 1 ? ", regeneration ×" + player.retribution.regenMult : "") + ", " + player.retribution.turns + " turns left" });
     if (player.meditate) chips.push({ t: "☯ ×" + player.meditate.mult, c: "#bcd3e6", title: "Meditating — regeneration ×" + player.meditate.mult + ", " + player.meditate.healed + " HP so far. Moving, striking or being struck ends it." });
     if (player.zen && player.zen.turns > 0) chips.push({ t: "☯ +" + player.zen.dmg, c: "#bcd3e6", title: "Afterglow — +" + player.zen.dmg + " damage, to-hit and AC for " + player.zen.turns + " more turns" });
     if (player.unseen && player.unseen.turns > 0) chips.push({ t: "◌ +" + player.unseen.dmg, c: "#bfe0ff", title: "Out of the dark — +" + player.unseen.dmg + " damage for " + player.unseen.turns + " more turns" });
@@ -2992,6 +2997,16 @@
           log("The " + monName(attacker) + " recoils in dread and flees!", "hit");
         }
       }
+      // Retribution reflects before the gear does, and off the damage that actually
+      // landed — so armour and RES reduce what comes back too. Bracing behind a
+      // shield should not turn you into a bigger mirror.
+      const refl = retributionThorns();
+      if (refl > 0 && attacker.hp > 0) {
+        const back = Math.max(1, Math.round(dmg * refl));
+        attacker.hp -= back; flash(attacker);
+        floatText(attacker.x, attacker.y, "✵-" + back, "#e0a848");
+        if (attacker.hp <= 0) killMonster(attacker, "is broken on your guard");
+      }
       // taking a hit is how you learn your worn defensive gear, and how its
       // enchants (armor, rings, trinket, necklace) lash back at the attacker
       for (const it of wornItems()) {
@@ -3524,7 +3539,7 @@
     // to magic, and taking both would just end runs quietly.
     if (player.hp < player.maxHp && !sparkGone) {
       const effTurns = Math.max(1, (cls.regenTurns != null ? cls.regenTurns : 600) - mod("VIT") * (cls.vitRegen != null ? cls.vitRegen : 2) * 5);
-      player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult() * meditateMult();
+      player.regenAcc = (player.regenAcc || 0) + (player.maxHp / effTurns) * earlyRegenMult() * meditateMult() * retributionRegen();
       while (player.regenAcc >= 1 && player.hp < player.maxHp) { player.regenAcc -= 1; player.hp++; healed++; }
       if (player.hp >= player.maxHp) player.regenAcc = 0;
       if (healed) changed = true;
@@ -3713,7 +3728,16 @@
   //   any       -- routed --------> FLEEING       (Maelon's Endless Dread)
   const SLEEPING = "sleeping", WANDERING = "wandering", HUNTING = "hunting", FLEEING = "fleeing";
   const PATROL_PATIENCE = 12;     // turns of no progress before a wander target is abandoned
-  const HUNT_PATIENCE = 10;       // turns out of sight before the chase is called off
+  // Turns out of sight before the chase is called off — and with it `aware`, which
+  // is what makes your next blow a guaranteed hit (see the ambush rule in attack()).
+  //
+  // This was 10, which meant breaking line of sight was not a tactic: you had to
+  // stay hidden a third of a fight before anything forgot you, so nobody ever did
+  // it and the evasive monsters (a bat at AC 21, a snake at 22) had no counterplay
+  // but swinging and missing. At 2 it is the Shattered Pixel Dungeon move — step
+  // behind a pillar, let it lose you, come back and land one for free — which is
+  // the whole reason those AC numbers are allowed to be that high.
+  const HUNT_PATIENCE = 2;        // turns out of sight before the chase is called off
   const NOISE_RADIUS = 5;         // how far a scuffle carries
 
   // `aware` is what the rest of the engine asks (surprise attacks, Faith's Pull,
@@ -3732,6 +3756,9 @@
   // instantly forgetting. A wander target near the last known cell IS the search.
   function stopHunting(m) {
     const anchor = m.target || { x: m.x, y: m.y };
+    // Say so. An ambush window the player cannot see is not a mechanic, it is luck —
+    // this "?" is the tell that the next blow on this thing is a free one.
+    if (inBounds(m.x, m.y) && visible[m.y][m.x]) floatText(m.x, m.y, "?", "#8fa0b8");
     setState(m, WANDERING);
     m.target = nearbySearchSpot(anchor.x, anchor.y) || anchor;
     m.wanderBest = null; m.wanderStale = 0;
@@ -4264,6 +4291,7 @@
     }
     if (player.hasteBuff > 0) player.hasteBuff = Math.max(0, player.hasteBuff - 1);   // Speed of Light: decays 1%/turn
     if (player.invisible > 0 && --player.invisible <= 0) endInvisible("The air around you settles — you're visible again.");
+    if (player.retribution && --player.retribution.turns <= 0) { player.retribution = null; log("Your guard drops."); }
     if (player.zen && --player.zen.turns <= 0) { player.zen = null; log("The stillness fades from your limbs."); }
     if (player.unseen && --player.unseen.turns <= 0) { player.unseen = null; log("The edge you brought out of the dark dulls."); }
     dragonEncoreTick();
@@ -6305,7 +6333,15 @@
     log((st.rank === 1 ? "Learned " : "Upgraded ") + d.name + " (rank " + st.rank + ").", "hit");
     const gained = d.ranks[st.rank - 1];
     if (gained && gained.grantGear) grantRankGear(gained.grantGear);
-    renderChar(); updateHotbar();
+    // A passive may change the size of a pool (Keen Intellect buys MP off the INT
+    // modifier), and maxHp/maxMp are stored rather than recomputed on read — so
+    // without this the mana simply does not appear until the next level-up or stat
+    // potion happens to rebuild it. Any rank change re-derives both.
+    const beforeHp = player.maxHp, beforeMp = player.maxMp;
+    player.maxHp = computeMaxHp(); player.maxMp = computeMaxMp();
+    player.hp += Math.max(0, player.maxHp - beforeHp);   // the freshly-gained pool is granted too
+    player.mp += Math.max(0, player.maxMp - beforeMp);
+    renderChar(); updateHotbar(); updateHUD();
   }
   // A rank that comes with a weapon or a piece of armour (Sword Master's top rank
   // hands you a sword). Authored as a spec on the rank rather than a hardcoded key,
@@ -6330,7 +6366,10 @@
       const best = Math.max.apply(null, any.map(trueTier));
       pool = any.filter((k) => trueTier(k) === best);
     }
-    const it = rollItem(pool[randInt(0, pool.length - 1)], depth, spec.rarity || null);
+    // `rarity` may be a single name or a list to pick from — "green to purple" is a
+    // band, not one colour, and authoring it as a list keeps that in the data.
+    const rar = Array.isArray(spec.rarity) ? spec.rarity[randInt(0, spec.rarity.length - 1)] : (spec.rarity || null);
+    const it = rollItem(pool[randInt(0, pool.length - 1)], depth, rar);
     if (!it) return;
     if (!invAdd(it)) {
       const spot = dropSpot();
@@ -6481,6 +6520,7 @@
     if (d.kind === "rush" || d.kind === "dragonkick") beginRush(key);   // both ask for a direction
     else if (d.kind === "bolt") executeMagicMissile(key);        // no aiming — it finds the nearest
     else if (d.kind === "meditate") executeMeditate(key);
+    else if (d.kind === "retribution") executeRetribution(key);
     else if (d.kind === "vanish") executeVanish(key);
     else if (d.kind === "spin") executeSpin(key);
     else if (d.kind === "spinsmite") executeSpinningSmite(key);          // hits everything in reach — nothing to aim at
@@ -6598,12 +6638,13 @@
   // INT modifier and cools by 1 a turn, so its whole value is front-loaded: it is
   // worth spending on something you expect to still be alive next turn.
   //
-  // Doubling the opening tick more than doubles the spell, because the burn's
-  // DURATION has always been its opening tick — so the total is triangular in it.
-  // At INT +4 that is 8 a turn for 8 turns (8+7+6+…+1 = 36) where it used to be
-  // 4 for 4 (= 10). Deliberate: this is ToneTum's opener and it was not worth a
-  // 20-turn cooldown.
+  // The burn runs three turns flat rather than as many turns as its opening tick.
+  // Tying duration to the tick made the spell quadratic in INT — at +4 it was 36
+  // total and climbing fast — where a fixed window keeps it linear and readable:
+  // at +4 it is 8 + 7 + 6 = 21, and every point of INT modifier is worth exactly
+  // three more damage. Ranks can still buy extra turns on top (turnBonus).
   const BURN_INT_MULT = 2;   // Burning Sensation's opening tick, per point of INT modifier
+  const BURN_ROUNDS = 3;     // …and it always burns for three, however hard it opens
   function executeBurningSensation(key, tx, ty) {
     pendingSkill = null;
     const c = castCheck(key);
@@ -6612,7 +6653,7 @@
     if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
     payCast(key, c);
     const dmg = Math.max(1, mod("INT") * BURN_INT_MULT + (c.cur.dmgBonus || 0));
-    addDot(m, { tag: "burn", dmg, rounds: dmg + (c.cur.turnBonus || 0), decay: true, icon: "🔥", color: "#ff8f4a" });
+    addDot(m, { tag: "burn", dmg, rounds: BURN_ROUNDS + (c.cur.turnBonus || 0), decay: true, icon: "🔥", color: "#ff8f4a" });
     spawnProjectile(player.x, player.y, tx, ty, "#ff8f4a");
     floatText(m.x, m.y, "🔥" + dmg, "#ff8f4a");
     log("The " + monName(m) + " catches light. (" + dmg + " a turn, cooling)", "hit");
@@ -6638,9 +6679,10 @@
   //   level 12  four
   //   level 18  every bolt rolls 2–8 instead of 1–4
   //
-  // One bolt per target, never two on the same body: the spell reads as a spray
-  // that finds what is closest, and stacking the whole volley on one foe would
-  // make it a 4x nuke at level 12 rather than a crowd answer.
+  // Bolts SPREAD first and then wrap: with three foes in sight a four-bolt volley
+  // is 2/1/1, and with one foe in sight all four hit it. Good against a crowd and
+  // good against one thing is the point — a volley that fizzled down to a single
+  // bolt in a duel would make the whole spell worse the moment a fight got serious.
   const MISSILE_TIERS = [[12, 4], [7, 3], [3, 2]];   // level, bolts — first match wins
   const MISSILE_BIG_AT = 18;                         // level the die grows at
   const missileBolts = () => {
@@ -6659,20 +6701,29 @@
       .sort((a, b) => cheb(a.x, a.y, player.x, player.y) - cheb(b.x, b.y, player.x, player.y));
     if (!seen.length) { log("Nothing in sight to strike."); updateHotbar(); return; }
     payCast(key, c);
-    const targets = seen.slice(0, missileBolts());
-    let total = 0;
-    for (const m of targets) {
+    const bolts = missileBolts();
+    let total = 0, fired = 0;
+    const struck = new Set();
+    for (let i = 0; i < bolts; i++) {
+      // Re-read the living each bolt: a target that died mid-volley must not eat
+      // the rest of it, and the wrap has to land on something still standing.
+      const alive = seen.filter((m) => m.hp > 0);
+      if (!alive.length) break;
+      const m = alive[i % alive.length];
       const dmg = missileRoll();
-      total += dmg;
+      total += dmg; fired++; struck.add(m);
       spawnProjectile(player.x, player.y, m.x, m.y, "#9ad0ff");
       m.hp -= dmg; flash(m);
       floatText(m.x, m.y, "✦-" + dmg, "#9ad0ff");
       startHunting(m); makeNoise(m.x, m.y);
       if (m.hp <= 0) killMonster(m, "is unmade");
     }
-    log(targets.length === 1
-      ? "A bolt of force strikes the " + monName(targets[0]) + ". (-" + total + ")"
-      : targets.length + " bolts of force fan out. (-" + total + " across " + targets.length + " foes)", "hit");
+    const nFoes = struck.size;
+    log(fired === 1
+      ? "A bolt of force strikes the " + monName([...struck][0]) + ". (-" + total + ")"
+      : nFoes === 1
+        ? fired + " bolts of force converge on the " + monName([...struck][0]) + ". (-" + total + ")"
+        : fired + " bolts of force fan out. (-" + total + " across " + nFoes + " foes)", "hit");
     updateHUD(); updateHotbar();
     worldTurn();
   }
@@ -6864,6 +6915,34 @@
   // it — so meditating on a floor you have overstayed heals nothing at all. That
   // is the anti-grind rule working, not a bug, but it does mean the skill has a
   // deadline.
+  // Retribution — Chadwick pays HP, not mana, and gets it back out of whatever
+  // hits him. Thorns reflect a share of every blow that lands on you for 50 turns,
+  // and the upper ranks run your regeneration hot for the same window, so the
+  // skill is "stand in it and let them break themselves on you" rather than a
+  // panic button.
+  function executeRetribution(key) {
+    const cur = skillCur(key);
+    if (!cur) return;
+    const cost = cur.hp || 0;
+    // Never let the button kill you: the cost is what makes it a commitment, not a
+    // way to lose a run to a mis-tap.
+    if (player.hp <= cost) { log("Not enough health for " + skillDef(key).name + " (costs " + cost + ")."); return; }
+    player.hp -= cost;
+    player.retribution = {
+      turns: (cur.turns || 50) + 1,          // +1: this cast's own worldTurn ticks it once
+      thorns: cur.thorns || 0,
+      regenMult: cur.regenMult || 1,
+    };
+    player.skills[key].cd = cur.cd || 0;
+    flash(player); floatText(player.x, player.y, "✵", "#e0a848");
+    log("You brace yourself — every blow will cost them. (×" + (cur.thorns || 0) + " reflected"
+        + ((cur.regenMult || 1) > 1 ? ", regeneration ×" + cur.regenMult : "") + " for " + (cur.turns || 50) + " turns)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  const retributionThorns = () => (player.retribution && player.retribution.turns > 0 ? player.retribution.thorns : 0);
+  const retributionRegen = () => (player.retribution && player.retribution.turns > 0 ? player.retribution.regenMult : 1);
+
   function executeMeditate(key) {
     const cur = skillCur(key);
     if (!cur) return;
@@ -7769,6 +7848,9 @@
     paralyzeAt: (x, y) => { const m = monsterAt(x, y); if (!m) return 0; m.para = 0; paralyzeMonster(m); return m.para; },
     paraInfo: () => ({ dc: paraDc(), bossMax: PARA_BOSS_MAX, player: player.para | 0 }),
     missileInfo: () => ({ bolts: missileBolts(), bigAt: MISSILE_BIG_AT, level: player.level }),
+    retributionState: () => (player.retribution ? Object.assign({}, player.retribution) : null),
+    huntPatience: () => HUNT_PATIENCE,
+    awareness: () => monsters.filter((m) => m.hp > 0).map((m) => ({ type: m.type, state: m.state, aware: !!m.aware, blind: m.huntBlind | 0 })),
     startRest: () => startRest(),
     toggleRest: () => toggleRest(),
     stopRest: () => stopRest(),

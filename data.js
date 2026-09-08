@@ -1934,6 +1934,29 @@ window.CANTORI_DATA = {
           "req": []
         },
         {
+          "id": "retribution",
+          "x": 3,
+          "y": 0,
+          "name": "Retribution",
+          "icon": "\u2735",
+          "kind": "retribution",
+          "when": null,
+          "desc": "Brace, at the cost of 5 health, and let them break themselves on you. Every blow that lands is reflected back at whatever threw it, for 50 turns. Cooldown 100 turns.",
+          "levels": [
+            "Reflects half of every blow that lands on you, for 50 turns.",
+            "Reflects the full blow.",
+            "Reflects twice the blow, and runs your regeneration at double for the same 50 turns.",
+            "Reflects three times the blow, and regeneration at five times. (requires character level 10)"
+          ],
+          "ranks": [
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 0.5, "regenMult": 1 },
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 1, "regenMult": 1 },
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 2, "regenMult": 2 },
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 3, "regenMult": 5, "minLevel": 10 }
+          ],
+          "req": []
+        },
+        {
           "id": "sword_master",
           "x": 2,
           "y": 0,
@@ -2412,6 +2435,30 @@ window.CANTORI_DATA = {
         "mp": 4
       },
       "skillTree": [
+        {
+          "id": "keen_intellect",
+          "x": 3,
+          "y": 0,
+          "name": "Keen Intellect",
+          "icon": "\ud83e\udde0",
+          "kind": "passive",
+          "when": null,
+          "desc": "A deeper well, cut by the same mind that draws from it. Adds mana equal to a multiple of your INT modifier, on top of the mana every character already gets from INT.",
+          "levels": [
+            "+MP equal to your INT modifier.",
+            "+MP equal to twice your INT modifier.",
+            "+MP equal to four times your INT modifier. (requires character level 6)",
+            "+MP equal to five times your INT modifier, and a robe of the third tier or better arrives at once. (requires character level 10)"
+          ],
+          "ranks": [
+            { "mpPerInt": 1 },
+            { "mpPerInt": 2 },
+            { "mpPerInt": 4, "minLevel": 6 },
+            { "mpPerInt": 5, "minLevel": 10,
+              "grantGear": { "cat": "armor", "sub": "light", "tierMin": 3, "tierMax": 5, "rarity": ["green", "blue", "purple"] } }
+          ],
+          "req": []
+        },
         {
           "id": "magic_missile",
           "x": 4,
