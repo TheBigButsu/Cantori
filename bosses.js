@@ -42,15 +42,16 @@ window.CantoriBosses = function (deps) {
     updateHUD = deps.updateHUD, normalAct = deps.normalAct;
 
   // ---- The Pied Piper (forest boss) ---------------------------------------
+  const BEAM_HOLD = 2;   // turns the death line sits before the rat launches down it
   function piperAct(m) {
-    if (m.beam) { piperFireBeam(m); return; }        // fire the line telegraphed last turn
+    if (m.beam) { piperBeamTick(m); return; }        // hold the telegraphed line, or fire it
     const see = canSee(m);
     if (see) startHunting(m);
     // Entrance: the first time it sees you, it calls vermin to your side.
     if (see && !m.summoned) {
       m.summoned = true;
       spawnNear("rat", player.x, player.y, 3, 2);
-      spawnNear("snake", player.x, player.y, 3, 1);
+      spawnNear("bat", player.x, player.y, 3, 1);
       flashScreen("#7a1e1e", 320);
       sayMonster(m, "Friends, friends everywhere", "#e07aa0");
       log("The Piper's shrill tune summons vermin around you!", "hurt");
@@ -85,7 +86,7 @@ window.CantoriBosses = function (deps) {
     if (best) { m.x = best.x; m.y = best.y; snapEntity(m); }
     spawnBurst(m.x, m.y, "#c79bff"); flashScreen("#7a4fb0", 380);
     spawnNear("rat", ox, oy, 2, 3);
-    spawnNear("snake", ox, oy, 2, 2);
+    spawnNear("bat", ox, oy, 2, 2);
     startHunting(m);
     log("The Piper vanishes in a swirl, leaving its brood behind!", "hurt");
   }
@@ -104,11 +105,28 @@ window.CantoriBosses = function (deps) {
     while (pass(sx - dir[0], sy - dir[1])) { sx -= dir[0]; sy -= dir[1]; }
     const tiles = [];
     for (let x = sx, y = sy; pass(x, y); x += dir[0], y += dir[1]) tiles.push([x, y]);
-    m.beam = { dir, tiles };
+    // The line SITS for two of the Piper's turns before it launches. One turn of
+    // warning is only enough if you were already free to move: a step out of the
+    // lane that walks you into a rat, or a turn you needed for a potion, and the
+    // 30 damage lands anyway. Two turns is the difference between a reaction test
+    // and a decision — you can spend one of them doing something else.
+    m.beam = { dir, tiles, hold: BEAM_HOLD };
     flashScreen("#c02020", 300);                      // a sharp red pulse — impossible to miss
     floatText(player.x, player.y, "⚠", "#ff5a5a");
     sayMonster(m, "Dance for me", "#ff6a6a");
     log("The Piper marks a line of death — MOVE off it!", "hurt");
+  }
+  // Counts the line down. The second turn of warning gets its own pulse and its own
+  // line in the log — a telegraph the player cannot tell is still live is not a
+  // telegraph, it is a stale red rectangle.
+  function piperBeamTick(m) {
+    if (--m.beam.hold > 0) {
+      flashScreen("#c02020", 180);
+      floatText(m.x, m.y, "⚠", "#ff5a5a");
+      log("The line still burns — it comes next turn!", "hurt");
+      return;
+    }
+    piperFireBeam(m);
   }
   function piperFireBeam(m) {
     const line = m.beam.tiles; m.beam = null;         // the red line clears as the rat launches

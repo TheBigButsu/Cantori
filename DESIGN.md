@@ -1540,3 +1540,52 @@ each stage: **8 HP healed before 300, 8 after 300, 0 after 450.**
 One thing worth recording for anyone testing this: a stage fires on `turns === st.at`
 exactly, so a test that *sets* the turn counter past a stage skips its trigger
 entirely and reads as though the stage never happened. Walk the counter through.
+
+## The Piper: two turns of warning, and bats instead of snakes — DONE
+
+**The death line now sits for two of the Piper's turns before the rat launches**, with
+its own pulse and its own log line on the second (`"The line still burns — it comes
+next turn!"`). A telegraph the player cannot tell is still live is not a telegraph,
+it is a stale red rectangle.
+
+One turn of warning is only enough if you were already free to move. A step out of
+the lane that walks you into a rat, or a turn you needed for a potion, and the 30
+damage lands anyway — which makes it a reaction test rather than a decision. Two
+turns means one of them can be spent on something else. Measured over three casts:
+the line is up for exactly 2 boss turns every time.
+
+**Its summons are rats and bats now, not rats and snakes** — 2 rats + 1 bat on the
+entrance, 3 rats + 2 bats on the phase shift. Verified: zero snakes.
+
+Worth noting this is a small *easing* on its own terms: a snake is AC 22 / 8 HP /
+1–6 damage against a bat's AC 21 / 5 HP / 1–4. The bat is easier to kill and hits
+softer, though both sit at the very top of the AC table.
+
+One consequence to watch: the beam's miss branch spills **two more rats** when the
+rat bursts on the wall. With two turns of warning the player dodges far more often,
+so that branch goes from occasional to near-guaranteed — roughly 2 rats every 12
+turns. Dodging correctly should probably not be the thing that buries you in adds.
+
+## Measured: the first boss fight is not winnable by trading blows
+
+A warrior arrives at the Piper at **level 5, 40 max HP, attack 2–5**, wearing the
+starting `Shitty_sword` and `rusted_mail` — AC 10, to-hit +6. The Piper has **150 HP,
+AC 14**, hits for 2–10, and a 30-damage line every 12 turns.
+
+Driving the fight straight — stand adjacent, swing every turn:
+
+| level | max HP | your damage/turn | its damage/turn | turns to kill it | turns to kill you | outcome |
+|---|---|---|---|---|---|---|
+| 4 | 35 | 3.0 | 2.9 | 50 | 12 | **died** |
+| 5 | 40 | 2.1 | 2.2 | 71 | 18 | **died** |
+| 6 | 46 | 1.7 | 3.3 | 88 | 14 | **died** |
+| 8 | 56 | 3.4 | 2.9 | 45 | 19 | **died** |
+
+**You need 45–88 turns to kill it. It needs 12–19 to kill you.** That is a 3–5×
+deficit, and it does not close by levelling — a level-8 character dies as reliably
+as a level-4 one, because HP grows about as fast as the gap does.
+
+The beam is not even the problem: those runs recorded **zero beam hits**. The deaths
+are ordinary melee plus three summoned adds. The spike is arithmetic, not tactics —
+150 HP against 2–3 damage a turn is fifty-plus turns of exposure to a thing that
+kills you in fifteen.
