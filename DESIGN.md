@@ -1128,8 +1128,8 @@ capped.
 
 | turn | |
 |---|---|
-| 300 | *"The spark has left this location."* — **HP regeneration stops for the rest of the visit** |
-| 450 | *"You feel yourself losing your way."* |
+| 300 | *"The spark has left this location."* — a warning you can still act on |
+| 450 | *"You feel yourself losing your way."* — **HP regeneration stops for the rest of the visit** |
 | 550 | *"You must leave now, or you do not think you ever will."* |
 | 600 | the Horror comes |
 
@@ -1294,24 +1294,45 @@ flips. Floor loot keeps its odds — *finding* a bad potion is a discovery, *buy
 is a mugging. Measured over 20,000 rolls the stall now stocks poison 11.5% of the time
 against Strength's 15.6%.
 
-## Hold ⏳ to rest — DONE
+## Rest is its own button — DONE (and the hold-to-wait it replaces was broken)
 
 Waiting a wound off was sixty separate taps: not a decision the player is making, a
-toll they are paying to make one. Holding the Wait button now spends turns
-continuously (a tap is still exactly one turn).
+toll they are paying to make one. That first shipped as press-and-hold on the ⏳ slot,
+**and it was broken in a way worth recording.**
 
-A rest that runs *through* the thing it should have noticed is far worse than the toll,
-so the loop is deliberately twitchy. It stops on:
+`worldTurn()` calls `updateHotbar()`, which empties the hotbar and rebuilds every slot
+from scratch. So a single tap on Wait ran its turn, and that turn *destroyed the
+button the finger was still resting on*. The element was detached before its own
+`pointerup` could fire, the cleanup that cancels the hold timer never ran, and 300ms
+later the rest started by itself and ran until something interrupted it. One tap, and
+the monsters took a hundred actions.
+
+The lesson generalises: **nothing wired to a hotbar slot may outlive the turn it
+spends**, because the slot does not. `makeSlot` is a plain button again.
+
+Rest now has its own 🏕 button beside Character, Pack, Examine and Map — outside the
+hotbar, so it cannot be destroyed by the turn it starts. One press starts it, the same
+press stops it, and the `R` key does both too. Measured: one tap on Wait is exactly one
+turn and starts nothing; five taps are five turns.
+
+The loop stays deliberately twitchy, because a rest that runs *through* the thing it
+should have noticed is far worse than the taps it saves. It stops on:
 
 - a foe coming into view that was not in view before
 - a single point of damage
 - the floor speaking up — any `restBreak()` caller, which today is every Horror stage
   message and the Horror's arrival
-- **any** input at all, captured on the document rather than the game, so reaching for
-  the inventory stops the clock before the inventory opens
+- **any** input at all, captured on the `document` rather than on the game, so
+  reaching for the inventory stops the clock before the inventory opens
 - death, or any modal, throw or skill-targeting state opening
 
-Ending a rest early costs one more press. Ending it late costs the run.
+And it refuses to start at all with something already in sight, *out loud* — "You
+cannot rest with something in sight." A button that does nothing and says nothing is
+the bug this section is about.
+
+Two inputs are exempt from the any-input stop: the Rest button itself and the `R` key.
+Both already mean "stop resting", and without the exemption they would stop the rest
+and then be re-read as a fresh "start resting" by the toggle a moment later.
 
 ## Brynn's tiers 2 and 3 — DONE
 
@@ -1429,3 +1450,93 @@ dispatches. Its own comment warned what that costs: "a kind missing here gets
 silently rewritten to `passive` the moment anyone touches the control" — which is
 every mage skill, every boon active, and every Smite variant. The list is now
 complete.
+
+## Wearing nothing lets all of your DEX through — DONE
+
+A DEX-17 Brynn with an empty armour slot read **AC 10**. That was the armour cap
+being applied by a piece of armour that did not exist: `armorDexCap()` returned 0
+whenever `player.armor` was null, which is the same answer it gives for plate.
+
+Armour caps DEX because it is *in the way*. There is nothing in the way of a bare
+body, so there is nothing to cap. Unarmoured is now uncapped:
+
+| DEX | 10 | 14 | 17 | 20 | 24 |
+|---|---|---|---|---|---|
+| **nothing** | 10 | 12 | **13** | 15 | 17 |
+| cloth (light) | 10 | 10 | 10 | 10 | 10 |
+| padded jerkin (medium t1) | 10 | 11 | 11 | 11 | 11 |
+| studded leather (medium t2) | 10 | 12 | 12 | 12 | 12 |
+
+The trade stays real in both directions, because mitigation is entirely the item's
+own `defMin`/`defMax` roll: naked you are the hardest thing in the game to hit and
+you block **nothing at all**. Medium armour ties the naked number once `tier + plus`
+reaches your DEX modifier and brings a damage block with it, so it overtakes rather
+than merely catching up — and every upgrade scroll widens what your DEX is allowed
+to do.
+
+It also gives **Happy Feet** something to do that going naked cannot: the passive
+only works in cloth or medium, so cloth at rank 2 is AC 14 against a bare 13, and
+medium keeps its mitigation on top of that. Without this change a high-DEX monk had
+no reason to wear cloth at all.
+
+The screenshot case measured: DEX 17, nothing worn, **AC 10 → 13**, and the stats
+screen agrees — "Armour Class 13 (~45% to be missed)" with the DEX cell reading
+"to-hit +7 / AC 13".
+
+## Magic Mapping revealed the bedrock instead of the layout — FIXED
+
+The scroll fired, the log said the right thing, and the floor map came back as a
+solid uniform block with the rooms showing as *holes* in it. It read as broken.
+
+Two things compounded:
+
+1. **It marked every tile explored, rock included.** A depth-4 forest floor is 2,209
+   tiles, of which **2,000 are solid rock** — 90.5%. So "reveal everything" is
+   overwhelmingly a command to draw rock.
+2. **On the floor map an unvisited WALL is drawn brighter than a floor.** That is
+   fine in normal play, where the only wall you have explored is the thin shell
+   around corridors you actually walked. Reveal all of it and the relationship
+   inverts: the screen fills with the bright colour and the rooms inside it are the
+   dark parts.
+
+A wall now earns its place on the map only by bounding something you could stand in,
+so what floods in is rooms and corridors with outlines and the rock between them
+stays dark:
+
+| | before | after |
+|---|---|---|
+| tiles marked known | 2,209 (100%) | **418 (18.9%)** |
+| of which wall | 2,000 | 209 — the outlines only |
+| walkable tiles left off the map | 0 | **0** |
+
+That last row is the constraint that matters: auto-travel paths only across explored
+tiles, so every walkable tile still has to be marked or the scroll would strand it.
+
+The map's floor colours were lifted too (`#151009` → `#241c11` merely-mapped,
+`#221b12` → `#332a1c` walked). Both sat within a hair of the near-black map
+background, which nothing noticed while every floor on screen was ringed by bright
+explored wall — and which made room interiors indistinguishable from the void the
+moment a magic map drew rooms nobody had walked into yet.
+
+## The regeneration cut moves to the second stage — DONE
+
+Losing every point of healing at turn 300 was too punishing. Half a floor's patience
+is not long, and a floor you are still exploring can hand you an ordinary fight that
+becomes a run-ender purely because nothing comes back afterwards.
+
+The cut now rides on the **second** stage instead of the first:
+
+| turn | |
+|---|---|
+| 300 | *"The spark has left this location."* — a warning, and the TIME bar turns |
+| **450** | *"You feel yourself losing your way."* — **HP regeneration stops** |
+| 550 | *"You must leave now, or you do not think you ever will."* |
+| 600 | the Horror comes |
+
+So the first stage is now something you can act on and the price lands with 150 turns
+left to leave on. Measured over 40 turns from a wound, walking the counter through
+each stage: **8 HP healed before 300, 8 after 300, 0 after 450.**
+
+One thing worth recording for anyone testing this: a stage fires on `turns === st.at`
+exactly, so a test that *sets* the turn counter past a stage skips its trigger
+entirely and reads as though the stage never happened. Walk the counter through.

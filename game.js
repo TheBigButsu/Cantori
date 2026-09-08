@@ -189,9 +189,8 @@
     return v;
   };
   const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
-  // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
-  // how much DEX it lets through — light takes all of it, medium at most +2, heavy
-  // none at all. That cap is what stops heavy armour from being strictly best.
+  // AC = 10 + as much of your DEX modifier as what you are wearing allows: all of
+  // it bare-skinned, tier + plus in medium, none in light or heavy. See ARMOR_SUB.
   // Happy Feet is the first thing that adds AC from a passive, and the Meditate
   // afterglow the first that adds it on a timer.
   const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac");
@@ -571,6 +570,13 @@
   //             DEX you do not have.
   //   heavy   — no AC and no DEX, just the largest mitigation range in the game.
   //             You get hit; it barely matters.
+  //   none    — WEARING NOTHING lets all of your DEX through, uncapped. Armour caps
+  //             DEX because it is in the way; there is nothing in the way of a bare
+  //             body, so there is nothing to cap. AC 10 flat for a DEX-17 monk was
+  //             the cap being applied by a piece of armour that did not exist.
+  //             The trade is real in both directions: naked you are the hardest
+  //             thing in the game to hit and you block nothing at all, since
+  //             mitigation is entirely the item's defMin/defMax roll.
   //
   // Mitigation itself is the item's own defMin/defMax roll, so a subtype no longer
   // carries a flat `mit` bonus — the ranges below say everything.
@@ -578,8 +584,9 @@
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
   // Only medium armour converts DEX into AC, and only up to tier + plus of it.
   const armorDexCap = () => {
+    if (!player.armor) return Infinity;      // nothing in the way — all of it
     const a = armorSub();
-    if (!a || !a.dex || !player.armor) return 0;
+    if (!a || !a.dex) return 0;
     return gearTier(player.armor.key) + (player.armor.plus || 0);
   };
   const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
@@ -3466,7 +3473,7 @@
     const cls = DATA.classes[player.cls] || {};
     let changed = false, healed = 0;
     // HP: heals to full over regenTurns, sped by Vitality — unless the floor's
-    // spark has gone out (FLOOR_STAGES), after which it gives nothing back for the
+    // spark has gone out (the `spark` stage in FLOOR_STAGES), after which it gives nothing back for the
     // rest of the visit. MP is untouched: the floor is tired of you, not hostile
     // to magic, and taking both would just end runs quietly.
     if (player.hp < player.maxHp && !sparkGone) {
@@ -3951,9 +3958,14 @@
   // Three warnings on the way, and the FIRST one costs something real rather than
   // just saying words: the floor stops giving your health back. A clock that only
   // talks is a clock you learn to ignore.
+  // The regeneration cut rides on the SECOND stage, not the first. At 300 it was
+  // too punishing: half a floor's patience is not long, and losing every point of
+  // healing that early turned an ordinary fight on a floor you were still exploring
+  // into a run-ender. The first stage is now a warning you can act on — the floor
+  // has noticed you — and the price lands at 450, with 150 turns left to leave.
   const FLOOR_STAGES = [
-    { at: 300, spark: true, msg: "The spark has left this location." },
-    { at: 450, msg: "You feel yourself losing your way." },
+    { at: 300, msg: "The spark has left this location." },
+    { at: 450, spark: true, msg: "You feel yourself losing your way." },
     { at: 550, msg: "You must leave now, or you do not think you ever will." },
   ];
   const FLOOR_WARNING = FLOOR_STAGES[0].at;   // when the TIME bar turns
@@ -3961,7 +3973,7 @@
   const HORROR_HP_MULT = 3;       // it is the same creature, wrong
   const HORROR_DMG_MULT = 4;      // and it hits like nothing else on the floor
   let horrorWarned = false, horrorDeadAt = -1;
-  let sparkGone = false;          // past the first stage: this floor heals no one
+  let sparkGone = false;          // past the spark stage: this floor heals no one
   // Which monster the Horror wears. Authored per biome (`horror` in data.js);
   // falls back to the deepest-starting monster the biome spawns, so a biome that
   // has not been given one yet still gets its scariest resident rather than none.
@@ -5406,7 +5418,12 @@
         const t = map[y][x];
         const been = beenSeen[y][x];       // been there in person vs. only magic-mapped
         const px = ox + x * cell, py = oy + y * cell, sz = cell - gap;
-        mctx.fillStyle = t === WALL ? (been ? "#4b3d27" : "#2c2417") : (been ? "#221b12" : "#151009");
+        // Floor was #221b12 walked / #151009 merely mapped, both within a hair of
+        // the near-black map background — fine while the only floor on screen sat
+        // inside a bright ring of explored wall, useless the moment a magic map
+        // drew rooms whose interiors were indistinguishable from the void around
+        // them. Lifted enough to read as "you know what is here".
+        mctx.fillStyle = t === WALL ? (been ? "#4b3d27" : "#3a2f1d") : (been ? "#332a1c" : "#241c11");
         mctx.fillRect(px, py, sz, sz);
         if (t === STAIRS) { mctx.fillStyle = been ? "#f6b845" : "#7c6231"; mctx.fillRect(px, py, sz, sz); }
         else if (t === DOOR) { mctx.fillStyle = been ? "#8a6a3a" : "#4e3e24"; mctx.fillRect(px, py, sz, sz); }
@@ -5944,7 +5961,27 @@
               : "THUNDERCLAP — the air detonates around you, and nothing is close enough to care.",
           hit ? "hit" : "");
     } else if (fx === "map") {
-      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) explored[y][x] = true;
+      // Reveal the LAYOUT, not the bedrock.
+      //
+      // This marked every tile explored, rock included — and on the floor map an
+      // unvisited WALL is drawn brighter than a floor is, because in normal play
+      // you only ever explore a thin shell of wall around the corridors you walk.
+      // Magic-map the whole level and that inverts: better than three quarters of
+      // the map is solid rock, so the screen filled with a uniform bright block and
+      // the rooms inside it read as unmapped holes. The scroll worked; the map it
+      // produced was unreadable, which is the same thing from where the player sits.
+      //
+      // A wall now earns its place on the map only by bounding something you could
+      // stand in, so what floods in is rooms and corridors with outlines, and the
+      // rock between them stays dark. Every walkable tile is still marked, so
+      // auto-travel (which paths only across explored tiles) reaches all of it.
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+        if (map[y][x] !== WALL) { explored[y][x] = true; continue; }
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx, ny = y + dy;
+          if (inBounds(nx, ny) && map[ny][nx] !== WALL) { explored[y][x] = true; break; }
+        }
+      }
       log("The layout of this level floods into your mind.");
     } else if (fx === "teleport") {
       const reach = floodReach(player.x, player.y, true);   // only tiles you could walk to (never into a thorn vault)
@@ -7169,16 +7206,25 @@
 
   // ---- Hotbar --------------------------------------------------------------
 
-  // Holding ⏳ spends turns until something earns your attention. Waiting out a
-  // wound used to be sixty separate taps, which is not a decision the player is
-  // making, it is a toll they are paying to make one — but a rest that runs THROUGH
-  // the thing it should have noticed is far worse than the toll. So the loop is
-  // deliberately twitchy: it stops the moment a foe comes into view, the moment a
-  // single point of damage lands, the moment the floor says anything, and the
-  // moment the player's hand touches anything at all. Ending a rest early costs
-  // one more press. Ending it late costs the run.
-  const REST_MS = 90;      // one turn per tick — fast enough to read as "held down"
-  const REST_HOLD_MS = 300; // press-and-hold threshold, so a tap is still one turn
+  // Rest — its own 🏕 button beside Character and Pack, NOT a mode on the ⏳ slot.
+  //
+  // It was press-and-hold on Wait, and that was broken in a way worth recording.
+  // worldTurn() calls updateHotbar(), which empties the hotbar and rebuilds every
+  // slot from scratch. So a single tap on Wait ran its turn, and that turn DESTROYED
+  // the button the finger was still resting on — the element was detached before its
+  // own pointerup could fire, the cleanup that cancels the hold timer never ran, and
+  // 300ms later the rest started on its own and the world ran away. One tap, and the
+  // monsters took a hundred actions.
+  //
+  // A button that lives outside the hotbar cannot be destroyed by the turn it
+  // starts, which is the whole reason this shape is the right one. There is no
+  // hold: one press starts the rest, and the next input of any kind ends it.
+  //
+  // The loop stays deliberately twitchy. A rest that runs THROUGH the thing it
+  // should have noticed is far worse than the taps it saves: it stops the moment a
+  // foe comes into view, the moment a single point of damage lands, the moment the
+  // floor says anything, and the moment the player touches anything at all.
+  const REST_MS = 90;      // one turn per tick
   let restTimer = null, restSeen = 0, restHp = 0, restBreakMsg = null;
   const visibleFoes = () =>
     monsters.reduce((n, m) => n + (m.hp > 0 && inBounds(m.x, m.y) && visible[m.y][m.x] ? 1 : 0), 0);
@@ -7186,15 +7232,33 @@
   // is the first caller, and anything that logs something the player must read
   // should be the next. A no-op when nobody is resting, so callers needn't check.
   function restBreak(msg) { if (restTimer) restBreakMsg = msg || ""; }
-  const restStopEv = () => stopRest();
+  // Any input ends a rest — except the two that mean "stop resting" already, which
+  // would otherwise stop it here and then be re-read as a fresh "start resting" by
+  // the toggle a moment later.
+  const restStopEv = (e) => {
+    if (e && e.type === "keydown" && (e.key === "r" || e.key === "R")) return;
+    const btn = document.getElementById("btnRest");
+    if (e && btn && e.target && btn.contains && btn.contains(e.target)) return;
+    stopRest();
+  };
+  const restBtnOn = (on) => {
+    const btn = document.getElementById("btnRest");
+    if (btn) btn.classList.toggle("on", !!on);
+  };
   function restBusy() {
     return dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen ||
       fountainOpen || examineMode || pendingThrow != null || !!pendingSkill;
   }
   function startRest() {
     if (restTimer || restBusy()) return;
+    // Resting with something already watching you is not a rest, it is standing
+    // still while it walks up and hits you. Refused out loud rather than silently:
+    // a button that does nothing and says nothing is the bug we just fixed.
+    if (visibleFoes() > 0) { log("You cannot rest with something in sight."); return; }
     restSeen = visibleFoes(); restHp = player.hp; restBreakMsg = null;
+    log("You settle down to rest — anything at all will bring you back up.");
     restTimer = setInterval(restTick, REST_MS);
+    restBtnOn(true);
     // Capture phase, on the document: a rest ends on ANY input, not just input
     // aimed at the game. Reaching for the inventory should stop the clock before
     // the inventory opens, not after three more turns have gone by.
@@ -7204,6 +7268,7 @@
   function stopRest(msg) {
     if (!restTimer) return;
     clearInterval(restTimer); restTimer = null; restBreakMsg = null;
+    restBtnOn(false);
     document.removeEventListener("keydown", restStopEv, true);
     document.removeEventListener("pointerdown", restStopEv, true);
     if (msg) log(msg);
@@ -7215,43 +7280,30 @@
     if (dead) { stopRest(); return; }
     // The floor spoke (or something else called restBreak) during that turn.
     if (restBreakMsg != null) { const m = restBreakMsg; stopRest(); if (m) log(m); return; }
-    if (player.hp < restHp) { stopRest("Something is hurting you — you stop waiting."); return; }
+    if (player.hp < restHp) { stopRest("Something is hurting you — you stop resting."); return; }
     restHp = player.hp;                       // regen counts as a change too, just not a reason to stop
     const foes = visibleFoes();
-    if (foes > restSeen) { stopRest("Something moves into view — you stop waiting."); return; }
+    if (foes > restSeen) { stopRest("Something moves into view — you stop resting."); return; }
     restSeen = foes;
   }
+  function toggleRest() { if (restTimer) stopRest("You get back to your feet."); else startRest(); }
 
-  // `hold` wires press-and-hold on top of the tap. The tap's turn is spent on
-  // pointerdown rather than on click, because the repeat has to start from the
-  // same event — waiting for click would mean the first turn of a hold landed
-  // only once the finger came back up.
-  function makeSlot(icon, label, ready, cd, arming, onClick, hold) {
+  // A plain button. It deliberately carries no press-and-hold: every slot in here
+  // is rebuilt by updateHotbar() on the very turn it spends, so nothing wired to a
+  // slot may outlive that turn (see the Rest note above for what that cost).
+  function makeSlot(icon, label, ready, cd, arming, onClick) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "slot" + (ready ? " ready" : " cool") + (arming ? " arming" : "");
     b.innerHTML = `<span>${icon}</span><span class="lbl">${label}</span>` + (cd ? `<span class="cd">${cd}</span>` : "");
-    if (!hold) { b.addEventListener("click", onClick); return b; }
-    let armed = null;
-    const end = () => { clearTimeout(armed); armed = null; stopRest(); };
-    b.addEventListener("pointerdown", (e) => {
-      e.preventDefault();                     // no synthetic click, no text selection on a long press
-      onClick();
-      clearTimeout(armed);
-      armed = setTimeout(startRest, REST_HOLD_MS);
-    });
-    b.addEventListener("pointerup", end);
-    b.addEventListener("pointercancel", end);
-    b.addEventListener("pointerleave", end);
-    // preventDefault above costs the button its keyboard activation, so hand it back.
-    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } });
+    b.addEventListener("click", onClick);
     return b;
   }
   function updateHotbar() {
     const bar = document.getElementById("hotbar");
     if (!bar) return;
     bar.innerHTML = "";
-    bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn(), true));   // tap = a turn, hold = rest
+    bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn()));   // one tap, exactly one turn
     for (const key of Object.keys(player.skills || {})) {
       const st = player.skills[key], d = skillDef(key);
       if (!st || st.rank < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
@@ -7318,6 +7370,7 @@
     if (key === "x") { e.preventDefault(); toggleExamine(); return; }
     if (e.key === "Escape" && (examineMode || pendingSkill || pendingThrow != null)) { examineMode = false; pendingSkill = null; pendingThrow = null; toggleExamine(false); updateHotbar(); return; }
     if (key === "z" || e.key === "." || e.code === "Numpad5") { e.preventDefault(); waitTurn(); return; }
+    if (key === "r") { e.preventDefault(); toggleRest(); return; }
     if (key >= "1" && key <= "9") {                        // number keys → learned active skills, in order
       const actives = Object.keys(classSkills()).filter((k) => { const d = classSkills()[k]; return d.kind !== "passive" && player.skills[k] && player.skills[k].rank >= 1; });
       const s = actives[parseInt(key, 10) - 1];
@@ -7340,6 +7393,7 @@
   { const en = document.getElementById("enemies"); if (en) en.addEventListener("click", cycleEnemyFocus); }
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
+  document.getElementById("btnRest").addEventListener("click", () => toggleRest());
   function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
@@ -7616,6 +7670,7 @@
     paralyzeAt: (x, y) => { const m = monsterAt(x, y); if (!m) return 0; m.para = 0; paralyzeMonster(m); return m.para; },
     paraInfo: () => ({ dc: paraDc(), bossMax: PARA_BOSS_MAX, player: player.para | 0 }),
     startRest: () => startRest(),
+    toggleRest: () => toggleRest(),
     stopRest: () => stopRest(),
     resting: () => !!restTimer,
     poisonPlayer: (n) => { poisonPlayer(n); updateHUD(); },
@@ -7638,6 +7693,21 @@
     // test to measure zero.
     setHp: (n) => { player.hp = Math.max(1, Math.min(n == null ? player.maxHp : n, player.maxHp)); updateHUD(); return player.hp; },
     setCd: (k, n) => { const st = player.skills[k]; if (st) st.cd = Math.max(0, n | 0); updateHotbar(); return st ? st.cd : null; },
+    // What the floor map has to work with: how much of the level is rock, how much
+    // of it is marked known, and whether anything walkable was left off the map
+    // (which would strand auto-travel, since it only paths across explored tiles).
+    mapStats: () => {
+      let wall = 0, open = 0, known = 0, openUnknown = 0, wallKnown = 0;
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+        const isWallTile = map[y][x] === WALL, ex = !!explored[y][x];
+        if (isWallTile) wall++; else open++;
+        if (ex) { known++; if (isWallTile) wallKnown++; }
+        else if (!isWallTile) openUnknown++;
+      }
+      return { tiles: MAP_W * MAP_H, wall, open, known, wallKnown, openUnknown,
+               pctKnown: +(known / (MAP_W * MAP_H) * 100).toFixed(1) };
+    },
+    unequip: (slot) => { unequipSlot(slot); return player[slot] ? player[slot].key : null; },
     // The tree is level-gated, so testing anything above tier 1 needs a way up.
     // Runs the real gainXP path rather than assigning player.level, so the stat,
     // HP/MP and skill-point gains a level carries all happen as they would in play.
