@@ -1812,3 +1812,35 @@ made better rather than five unrelated objects.
 
 `docs/gear.csv` is regenerated from the shipped tables and now carries the AC and
 dexCap columns too.
+
+## The hatchet is no longer a trap — DONE
+
+Tier-1 axe to-hit **−4 → −2**. At −4 a level-5 warrior swung at to-hit 0 against the
+Piper's AC 14 — a 30% hit rate that meant the axe line's whole selling point, big
+damage, simply never arrived. It measured as the worst weapon in the game while
+reading on paper as the strongest.
+
+At level 5 against AC 14:
+
+| weapon | to-hit | damage | hit rate | ~damage per swing |
+|---|---|---|---|---|
+| **hatchet** | **+2** | 3–8 | **45%** | **3.8** |
+| axe (t2) | +1 | 4–12 | 40% | 4.4 |
+| great axe (t3) | +1 | 6–17 | 40% | 5.8 |
+| sword | +6 | 2–6 | 65% | 4.6 |
+| dagger | +7 | 1–4 | 70% | 3.9 |
+| shortbow | +3 | 2–5 | 50% | 3.3 |
+
+Fewer, bigger hits against the sword's steady ones — a real choice rather than a
+mistake. The axe stays the slowest line (speed 0.8 at tier 1), so its damage per
+*turn* still trails; that is the trade, not the trap.
+
+**A shape worth knowing about:** the axe line's to-hit now runs −2, −3, −3, −2, −2, so
+the tier-1 hatchet aims better than the tier-2 Axe and tier-3 Great Axe above it. That
+is defensible — a hatchet is small and handy where the middle of the line is
+deliberately clumsy, and the bigger weapons pay for their accuracy with damage — but
+it is a deliberate non-monotonicity rather than an oversight, and smoothing the middle
+to −2 across the line is a one-cell change if it reads badly in play.
+
+The real mitigating factor is still to come: an axe skill for Chadwick, or a barbarian
+who carries the line properly.

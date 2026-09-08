@@ -482,7 +482,7 @@ window.CANTORI_DATA = {
       "name": "Hatchet",
       "dmgMin": 3,
       "dmgMax": 8,
-      "toHit": -4,
+      "toHit": -2,
       "speed": 0.8,
       "tier": 1,
       "req": {
