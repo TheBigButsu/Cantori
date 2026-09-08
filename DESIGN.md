@@ -1647,3 +1647,58 @@ So the real figure is **25–41 turns to kill it against 11–21 to kill you**, 
 45–88 the first pass claimed. The fight is roughly **twice** as long as it should be
 rather than five times, and the gap now swings hard on the weapon roll — which is the
 more interesting finding, and one the broken harness hid completely.
+
+## The armour triangle, settled — DONE
+
+Three answers to "how do I not die", and each one now gives up something real:
+
+| | DEX → AC | dodge | mitigation | pays you in |
+|---|---|---|---|---|
+| **nothing** | all of it | yes | none | — |
+| **light** | **all of it, uncapped** | yes | thin | INT and MP |
+| **medium** | 2 + tier + plus | yes | moderate | being hard to hit |
+| **heavy** | **none** | **yes** | largest in the game | absorbing the blow |
+
+Measured at DEX 10 / 14 / 18 / 24 / 30:
+
+| armour | | |
+|---|---|---|
+| nothing | 10 / 12 / 14 / 17 / 20 | |
+| grass, cloth (light) | 10 / 12 / 14 / 17 / 20 | same as bare, plus INT/MP |
+| padded jerkin (medium t1) | 10 / 12 / 13 / 13 / 13 | capped at +3 |
+| studded leather (medium t2 +2) | 10 / 12 / 14 / 16 / 16 | capped at +6 |
+| chainmail (heavy) | 10 / 10 / 10 / 10 / 10 | no AC at all |
+
+**Light lets the whole DEX modifier through**, uncapped, the same as bare skin. A robe
+is not in the way of anything, and a caster forced to choose between mana and not
+being hit is only ever choosing mana — light is a stat stick that no longer taxes you
+for wearing it.
+
+**Heavy keeps its Evasion.** An earlier pass had plate suppress the dodge as well as
+the AC; that is two prices for one trade, and it punishes a build that committed to
+Ourn's coin long before it knew what armour it would find. Giving up AC entirely is
+the price. Verified with 15 evasion points: **30% dodge bare, in light, in medium and
+in heavy alike.** (Happy Feet's share still needs cloth or medium — that is the
+passive's own condition, not the armour gating evasion.)
+
+## Maelon's Grace is back — DONE
+
+**"Regain 2 + (character level / 5) HP on every kill."** 21st boon, under Maelon, and
+counted in `MAELON_KEYS` so it scales Leper Colony like its siblings.
+
+It existed once as a placeholder keyed by the god's own name (`maelon`), with its
+whole effect living in `killMonster` rather than in `data.js`, and the 20-boon rewrite
+(`3b14855`, "5 named boons per god, replacing the placeholder") dropped it on the
+floor. Three other placeholders went with it — Kethara's Gift (a free purple armour),
+Ourn Blinks (5 frozen turns on each new floor), Blessing of the Guild (+1% proc
+chance per level) — none of which came back either.
+
+That shape is also why an audit here briefly concluded the game had **never** had a
+healing boon: it diffed the boon *keys* in `data.js` across every commit and found 20
+identical keys throughout. A boon whose key was a god's name and whose effect lived in
+`game.js` is invisible to that check. The claim was stronger than the evidence
+supporting it.
+
+Measured: **4.2 HP a kill at level 10** (expected 4), **6.5 at level 20** (expected 6)
+— the overshoot is the ordinary kill-counter boons firing alongside it — and it never
+heals past full.

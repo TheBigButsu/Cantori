@@ -1109,6 +1109,12 @@ window.CANTORI_DATA = {
       "icon": "🗡",
       "color": "#e0685a"
     },
+    "grace": {
+      "name": "Maelon's Grace",
+      "desc": "Regain 2 + (character level / 5) HP on every kill. It only ever tops you up to full — nothing is wasted on an already-whole body.",
+      "icon": "\u2619",
+      "color": "#8ed69a"
+    },
     "dread": {
       "name": "Endless Dread",
       "desc": "When a foe wounds you, it risks fleeing in terror — chance equal to the average of your VIT/RES/LCK%.",

@@ -207,12 +207,11 @@
   // (`evaPct`). Happy Feet is authored as "+5% evade" and should say +5% on the
   // card; converting that to 2.5 points would make the data lie about itself.
   // Both routes share the one cap.
-  // Plate does not dodge. Every point of Evasion you own is still there the moment
-  // you take the plate off — it is suppressed while worn, not spent — which keeps
-  // Ourn's coin and Happy Feet meaningful choices rather than traps for a heavy
-  // build that has to commit before it knows what it will find.
-  const dodgeChance = () => (armorSubName() === "heavy" ? 0 : Math.min(EVA_CAP,
-    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100));
+  // Armour does not gate Evasion. Heavy pays for its mitigation by giving up AC
+  // entirely, not by giving up the dodge as well — one price is a trade, two is a
+  // trap for a build that chose Ourn's coin long before it knew what it would find.
+  const dodgeChance = () => Math.min(EVA_CAP,
+    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100);
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -564,8 +563,10 @@
   // Armour subtypes are three different answers to "how do I not die", not three
   // points on one axis:
   //
-  //   light   — a caster's robe. Grants INT and MP outright; mitigation is thin and
-  //             it offers no AC at all.
+  //   light   — a caster's robe. Grants INT and MP outright, mitigation is thin, and
+  //             it lets your WHOLE DEX modifier through uncapped — the same as bare
+  //             skin. A robe is not in the way of anything, and a caster who has to
+  //             choose between mana and not being hit is only ever choosing mana.
   //   medium  — the DEX-heavy answer, and the only armour where AC is a live stat.
   //             It soaks a little; mostly it makes you hard to HIT. The cap starts
   //             at +3 on a tier-1 piece and climbs by one per tier AND one per
@@ -573,10 +574,10 @@
   //             an upgrade scroll literally widens what their DEX is allowed to do.
   //             Spending past your own modifier is still wasted — the cap never
   //             invents DEX you do not have.
-  //   heavy   — no AC, no DEX, AND NO DODGE, in exchange for the largest mitigation
-  //             range in the game. You get hit; it barely matters. Evasion is a
-  //             thing you do with your feet, and plate is the one armour that
-  //             answers a blow by absorbing it rather than by not being there.
+  //   heavy   — no AC and no DEX at all, in exchange for the largest mitigation
+  //             range in the game. You get hit; it barely matters. It keeps its
+  //             Evasion — that is footwork you own, not something the armour grants,
+  //             and taking AC off a plate build is already the price.
   //   none    — WEARING NOTHING lets all of your DEX through, uncapped. Armour caps
   //             DEX because it is in the way; there is nothing in the way of a bare
   //             body, so there is nothing to cap. AC 10 flat for a DEX-17 monk was
@@ -587,7 +588,8 @@
   //
   // Mitigation itself is the item's own defMin/defMax roll, so a subtype no longer
   // carries a flat `mit` bonus — the ranges below say everything.
-  const ARMOR_SUB = { light: { dex: false }, medium: { dex: true }, heavy: { dex: false } };
+  // `dex: "all"` = uncapped, `true` = capped at 2 + tier + plus, false = none.
+  const ARMOR_SUB = { light: { dex: "all" }, medium: { dex: true }, heavy: { dex: false } };
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
   // Only medium armour converts DEX into AC, and only up to tier + plus of it.
   // Tier 1 lets +3 through, and every tier and every plus adds one on top: t1 +0
@@ -598,6 +600,7 @@
     if (!player.armor) return Infinity;      // nothing in the way — all of it
     const a = armorSub();
     if (!a || !a.dex) return 0;
+    if (a.dex === "all") return Infinity;    // light: a robe caps nothing
     return MEDIUM_DEX_BASE + gearTier(player.armor.key) + (player.armor.plus || 0);
   };
   const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
@@ -2353,8 +2356,9 @@
     st.cd = Math.max(0, st.cd - cur.killCd);
     if (st.cd === 0) log("Blink is ready again.", "hit");
   }
-  const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread"];
+  const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread", "grace"];
   const maelonBoonCount = () => (player.boons ? MAELON_KEYS.filter((k) => player.boons.has(k)).length : 0);
+  const GRACE_BASE = 2, GRACE_PER_LEVEL = 5;   // Maelon's Grace heals 2 + level/5 a kill
   // Kill-counter-driven boons: Maelon's Compost Pile (every 5), Kethara's Gift of
   // the Faithful (every 10), Ourn's Future Sight (every 10) / Dilating Pupils
   // (every 5) / The Pride Before The Fall (every 15, no floor — can go negative).
@@ -2362,6 +2366,15 @@
     if (!player.boons || !player.boons.size) return;
     player.killCount = (player.killCount || 0) + 1;
     const kc = player.killCount;
+    // Maelon's Grace: a little back on EVERY kill, not every Nth. This existed once
+    // as a placeholder keyed by the god's own name, with its whole effect living
+    // here rather than in data.js, and the 20-boon rewrite dropped it on the floor —
+    // which is also why a later audit that diffed only data.js boon keys concluded,
+    // wrongly, that the game had never had a healing boon.
+    if (player.boons.has("grace")) {
+      const heal = Math.min(player.maxHp - player.hp, GRACE_BASE + Math.floor(player.level / GRACE_PER_LEVEL));
+      if (heal > 0) { player.hp += heal; floatText(player.x, player.y, "+" + heal, "#8ed69a"); updateHUD(); }
+    }
     if (player.boons.has("compost") && kc % 5 === 0) {
       const s = STAT_KEYS.slice(0, 4)[randInt(0, 3)];   // STR/INT/VIT/DEX only
       player.stats[s]++;
