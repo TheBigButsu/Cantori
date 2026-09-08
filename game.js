@@ -5687,11 +5687,22 @@
     document.getElementById("invGold").textContent = player.gold + " gold";
     const df = defRange(armorDefMin(), armorDefMax());
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
-    const withGear = (k) => { const g = equipStat(k); return eff(k) + (g ? `<span style="color:#7ec98a">(+${g})</span>` : ""); };
-    const statLine = `STR ${withGear("STR")} · VIT ${withGear("VIT")} · DEX ${withGear("DEX")} · INT ${withGear("INT")} · RES ${withGear("RES")} · LCK ${withGear("LCK")}`;
+    // Every derived number in the game reads the *modifier*, not the raw stat, so the
+    // raw score on its own can't explain what a point of INT bought — show both. The
+    // green parenthetical stays what gear added; the dim number is the modifier.
+    const signed = (n) => (n < 0 ? "\u2212" + (-n) : "+" + n);
+    // nowrap so a stat never breaks across lines mid-token on a narrow phone.
+    const withGear = (k) => {
+      const g = equipStat(k);
+      return `<span style="white-space:nowrap">${k} ${eff(k)}` +
+        (g ? `<span style="color:#7ec98a">(+${g})</span>` : "") +
+        `<span style="opacity:.55"> ${signed(mod(k))}</span></span>`;
+    };
+    const statLine = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map(withGear).join(" · ");
     const pts = player.statPoints > 0 ? `  ·  <b style="color:#f0c14b">${player.statPoints} pts</b>` : "";
     document.getElementById("invStats").innerHTML =
-      `${cname} · Lv ${player.level} · Atk ${playerAtk()} · Def ${df}` +
+      `${cname} · Lv ${player.level} · HP ${player.hp}/${player.maxHp} · MP ${player.mp}/${player.maxMp}` +
+      ` · Atk ${playerAtk()} · Def ${df}` +
       `<br><span style="opacity:.85">${statLine}${pts}</span>`;
     // Equipped slots: each is a card with an icon, its slot label, and the item —
     // and it's tappable to see the item's details and unequip it.
