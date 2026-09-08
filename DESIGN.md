@@ -1844,3 +1844,129 @@ to −2 across the line is a one-cell change if it reads badly in play.
 
 The real mitigating factor is still to come: an axe skill for Chadwick, or a barbarian
 who carries the line properly.
+
+## ToneTum's openers — DONE
+
+The mage was too weak to start with. Both of his level-1 spells were the reason.
+
+### Magic Missile no longer asks you to aim
+
+It picks the **nearest thing you can see** and fires. The volley widens with
+character level, each extra bolt taking the next-nearest visible foe:
+
+| character level | 1 | 3 | 7 | 12 | 18 |
+|---|---|---|---|---|---|
+| bolts | 1 | 2 | 3 | 4 | 4 |
+| per bolt | 1–4 +level | | | | **2–8 +level** |
+
+Verified: the thresholds land exactly at 3 / 7 / 12 (level 2 still fires one, level
+6 two, level 11 three), and the die changes at 18 and not 17 — sampled 40 casts either
+side, 1–4 at 17 and 2–8 at 18. A level-12 mage into four foes logged
+*"4 bolts of force fan out. (-60 across 4 foes)"*.
+
+**One bolt per body, never two on the same one.** It reads as a spray that finds what
+is closest, and stacking the whole volley on a single target would make it a 4× nuke
+at level 12 rather than a crowd answer. 5 MP buys the whole volley however many bolts
+it throws.
+
+### Burning Sensation opens at twice the INT modifier
+
+`mod(INT)` → `mod(INT) × 2`. Measured opening ticks: **+1 → 2, +3 → 6, +4 → 8,
++5 → 10.**
+
+**This more than doubles the spell**, and that is worth stating plainly: the burn's
+*duration* has always been its opening tick, so the total is triangular in it. At INT
+modifier +4 it is now 8 a turn for 8 turns — **36 total against the old 10**. A 20-turn
+cooldown was never worth 10 damage; it is worth 36.
+
+A note for anyone measuring it: the cast spends a world turn, and the burn is a
+`decay` DOT, so the first value you can read is always one lower than the opening
+tick. An 8 reads as 7 on the very next inspection. That is the same "first seen at
+n−1" effect Burning Sensation has always had, not a rounding bug.
+
+## Magic Missile spreads, then wraps — DONE
+
+Confirmed and fixed: extra bolts now land on the only visible target. They spread
+across distinct foes first and wrap around when they run out, so **three foes and
+four bolts is 2/1/1, and one foe and four bolts is all four on it.**
+
+Measured at level 12: **58 damage into a single rat** (four bolts, ~14.5 each) and
+40 across three. A volley that fizzled to one bolt in a duel would have made the
+spell worse the moment a fight got serious — good against a crowd and good against
+one thing was the whole ask.
+
+It re-reads the living between bolts, so a target that dies mid-volley does not eat
+the rest of the volley.
+
+## Burning Sensation burns for three turns — DONE
+
+Duration is a flat 3 (plus a rank's `turnBonus`) rather than "as many turns as the
+opening tick". Tying the two together made the spell quadratic in INT; a fixed window
+keeps it linear and readable.
+
+| INT modifier | opening tick | total |
+|---|---|---|
+| +3 | 6 | 6 + 5 + 4 = **15** |
+| +4 | 8 | 8 + 7 + 6 = **21** |
+
+Both measured. Every point of INT modifier is now worth exactly three more damage.
+
+## Keen Intellect — ToneTum, tier 1 — DONE
+
+Passive. Mana equal to a multiple of the INT modifier, on top of the base mana every
+character already gets from INT: **×1, ×2, ×4 (level 6), ×5 (level 10)**, the top rank
+also handing over a robe of tier 3 or better in green–purple.
+
+Measured at an INT modifier of +8: max MP **77 → 85 → 93 → 109 → 117**, gains of
+8 / 8 / 16 / 8 against an expected 8 / 8 / 16 / 8, total **+40 = 8 × 5**. Rank 4
+delivered a `refined_robe`.
+
+`grantGear` now accepts a **list** of rarities, because "green to purple" is a band
+rather than one colour and that belongs in the data.
+
+**One real bug fixed to make this work.** `learnSkill` never recomputed `maxHp` /
+`maxMp`, and both are stored rather than derived on read — so a passive that buys
+mana bought nothing at all until the next level-up or stat potion happened to rebuild
+the pool. Any rank change now re-derives both, and grants the freshly-gained points.
+
+## Retribution — Chadwick, tier 1 — DONE
+
+Brace for **5 HP** (never lethal — the button refuses rather than killing you) and
+reflect every blow that lands, for 50 turns, on a 100-turn cooldown.
+
+| rank | reflect | regeneration |
+|---|---|---|
+| 1 | ×0.5 | — |
+| 2 | ×1 | — |
+| 3 | ×2 | ×2 |
+| 4 (level 10) | ×3 | ×5 |
+
+It reflects off the damage that **actually landed**, after RES and armour — bracing
+behind a shield should not turn you into a bigger mirror — and before the gear's own
+thorns enchants, which still stack on top.
+
+Measured at rank 2 (×1): 22 damage taken against 25 reflected. Those should match, and
+do: the 3-point gap is regeneration topping the player up inside the same turn, so the
+*measured* damage is net while the reflect works off the gross hit.
+
+## Breaking line of sight is a tactic again — DONE
+
+`HUNT_PATIENCE` **10 → 2**. A hunting monster that cannot see you for two consecutive
+turns gives up, drops to searching near where the trail went cold, and `aware` goes
+false with it — which is what makes your next blow a guaranteed hit.
+
+At 10 this was not a tactic: you had to stay hidden for a third of a fight before
+anything forgot you, so nobody ever did it, and the deliberately evasive monsters had
+no counterplay but swinging and missing. At 2 it is the Shattered Pixel Dungeon move —
+step behind a pillar, let it lose you, come back and land one for free. **That is what
+makes a bat at AC 21 and a snake at 22 fair rather than merely annoying:** they are
+supposed to be hit by playing well, not by rolling well.
+
+Measured: a hunting rat forgets the player on the **third** turn out of sight, exactly
+as `++huntBlind > 2` implies.
+
+A searching monster re-spots you the instant it can see you, with no roll, so the free
+hit has to be taken from concealment — stepping into the open first hands the
+awareness straight back. And `stopHunting` now floats a **"?"** over the monster when
+it loses you, because an ambush window the player cannot see is luck rather than a
+mechanic.

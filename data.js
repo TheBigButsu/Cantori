@@ -1934,6 +1934,29 @@ window.CANTORI_DATA = {
           "req": []
         },
         {
+          "id": "retribution",
+          "x": 3,
+          "y": 0,
+          "name": "Retribution",
+          "icon": "\u2735",
+          "kind": "retribution",
+          "when": null,
+          "desc": "Brace, at the cost of 5 health, and let them break themselves on you. Every blow that lands is reflected back at whatever threw it, for 50 turns. Cooldown 100 turns.",
+          "levels": [
+            "Reflects half of every blow that lands on you, for 50 turns.",
+            "Reflects the full blow.",
+            "Reflects twice the blow, and runs your regeneration at double for the same 50 turns.",
+            "Reflects three times the blow, and regeneration at five times. (requires character level 10)"
+          ],
+          "ranks": [
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 0.5, "regenMult": 1 },
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 1, "regenMult": 1 },
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 2, "regenMult": 2 },
+            { "cd": 100, "hp": 5, "turns": 50, "thorns": 3, "regenMult": 5, "minLevel": 10 }
+          ],
+          "req": []
+        },
+        {
           "id": "sword_master",
           "x": 2,
           "y": 0,
@@ -2413,6 +2436,30 @@ window.CANTORI_DATA = {
       },
       "skillTree": [
         {
+          "id": "keen_intellect",
+          "x": 3,
+          "y": 0,
+          "name": "Keen Intellect",
+          "icon": "\ud83e\udde0",
+          "kind": "passive",
+          "when": null,
+          "desc": "A deeper well, cut by the same mind that draws from it. Adds mana equal to a multiple of your INT modifier, on top of the mana every character already gets from INT.",
+          "levels": [
+            "+MP equal to your INT modifier.",
+            "+MP equal to twice your INT modifier.",
+            "+MP equal to four times your INT modifier. (requires character level 6)",
+            "+MP equal to five times your INT modifier, and a robe of the third tier or better arrives at once. (requires character level 10)"
+          ],
+          "ranks": [
+            { "mpPerInt": 1 },
+            { "mpPerInt": 2 },
+            { "mpPerInt": 4, "minLevel": 6 },
+            { "mpPerInt": 5, "minLevel": 10,
+              "grantGear": { "cat": "armor", "sub": "light", "tierMin": 3, "tierMax": 5, "rarity": ["green", "blue", "purple"] } }
+          ],
+          "req": []
+        },
+        {
           "id": "magic_missile",
           "x": 4,
           "y": 0,
@@ -2420,9 +2467,9 @@ window.CANTORI_DATA = {
           "icon": "✦",
           "kind": "bolt",
           "innate": true,
-          "desc": "A bolt of force, always at hand. 1–4 damage plus 1 for every character level, for 5 MP.",
+          "desc": "A bolt of force, always at hand — no aiming, it finds the nearest thing you can see. The volley widens as you grow: two bolts at level 3, three at 7, four at 12, each seeking the next-nearest visible foe. 5 MP.",
           "levels": [
-            "5 MP · 1–4 damage +1 per character level · known from the start"
+            "5 MP · 1–4 damage +1 per character level, at the nearest foe in sight · 2 bolts at level 3, 3 at 7, 4 at 12 · 2–8 a bolt from level 18 · known from the start"
           ],
           "ranks": [
             {
@@ -2438,9 +2485,9 @@ window.CANTORI_DATA = {
           "name": "Burning Sensation",
           "icon": "🔥",
           "kind": "burncast",
-          "desc": "Set a foe alight. It burns for your INT modifier a turn and cools by 1 each turn after — all its bite is in the first few turns.",
+          "desc": "Set a foe alight. It burns for twice your INT modifier a turn and cools by 1 each turn after — all its bite is in the first few turns, and it lasts as many turns as its opening tick.",
           "levels": [
-            "7 MP · burns for INT modifier a turn, cooling by 1 · 20 turn cooldown",
+            "7 MP · burns for 2× INT modifier a turn, cooling by 1 · 20 turn cooldown",
             "+1 burn damage a turn",
             "+1 burn damage a turn, and it lasts 1 turn longer",
             "+3 burn damage a turn, and it lasts 3 turns longer"

@@ -939,7 +939,7 @@
     const KINDS = [
       "passive",
       "rush", "spin", "throwmon", "dragonkick", "meditate", "vanish",
-      "smite", "ragesmite", "healsmite", "spinsmite", "selfheal",
+      "smite", "ragesmite", "healsmite", "spinsmite", "selfheal", "retribution",
       "bolt", "burncast", "sleepcast", "blinkcast", "mirrorcast", "madnesscast",
       "wallcast", "pullcast", "eyecast", "angercast", "sol",
     ];
@@ -1349,6 +1349,20 @@
       title: "Gold",
       rows: [
         { name: "Gold pile", formula: "random(2, 12) + depth × 2", note: "" },
+      ],
+    },
+    {
+      title: "ToneTum's openers",
+      rows: [
+        { name: "Magic Missile", formula: "no aiming — it strikes the NEAREST visible foe. Bolts SPREAD first and then WRAP: three foes and four bolts is 2/1/1, one foe and four bolts is all four on it. 1 bolt, 2 from character level 3, 3 from 7, 4 from 12. Each bolt rolls 1–4 (2–8 from level 18) plus your character level.", note: "Innate, known from the start, 5 MP for the whole volley however many bolts it throws. Good against a crowd AND against one thing — a volley that fizzled to a single bolt in a duel would make the spell worse the moment a fight got serious. It re-reads the living between bolts, so a target that dies mid-volley does not eat the rest of it. Targets must be in sight: it cannot find a foe around a corner any more than you can." },
+        { name: "Burning Sensation", formula: "opening tick = 2 × INT modifier (+ the rank's dmgBonus), cooling by 1 a turn, for 3 turns (+ the rank's turnBonus)", note: "Three turns flat, not 'as many turns as the opening tick'. Tying duration to the tick made the spell quadratic in INT — at +4 it reached 36 total and climbed fast — where a fixed window keeps it linear and readable: at +4 it is 8 + 7 + 6 = 21, and every point of INT modifier is worth exactly three more damage. Note the cast spends a world turn and the burn decays, so the first value you can read is always one below the opening tick." },
+      ],
+    },
+    {
+      title: "Losing the trail (the ambush)",
+      rows: [
+        { name: "Giving up the chase", formula: "a hunting monster that cannot see you for HUNT_PATIENCE = 2 consecutive turns stops hunting — it drops to searching near where the trail went cold, and `aware` goes false with it", note: "`aware` false is what makes your next blow on it a guaranteed hit (the ambush rule in attack()). This was 10 turns, which meant breaking line of sight was not a tactic — you had to stay hidden a third of a fight before anything forgot you. At 2 it is the Shattered Pixel Dungeon move: step behind a pillar, let it lose you, come back and land one for free. That is the counterplay that makes the very high evasion ACs (bat 21, snake 22) fair rather than just frustrating. The monster floats a '?' when it loses you, so the window is visible rather than guesswork." },
+        { name: "Re-acquiring", formula: "a searching monster spots you again the instant it can see you — no roll", note: "So the free hit has to be taken from concealment; stepping into the open first hands the awareness straight back. A sleeper is a different case and rolls WAKE_ACUITY / distance instead." },
       ],
     },
     {
