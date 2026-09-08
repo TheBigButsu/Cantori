@@ -189,9 +189,8 @@
     return v;
   };
   const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
-  // AC = 10 + DEX modifier + the armour's own AC, with the armour's subtype capping
-  // how much DEX it lets through — light takes all of it, medium at most +2, heavy
-  // none at all. That cap is what stops heavy armour from being strictly best.
+  // AC = 10 + as much of your DEX modifier as what you are wearing allows: all of
+  // it bare-skinned, tier + plus in medium, none in light or heavy. See ARMOR_SUB.
   // Happy Feet is the first thing that adds AC from a passive, and the Meditate
   // afterglow the first that adds it on a timer.
   const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac");
@@ -571,6 +570,13 @@
   //             DEX you do not have.
   //   heavy   — no AC and no DEX, just the largest mitigation range in the game.
   //             You get hit; it barely matters.
+  //   none    — WEARING NOTHING lets all of your DEX through, uncapped. Armour caps
+  //             DEX because it is in the way; there is nothing in the way of a bare
+  //             body, so there is nothing to cap. AC 10 flat for a DEX-17 monk was
+  //             the cap being applied by a piece of armour that did not exist.
+  //             The trade is real in both directions: naked you are the hardest
+  //             thing in the game to hit and you block nothing at all, since
+  //             mitigation is entirely the item's defMin/defMax roll.
   //
   // Mitigation itself is the item's own defMin/defMax roll, so a subtype no longer
   // carries a flat `mit` bonus — the ranges below say everything.
@@ -578,8 +584,9 @@
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
   // Only medium armour converts DEX into AC, and only up to tier + plus of it.
   const armorDexCap = () => {
+    if (!player.armor) return Infinity;      // nothing in the way — all of it
     const a = armorSub();
-    if (!a || !a.dex || !player.armor) return 0;
+    if (!a || !a.dex) return 0;
     return gearTier(player.armor.key) + (player.armor.plus || 0);
   };
   const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
@@ -7656,6 +7663,7 @@
     // test to measure zero.
     setHp: (n) => { player.hp = Math.max(1, Math.min(n == null ? player.maxHp : n, player.maxHp)); updateHUD(); return player.hp; },
     setCd: (k, n) => { const st = player.skills[k]; if (st) st.cd = Math.max(0, n | 0); updateHotbar(); return st ? st.cd : null; },
+    unequip: (slot) => { unequipSlot(slot); return player[slot] ? player[slot].key : null; },
     // The tree is level-gated, so testing anything above tier 1 needs a way up.
     // Runs the real gainXP path rather than assigning player.level, so the stat,
     // HP/MP and skill-point gains a level carries all happen as they would in play.

@@ -1450,3 +1450,35 @@ dispatches. Its own comment warned what that costs: "a kind missing here gets
 silently rewritten to `passive` the moment anyone touches the control" — which is
 every mage skill, every boon active, and every Smite variant. The list is now
 complete.
+
+## Wearing nothing lets all of your DEX through — DONE
+
+A DEX-17 Brynn with an empty armour slot read **AC 10**. That was the armour cap
+being applied by a piece of armour that did not exist: `armorDexCap()` returned 0
+whenever `player.armor` was null, which is the same answer it gives for plate.
+
+Armour caps DEX because it is *in the way*. There is nothing in the way of a bare
+body, so there is nothing to cap. Unarmoured is now uncapped:
+
+| DEX | 10 | 14 | 17 | 20 | 24 |
+|---|---|---|---|---|---|
+| **nothing** | 10 | 12 | **13** | 15 | 17 |
+| cloth (light) | 10 | 10 | 10 | 10 | 10 |
+| padded jerkin (medium t1) | 10 | 11 | 11 | 11 | 11 |
+| studded leather (medium t2) | 10 | 12 | 12 | 12 | 12 |
+
+The trade stays real in both directions, because mitigation is entirely the item's
+own `defMin`/`defMax` roll: naked you are the hardest thing in the game to hit and
+you block **nothing at all**. Medium armour ties the naked number once `tier + plus`
+reaches your DEX modifier and brings a damage block with it, so it overtakes rather
+than merely catching up — and every upgrade scroll widens what your DEX is allowed
+to do.
+
+It also gives **Happy Feet** something to do that going naked cannot: the passive
+only works in cloth or medium, so cloth at rank 2 is AC 14 against a bare 13, and
+medium keeps its mitigation on top of that. Without this change a high-DEX monk had
+no reason to wear cloth at all.
+
+The screenshot case measured: DEX 17, nothing worn, **AC 10 → 13**, and the stats
+screen agrees — "Armour Class 13 (~45% to be missed)" with the DEX cell reading
+"to-hit +7 / AC 13".
