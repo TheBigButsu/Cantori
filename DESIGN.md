@@ -1128,8 +1128,8 @@ capped.
 
 | turn | |
 |---|---|
-| 300 | *"The spark has left this location."* — **HP regeneration stops for the rest of the visit** |
-| 450 | *"You feel yourself losing your way."* |
+| 300 | *"The spark has left this location."* — a warning you can still act on |
+| 450 | *"You feel yourself losing your way."* — **HP regeneration stops for the rest of the visit** |
 | 550 | *"You must leave now, or you do not think you ever will."* |
 | 600 | the Horror comes |
 
@@ -1517,3 +1517,26 @@ The map's floor colours were lifted too (`#151009` → `#241c11` merely-mapped,
 background, which nothing noticed while every floor on screen was ringed by bright
 explored wall — and which made room interiors indistinguishable from the void the
 moment a magic map drew rooms nobody had walked into yet.
+
+## The regeneration cut moves to the second stage — DONE
+
+Losing every point of healing at turn 300 was too punishing. Half a floor's patience
+is not long, and a floor you are still exploring can hand you an ordinary fight that
+becomes a run-ender purely because nothing comes back afterwards.
+
+The cut now rides on the **second** stage instead of the first:
+
+| turn | |
+|---|---|
+| 300 | *"The spark has left this location."* — a warning, and the TIME bar turns |
+| **450** | *"You feel yourself losing your way."* — **HP regeneration stops** |
+| 550 | *"You must leave now, or you do not think you ever will."* |
+| 600 | the Horror comes |
+
+So the first stage is now something you can act on and the price lands with 150 turns
+left to leave on. Measured over 40 turns from a wound, walking the counter through
+each stage: **8 HP healed before 300, 8 after 300, 0 after 450.**
+
+One thing worth recording for anyone testing this: a stage fires on `turns === st.at`
+exactly, so a test that *sets* the turn counter past a stage skips its trigger
+entirely and reads as though the stage never happened. Walk the counter through.

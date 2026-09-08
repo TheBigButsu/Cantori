@@ -3473,7 +3473,7 @@
     const cls = DATA.classes[player.cls] || {};
     let changed = false, healed = 0;
     // HP: heals to full over regenTurns, sped by Vitality — unless the floor's
-    // spark has gone out (FLOOR_STAGES), after which it gives nothing back for the
+    // spark has gone out (the `spark` stage in FLOOR_STAGES), after which it gives nothing back for the
     // rest of the visit. MP is untouched: the floor is tired of you, not hostile
     // to magic, and taking both would just end runs quietly.
     if (player.hp < player.maxHp && !sparkGone) {
@@ -3958,9 +3958,14 @@
   // Three warnings on the way, and the FIRST one costs something real rather than
   // just saying words: the floor stops giving your health back. A clock that only
   // talks is a clock you learn to ignore.
+  // The regeneration cut rides on the SECOND stage, not the first. At 300 it was
+  // too punishing: half a floor's patience is not long, and losing every point of
+  // healing that early turned an ordinary fight on a floor you were still exploring
+  // into a run-ender. The first stage is now a warning you can act on — the floor
+  // has noticed you — and the price lands at 450, with 150 turns left to leave.
   const FLOOR_STAGES = [
-    { at: 300, spark: true, msg: "The spark has left this location." },
-    { at: 450, msg: "You feel yourself losing your way." },
+    { at: 300, msg: "The spark has left this location." },
+    { at: 450, spark: true, msg: "You feel yourself losing your way." },
     { at: 550, msg: "You must leave now, or you do not think you ever will." },
   ];
   const FLOOR_WARNING = FLOOR_STAGES[0].at;   // when the TIME bar turns
@@ -3968,7 +3973,7 @@
   const HORROR_HP_MULT = 3;       // it is the same creature, wrong
   const HORROR_DMG_MULT = 4;      // and it hits like nothing else on the floor
   let horrorWarned = false, horrorDeadAt = -1;
-  let sparkGone = false;          // past the first stage: this floor heals no one
+  let sparkGone = false;          // past the spark stage: this floor heals no one
   // Which monster the Horror wears. Authored per biome (`horror` in data.js);
   // falls back to the deepest-starting monster the biome spawns, so a biome that
   // has not been given one yet still gets its scariest resident rather than none.
