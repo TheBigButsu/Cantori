@@ -207,6 +207,9 @@
   // (`evaPct`). Happy Feet is authored as "+5% evade" and should say +5% on the
   // card; converting that to 2.5 points would make the data lie about itself.
   // Both routes share the one cap.
+  // Armour does not gate Evasion. Heavy pays for its mitigation by giving up AC
+  // entirely, not by giving up the dodge as well — one price is a trade, two is a
+  // trap for a build that chose Ourn's coin long before it knew what it would find.
   const dodgeChance = () => Math.min(EVA_CAP,
     Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100);
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
@@ -449,19 +452,28 @@
   // with its tier: min rises by (tier-1) per point, max by tier*2 per point — so
   // a tier-1 item's +1 is worth +0~2 and a tier-2 item's +1 is worth +1~4.
   const gearTier = (key) => GEAR[key].tier || 1;
-  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0) + (gearTier(inst.key) - 1) * (inst.plus || 0);
-  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + gearTier(inst.key) * 2 * (inst.plus || 0);
+  // One rule for every upgradeable number in the game, weapons and armour alike:
+  //
+  //     max = base_max + tier x plus        min never moves
+  //
+  // The floor staying put is deliberate — an upgrade widens what a piece CAN do
+  // rather than lifting the whole band. It also replaces a formula that gave
+  // tier-1 weapons no floor growth at all (`(tier - 1) x plus` is zero at tier 1)
+  // while doubling their ceiling, so upgrading a starting weapon bought variance
+  // instead of power — and every starting weapon in the game is tier 1.
+  const gDmgMin = (inst) => (GEAR[inst.key].dmgMin || 0);
+  const gDmgMax = (inst) => (GEAR[inst.key].dmgMax || 0) + gearTier(inst.key) * (inst.plus || 0);
   // Armor blocks a random amount each hit, rolled between defMin and defMax. A
   // legacy flat `def` still works — it becomes both ends of the range. Its +X
   // scales the same way as weapon damage, by tier.
   const baseDefMin = (key) => { const g = GEAR[key]; return g.defMin != null ? g.defMin : (g.def || 0); };
   const baseDefMax = (key) => { const g = GEAR[key]; return g.defMax != null ? g.defMax : (g.def != null ? g.def : (g.defMin || 0)); };
-  // Armour upgrades raise the FLOOR quickly and the ceiling slowly, and the ceiling
-  // can at most double. That is what makes a +3 tier-1 robe a reliable 2–4 rather
-  // than a wild 0–8: upgrading armour should make it dependable, not spiky. (A
-  // weapon's +X still works the other way, opening its top end — see gDmgMax.)
-  const gDefMin = (inst) => baseDefMin(inst.key) + Math.floor(((inst.plus || 0) + 1) / 2);
-  const gDefMax = (inst) => { const b = baseDefMax(inst.key); return Math.min(b * 2, b + (inst.plus || 0)); };
+  // Armour follows the same rule as a weapon — top end by tier x plus, floor fixed.
+  // The old "ceiling can at most double" clamp is gone: it held a tier-5 plate to
+  // 68 when the authored ladder wants 60 at +5 and more beyond, so the clamp was
+  // silently overriding the table it existed to serve.
+  const gDefMin = (inst) => baseDefMin(inst.key);
+  const gDefMax = (inst) => baseDefMax(inst.key) + gearTier(inst.key) * (inst.plus || 0);
   const gDef = (inst) => gDefMax(inst);   // top-end block (enchant power, parallels weapon dmgMax)
   // A stat affix's +X is additive-triangular: +1 = 1, +2 = 1+2 = 3, +3 = 1+2+3 = 6…
   const triangular = (n) => (n * (n + 1)) / 2;
@@ -560,16 +572,21 @@
   // Armour subtypes are three different answers to "how do I not die", not three
   // points on one axis:
   //
-  //   light   — a caster's robe. Grants INT and MP outright; mitigation is thin and
-  //             it offers no AC at all.
-  //   medium  — the only armour that turns DEX into AC, and the only one where AC
-  //             is a live stat. How much it lets through is TIER + the item's plus,
-  //             so a tier-1 robe caps you at +1 no matter how nimble you are, and
-  //             upgrade scrolls literally widen what your DEX is allowed to do.
-  //             Spending past your own modifier is wasted — the cap never invents
-  //             DEX you do not have.
-  //   heavy   — no AC and no DEX, just the largest mitigation range in the game.
-  //             You get hit; it barely matters.
+  //   light   — a caster's robe. Grants INT and MP outright, mitigation is thin, and
+  //             it lets your WHOLE DEX modifier through uncapped — the same as bare
+  //             skin. A robe is not in the way of anything, and a caster who has to
+  //             choose between mana and not being hit is only ever choosing mana.
+  //   medium  — the DEX-heavy answer, and the only armour where AC is a live stat.
+  //             It soaks a little; mostly it makes you hard to HIT. The cap starts
+  //             at +3 on a tier-1 piece and climbs by one per tier AND one per
+  //             plus, so a nimble character is not held to a beginner's ceiling and
+  //             an upgrade scroll literally widens what their DEX is allowed to do.
+  //             Spending past your own modifier is still wasted — the cap never
+  //             invents DEX you do not have.
+  //   heavy   — no AC and no DEX at all, in exchange for the largest mitigation
+  //             range in the game. You get hit; it barely matters. It keeps its
+  //             Evasion — that is footwork you own, not something the armour grants,
+  //             and taking AC off a plate build is already the price.
   //   none    — WEARING NOTHING lets all of your DEX through, uncapped. Armour caps
   //             DEX because it is in the way; there is nothing in the way of a bare
   //             body, so there is nothing to cap. AC 10 flat for a DEX-17 monk was
@@ -580,20 +597,39 @@
   //
   // Mitigation itself is the item's own defMin/defMax roll, so a subtype no longer
   // carries a flat `mit` bonus — the ranges below say everything.
-  const ARMOR_SUB = { light: { dex: false }, medium: { dex: true }, heavy: { dex: false } };
+  // `dex: "all"` = uncapped, `true` = capped at 2 + tier + plus, false = none.
+  const ARMOR_SUB = { light: { dex: "all" }, medium: { dex: true }, heavy: { dex: false } };
   const armorSub = () => (player.armor ? (ARMOR_SUB[GEAR[player.armor.key].sub] || null) : null);
   // Only medium armour converts DEX into AC, and only up to tier + plus of it.
+  // Tier 1 lets +3 through, and every tier and every plus adds one on top: t1 +0
+  // is 3, t3 +2 is 7, t5 +5 is 12. Medium armour has to be able to carry a DEX
+  // build's whole modifier or it is not the DEX-build armour, it is a tax on one.
+  const MEDIUM_DEX_BASE = 2;   // + tier + plus, so the floor is +3 on a tier-1 piece
+  // Each armour row authors its own ceiling on how much DEX reaches your AC
+  // (`dexCap`), and every upgrade raises it by one — a scale hauberk allows 9 at
+  // +0 and 14 at +5. A row with no `dexCap` falls back to its subtype: light
+  // uncapped, medium the old 2 + tier + plus, heavy none. Spending past your own
+  // modifier is still wasted; the cap never invents DEX you do not have.
   const armorDexCap = () => {
     if (!player.armor) return Infinity;      // nothing in the way — all of it
+    const g = GEAR[player.armor.key] || {};
     const a = armorSub();
+    // A row authored at 0 means NONE, and upgrades do not open it — otherwise a +5
+    // rusted mail would quietly let 5 DEX through and heavy armour would stop being
+    // the armour that gives up AC. Rows that already allow some (knight's plate 1,
+    // adamant bulwark 2) still widen by one per upgrade like everything else.
+    if (g.dexCap != null) return g.dexCap > 0 ? Number(g.dexCap) + (player.armor.plus || 0) : 0;
     if (!a || !a.dex) return 0;
-    return gearTier(player.armor.key) + (player.armor.plus || 0);
+    if (a.dex === "all") return Infinity;    // light: a robe caps nothing
+    return MEDIUM_DEX_BASE + gearTier(player.armor.key) + (player.armor.plus || 0);
   };
   const armorDexAllowed = (m) => Math.max(0, Math.min(m, armorDexCap()));
   const armorSubMit = () => 0;   // mitigation lives entirely in the item's defMin/defMax now
-  // Armour grants no flat AC — see ARMOR_SUB. Medium's contribution is the DEX it
-  // unlocks; light and heavy pay you in INT/MP and mitigation instead.
-  const armorAC = () => 0;
+  // Armour DOES carry a flat AC of its own now, authored per row: medium leads it
+  // (+2 at tier 1 up to +6 at tier 5), light trails (+0 to +4), heavy barely
+  // bothers (+0, +0, +1, +1, +2) because its answer to a blow is to absorb it.
+  // On top of whatever DEX the piece lets through.
+  const armorAC = () => (player.armor ? (GEAR[player.armor.key].ac || 0) : 0);
   // Passive haste from worn enchants, tiered by the item bearing it. There are two
   // independent kinds and an enchant carries exactly one: `haste` quickens the
   // weapon, `walkHaste` quickens the feet. Kit that speeds your swing does nothing
@@ -2342,8 +2378,9 @@
     st.cd = Math.max(0, st.cd - cur.killCd);
     if (st.cd === 0) log("Blink is ready again.", "hit");
   }
-  const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread"];
+  const MAELON_KEYS = ["compost", "second_chance", "leper", "merciful", "dread", "grace"];
   const maelonBoonCount = () => (player.boons ? MAELON_KEYS.filter((k) => player.boons.has(k)).length : 0);
+  const GRACE_BASE = 2, GRACE_PER_LEVEL = 5;   // Maelon's Grace heals 2 + level/5 a kill
   // Kill-counter-driven boons: Maelon's Compost Pile (every 5), Kethara's Gift of
   // the Faithful (every 10), Ourn's Future Sight (every 10) / Dilating Pupils
   // (every 5) / The Pride Before The Fall (every 15, no floor — can go negative).
@@ -2351,6 +2388,15 @@
     if (!player.boons || !player.boons.size) return;
     player.killCount = (player.killCount || 0) + 1;
     const kc = player.killCount;
+    // Maelon's Grace: a little back on EVERY kill, not every Nth. This existed once
+    // as a placeholder keyed by the god's own name, with its whole effect living
+    // here rather than in data.js, and the 20-boon rewrite dropped it on the floor —
+    // which is also why a later audit that diffed only data.js boon keys concluded,
+    // wrongly, that the game had never had a healing boon.
+    if (player.boons.has("grace")) {
+      const heal = Math.min(player.maxHp - player.hp, GRACE_BASE + Math.floor(player.level / GRACE_PER_LEVEL));
+      if (heal > 0) { player.hp += heal; floatText(player.x, player.y, "+" + heal, "#8ed69a"); updateHUD(); }
+    }
     if (player.boons.has("compost") && kc % 5 === 0) {
       const s = STAT_KEYS.slice(0, 4)[randInt(0, 3)];   // STR/INT/VIT/DEX only
       player.stats[s]++;
@@ -4197,7 +4243,22 @@
     turnMeter -= cost;
     while (turnMeter <= 0) turnMeter += 5;
     lastActionCost = cost;
-    for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd--;
+    // Ourn's Rhythm of the Universe: every skill already on cooldown makes ALL of
+    // them tick faster — base 1, plus 1 per skill waiting. Two on cooldown is 3 a
+    // turn, five is 6. The count is taken BEFORE anything ticks, so a skill coming
+    // off cooldown partway through the loop cannot slow the rest of it down, and
+    // every skill in the same turn moves at the same rate.
+    //
+    // It reads as a snowball and it is meant to: the more you have spent, the
+    // faster it all comes back, so the boon pays a caster who commits rather than
+    // one who hoards a single button.
+    let cdTick = 1;
+    if (player.boons && player.boons.has("rhythm")) {
+      let waiting = 0;
+      for (const k in player.skills) if (player.skills[k].cd > 0) waiting++;
+      cdTick = 1 + waiting;
+    }
+    for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd = Math.max(0, player.skills[k].cd - cdTick);
     if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }

@@ -98,6 +98,10 @@
       { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
       { f: "reqSTR", label: "req STR", type: "num" },
+      // Armour only: a flat AC the piece grants, and the ceiling it puts on how
+      // much of your DEX modifier reaches your AC. Blank dexCap falls back to the
+      // subtype (light uncapped, medium 2 + tier + plus, heavy none).
+      { f: "ac", label: "AC", type: "num" }, { f: "dexCap", label: "max DEX→AC", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     // Armour's own column set. There is no AC column: armour grants no flat AC.
@@ -1133,7 +1137,7 @@
       title: "To hit & Armour Class",
       rows: [
         { name: "To hit", formula: "toHit = proficiency + mod(DEX) + weapon's to-hit + boon acc + passive skill acc", note: "Proficiency is 5e's: +2, rising by one every four levels (+2 at 1–4, +3 at 5–8, … +6 at 17+). There is no per-level accuracy any more — on a d20, +2 a level is +10 percentage points a level." },
-        { name: "Armour Class", formula: "AC = 10 + the DEX modifier your armour lets through + passive AC (Happy Feet) + any timed AC bonus", note: "How much DEX gets through depends entirely on what you are wearing. NOTHING: all of it, uncapped — armour caps DEX because it is in the way, and there is nothing in the way of a bare body. MEDIUM: up to tier + plus, so a tier-1 jerkin caps you at +1 however nimble you are and each upgrade scroll widens what your DEX is allowed to do; spending past your own modifier is wasted. LIGHT and HEAVY: none at all — they pay in INT/MP and in mitigation instead. Armour itself grants no flat AC. So a high-DEX character genuinely is hardest to hit wearing nothing, and blocks nothing at all in exchange, since mitigation is entirely the item's own defMin/defMax roll." },
+        { name: "Armour Class", formula: "AC = 10 + the DEX modifier your armour lets through + passive AC (Happy Feet) + any timed AC bonus", note: "How much DEX gets through is the difference between the three armours. NOTHING and LIGHT: all of it, uncapped — a robe is not in the way of anything, and a caster forced to choose between mana and not being hit is only ever choosing mana. MEDIUM: 2 + tier + plus, so a tier-1 piece already carries +3 and each tier and each upgrade scroll adds another; it soaks a little and mostly makes you hard to hit. HEAVY: none at all, in exchange for the biggest mitigation range in the game. Armour itself grants no flat AC, and the cap never invents DEX you do not have." },
         { name: "Hit roll", formula: "a hit is d20 + attacker's to-hit ≥ defender's AC", note: "A natural 1 always misses and a natural 20 always hits, so every fight stays 5–95%. One point of to-hit or AC is worth exactly 5 percentage points, which is the whole reason ability modifiers can be small: mod(DEX) spanning −1…+2 is a 15-point swing here, where on the old tanh curve it was worth 3." },
       ],
     },
@@ -1235,7 +1239,7 @@
     {
       title: "Monster AI & doors",
       rows: [
-        { name: "Evasion (dodge)", formula: "after an attack roll has already beaten your AC, chance = min(50%, evasion points × 2%) to slip it entirely", note: "Evasion is NOT Armour Class and no longer feeds it. AC is how hard you are to aim at; Evasion is dodging a blow that was aimed true. Keeping them apart is what makes Ourn's Future Sight a real choice — to-hit sharpens your attack roll, Evasion buys back some of theirs, and they are different currencies. A d20 AC point is worth about 5%, so Evasion is cheaper per point and hard-capped at half." },
+        { name: "Evasion (dodge)", formula: "after an attack roll has already beaten your AC, chance = min(50%, evasion points x 2% + flat evade% from passives)", note: "Evasion is NOT Armour Class and does not feed it. AC is how hard you are to aim at; Evasion is dodging a blow that was aimed true. Armour never gates it — heavy pays for its mitigation by giving up AC entirely, not by giving up the dodge as well; one price is a trade, two is a trap for a build that chose Ourn's coin long before it knew what armour it would find. (Happy Feet's share of it still needs cloth or medium, because that is the passive's own condition.) A d20 AC point is worth about 5%, so Evasion is cheaper per point and hard-capped at half." },
         { name: "Sight", formula: "sees you within 6 tiles AND has line of sight — the SAME 6 tiles you see", note: "Deliberately tied to the player's own sight rather than authored separately. The ambush (creep up on a sleeper, strike first, guaranteed hit) only works while neither side sees further than the other; a monster with the longer eyes opens every fight already awake, walking out of a dark you cannot see into. A closed door/bush blocks line of sight — it's only 'open' while something stands on it." },
         { name: "Hunting", formula: "in sight → moves straight toward you, refreshing its last-known-position trail every turn", note: "" },
         { name: "Tracking", formula: "out of sight but has a trail → walks to your last known position", note: "It doesn't forget the instant it loses sight — it commits to the spot it saw you last, right through a door or bush along the way." },
@@ -1345,6 +1349,13 @@
       title: "Gold",
       rows: [
         { name: "Gold pile", formula: "random(2, 12) + depth × 2", note: "" },
+      ],
+    },
+    {
+      title: "Cooldowns",
+      rows: [
+        { name: "Ticking down", formula: "every skill on cooldown falls by 1 each turn", note: "One turn is one tick regardless of how fast the action was — a hasted swing does not cool your skills any quicker." },
+        { name: "Ourn's Rhythm of the Universe", formula: "the tick becomes 1 + (how many of your skills are currently on cooldown), applied to all of them", note: "Two waiting is 3 a turn, five is 6. The count is taken BEFORE anything ticks, so a skill coming off cooldown partway through cannot slow the rest down and every skill moves at the same rate that turn. It snowballs on purpose: the more you have spent, the faster it all comes back, so it pays a caster who commits rather than one who hoards a single button." },
       ],
     },
     {

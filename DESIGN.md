@@ -1540,3 +1540,307 @@ each stage: **8 HP healed before 300, 8 after 300, 0 after 450.**
 One thing worth recording for anyone testing this: a stage fires on `turns === st.at`
 exactly, so a test that *sets* the turn counter past a stage skips its trigger
 entirely and reads as though the stage never happened. Walk the counter through.
+
+## The Piper: two turns of warning, and bats instead of snakes — DONE
+
+**The death line now sits for two of the Piper's turns before the rat launches**, with
+its own pulse and its own log line on the second (`"The line still burns — it comes
+next turn!"`). A telegraph the player cannot tell is still live is not a telegraph,
+it is a stale red rectangle.
+
+One turn of warning is only enough if you were already free to move. A step out of
+the lane that walks you into a rat, or a turn you needed for a potion, and the 30
+damage lands anyway — which makes it a reaction test rather than a decision. Two
+turns means one of them can be spent on something else. Measured over three casts:
+the line is up for exactly 2 boss turns every time.
+
+**Its summons are rats and bats now, not rats and snakes** — 2 rats + 1 bat on the
+entrance, 3 rats + 2 bats on the phase shift. Verified: zero snakes.
+
+Worth noting this is a small *easing* on its own terms: a snake is AC 22 / 8 HP /
+1–6 damage against a bat's AC 21 / 5 HP / 1–4. The bat is easier to kill and hits
+softer, though both sit at the very top of the AC table.
+
+One consequence to watch: the beam's miss branch spills **two more rats** when the
+rat bursts on the wall. With two turns of warning the player dodges far more often,
+so that branch goes from occasional to near-guaranteed — roughly 2 rats every 12
+turns. Dodging correctly should probably not be the thing that buries you in adds.
+
+## Measured: the first boss fight is not winnable by trading blows
+
+A warrior arrives at the Piper at **level 5, 40 max HP, attack 2–5**, wearing the
+starting `Shitty_sword` and `rusted_mail` — AC 10, to-hit +6. The Piper has **150 HP,
+AC 14**, hits for 2–10, and a 30-damage line every 12 turns.
+
+Driving the fight straight — stand adjacent, swing every turn:
+
+| level | max HP | your damage/turn | its damage/turn | turns to kill it | turns to kill you | outcome |
+|---|---|---|---|---|---|---|
+| 4 | 35 | 3.0 | 2.9 | 50 | 12 | **died** |
+| 5 | 40 | 2.1 | 2.2 | 71 | 18 | **died** |
+| 6 | 46 | 1.7 | 3.3 | 88 | 14 | **died** |
+| 8 | 56 | 3.4 | 2.9 | 45 | 19 | **died** |
+
+**You need 45–88 turns to kill it. It needs 12–19 to kill you.** That is a 3–5×
+deficit, and it does not close by levelling — a level-8 character dies as reliably
+as a level-4 one, because HP grows about as fast as the gap does.
+
+The beam is not even the problem: those runs recorded **zero beam hits**. The deaths
+are ordinary melee plus three summoned adds. The spike is arithmetic, not tactics —
+150 HP against 2–3 damage a turn is fifty-plus turns of exposure to a thing that
+kills you in fifteen.
+
+## The three armours get their identities straight — DONE
+
+**Medium is the DEX-build armour.** Its DEX cap was `tier + plus`, which meant a
+tier-1 piece held a nimble character to +1 — a tax on the exact build it is supposed
+to serve. It is now **`2 + tier + plus`**, so a tier-1 piece already carries +3 and
+each tier and each upgrade scroll adds another:
+
+| armour | tier | plus | cap | AC at DEX 10 / 14 / 18 / 22 / 26 / 30 |
+|---|---|---|---|---|
+| padded jerkin | 1 | 0 | **+3** | 10 / 12 / 13 / 13 / 13 / 13 |
+| padded jerkin | 1 | 2 | +5 | 10 / 12 / 14 / 15 / 15 / 15 |
+| studded leather | 2 | 0 | +4 | 10 / 12 / 14 / 14 / 14 / 14 |
+| studded leather | 2 | 2 | +6 | 10 / 12 / 14 / 16 / 16 / 16 |
+| scale hauberk | 3 | 0 | +5 | 10 / 12 / 14 / 15 / 15 / 15 |
+| scale hauberk | 3 | 2 | +7 | 10 / 12 / 14 / 16 / 17 / 17 |
+
+It soaks a little and mostly makes you hard to hit, which is the point.
+
+**Heavy cannot dodge.** `dodgeChance()` is zero while heavy armour is worn, whatever
+Evasion you own. Plate answers a blow by absorbing it — that is what its mitigation
+range is for — and "no AC, no DEX, no dodge, biggest soak in the game" is a clean
+identity where "no AC and no DEX" alone was just a smaller version of medium.
+
+The points are **suppressed, not spent**: take the plate off and every one of them is
+still there. That matters because Ourn's Foresight coin and Happy Feet are chosen
+long before you know what armour you will find, and a build-defining choice should
+never become a trap.
+
+Measured at DEX 18 with Happy Feet maxed: dodge **40% in medium, 40% in light, 30%
+bare** (Happy Feet needs cloth or medium), and **0% in heavy**.
+
+**Light is unchanged and already what it should be** — a caster's stat stick, granting
+INT and MP outright (grass armour +1 INT / +5 MP up to threads of fate at +5 / +23),
+thin mitigation, no AC.
+
+## Correcting the first-boss measurement
+
+The earlier table in this file measured a level-5 character **still wearing the
+starting kit** — `Shitty_sword`, `rusted_mail` — which nobody actually reaches the
+Piper in. The harness rolled five floors of drops and then failed to equip any of
+them: `peek().inv` is an array of key *strings*, and the chooser was comparing
+`inv[i].key`, so it matched nothing and silently kept the starting gear.
+
+Re-measured with the floor's own drops equipped, a warrior arrives with something
+like a blue or green Axe and takes:
+
+| weapon | armour | attack | AC | to-hit | your dmg/turn | its dmg/turn | turns to kill it | turns to kill you |
+|---|---|---|---|---|---|---|---|---|
+| Axe blue | grass armour | 1–15 | 10 | +2 | 4.2 | 3.4 | 36 | 12 |
+| Axe blue | rusted mail +1 | 1–15 | 10 | +2 | 3.6 | 2.9 | 41 | 14 |
+| Axe green | padded jerkin +1 | 2–17 | 11 | +2 | 5.4 | 1.9 | 28 | 21 |
+| Axe +1 green | padded jerkin +1 | 1–17 | 11 | +2 | 6.0 | 3.7 | 25 | 11 |
+
+So the real figure is **25–41 turns to kill it against 11–21 to kill you**, not the
+45–88 the first pass claimed. The fight is roughly **twice** as long as it should be
+rather than five times, and the gap now swings hard on the weapon roll — which is the
+more interesting finding, and one the broken harness hid completely.
+
+## The armour triangle, settled — DONE
+
+Three answers to "how do I not die", and each one now gives up something real:
+
+| | DEX → AC | dodge | mitigation | pays you in |
+|---|---|---|---|---|
+| **nothing** | all of it | yes | none | — |
+| **light** | **all of it, uncapped** | yes | thin | INT and MP |
+| **medium** | 2 + tier + plus | yes | moderate | being hard to hit |
+| **heavy** | **none** | **yes** | largest in the game | absorbing the blow |
+
+Measured at DEX 10 / 14 / 18 / 24 / 30:
+
+| armour | | |
+|---|---|---|
+| nothing | 10 / 12 / 14 / 17 / 20 | |
+| grass, cloth (light) | 10 / 12 / 14 / 17 / 20 | same as bare, plus INT/MP |
+| padded jerkin (medium t1) | 10 / 12 / 13 / 13 / 13 | capped at +3 |
+| studded leather (medium t2 +2) | 10 / 12 / 14 / 16 / 16 | capped at +6 |
+| chainmail (heavy) | 10 / 10 / 10 / 10 / 10 | no AC at all |
+
+**Light lets the whole DEX modifier through**, uncapped, the same as bare skin. A robe
+is not in the way of anything, and a caster forced to choose between mana and not
+being hit is only ever choosing mana — light is a stat stick that no longer taxes you
+for wearing it.
+
+**Heavy keeps its Evasion.** An earlier pass had plate suppress the dodge as well as
+the AC; that is two prices for one trade, and it punishes a build that committed to
+Ourn's coin long before it knew what armour it would find. Giving up AC entirely is
+the price. Verified with 15 evasion points: **30% dodge bare, in light, in medium and
+in heavy alike.** (Happy Feet's share still needs cloth or medium — that is the
+passive's own condition, not the armour gating evasion.)
+
+## Maelon's Grace is back — DONE
+
+**"Regain 2 + (character level / 5) HP on every kill."** 21st boon, under Maelon, and
+counted in `MAELON_KEYS` so it scales Leper Colony like its siblings.
+
+It existed once as a placeholder keyed by the god's own name (`maelon`), with its
+whole effect living in `killMonster` rather than in `data.js`, and the 20-boon rewrite
+(`3b14855`, "5 named boons per god, replacing the placeholder") dropped it on the
+floor. Three other placeholders went with it — Kethara's Gift (a free purple armour),
+Ourn Blinks (5 frozen turns on each new floor), Blessing of the Guild (+1% proc
+chance per level) — none of which came back either.
+
+That shape is also why an audit here briefly concluded the game had **never** had a
+healing boon: it diffed the boon *keys* in `data.js` across every commit and found 20
+identical keys throughout. A boon whose key was a god's name and whose effect lived in
+`game.js` is invisible to that check. The claim was stronger than the evidence
+supporting it.
+
+Measured: **4.2 HP a kill at level 10** (expected 4), **6.5 at level 20** (expected 6)
+— the overshoot is the ordinary kill-counter boons firing alongside it — and it never
+heals past full.
+
+## Rhythm of the Universe — DONE
+
+Ourn's replacement for the deleted Ourn Blinks. **Cooldowns fall by 1 a turn, plus 1
+more for every skill currently waiting** — and the bonus applies to all of them.
+
+| skills on cooldown | 1 | 2 | 3 | 5 | 6 |
+|---|---|---|---|---|---|
+| points drained per turn | 2 | 3 | 4 | 6 | 7 |
+
+The count is taken **before** anything ticks, so a skill coming off cooldown partway
+through the loop cannot slow the rest of it down, and every skill moves at the same
+rate that turn. Verified: without the boon it is a flat 1 whatever the count.
+
+It snowballs deliberately. The more you have spent, the faster it all comes back — so
+it pays a caster who commits to a rotation rather than one who hoards a single button,
+which is the opposite of how cooldowns usually punish you.
+
+Note on the spec: the brief said "6 skills on cooldown, each reduces by 6". Under
+"+1 per skill on cooldown" six waiting is **7** a turn, which is what the worked
+example of "2 on cooldown → 3 a turn" implies. The rule is implemented; the 6 → 6
+figure looks like a slip in the example rather than a second rule.
+
+## The gear tables, as CSV
+
+`docs/gear.csv` — every gear row the game has, with the values the current formulas
+produce at +0 through +5 so the ladder can be read rather than derived:
+
+- weapon `dmgMin + (tier − 1) × plus`, `dmgMax + tier × 2 × plus`
+- armour `defMin + floor((plus + 1) / 2)`, `defMax` capped at double the base
+
+**One flaw that falls straight out of writing it down: a tier-1 weapon gains no damage
+floor from upgrades at all.** `(tier − 1) × plus` is zero at tier 1, so a +5 sword is
+2–16 — the ceiling nearly triples and the floor never moves, which makes upgrading an
+early weapon a swingier gamble rather than a better weapon. Every starting weapon in
+the game is tier 1.
+
+`docs/gear-proposed-weapons.csv` holds a proposed 5-tier ladder for four subtypes —
+20 weapons, mirroring the armour tables' shape — with a `current_+N` column showing
+what today's formula does to each and a blank `WANT_+N` column to fill in instead.
+
+## The gear ladder, from your spreadsheet — DONE
+
+**One rule now governs every upgradeable number in the game:**
+
+> **max = base_max + (tier × plus). The floor never moves.**
+
+Weapons and armour both. It replaces two different formulas that disagreed with each
+other and with the tables they served — the old weapon rule gave tier-1 weapons *no*
+floor growth while doubling their ceiling (so upgrading a starting weapon bought
+variance, not power), and the old armour rule clamped the ceiling at double the base,
+which would have held a tier-5 plate to 68 when the authored ladder wants 60 at +5.
+The clamp is gone.
+
+### Weapons — 20 across four subtypes, five tiers each
+
+| | t1 | t2 | t3 | t4 | t5 |
+|---|---|---|---|---|---|
+| **dagger** | Dagger 1–4 | Dirk 2–6 | Stiletto 3–9 | Fang of the Hollow 4–13 | Toothpick 6–20 |
+| **sword** | Sword 2–6 | Broadsword 3–9 | Falchion 5–13 | Runed Blade 7–18 | Kingsmourn 10–25 |
+| **axe** | Hatchet 3–8 | Axe 4–12 | Great Axe 6–17 | Headsman's 9–23 | Worldcleaver 12–32 |
+| **bow** | Shortbow 2–5 | Hunting Bow 3–8 | Recurve 4–11 | Longbow 6–15 | Stormcaller 8–21 |
+
+Verified in the engine: a tier-1 sword steps 1 a plus (2–6 → 2–11 at +5), a tier-5
+Kingsmourn steps 5 (10–25 → **10–50**), Worldcleaver 12–32 → **12–57**.
+
+**Axes speed UP with tier** (0.8 → 1.0), because slowness hurts more the deeper you
+get. **Daggers are flat 1.0 and deliberately the weakest line** — stat sticks for
+ToneTum, junk for everyone else. **Bows hold range 5 at every tier.**
+
+Toothpick's base max is **20**, not the 18 in the sheet: the sheet's own +1…+5 series
+(25/30/35/40/45) steps by 5 from a base of 20, and 18 was the only figure in the file
+that did not fit its own rule. Banded plate's alternating `6-18 / 5-16 / 6-19` row was
+a drag-fill and is now the clean 5-15 → 5-30.
+
+### Armour — flat AC and an authored DEX ceiling
+
+`armorAC()` returned 0 for everything; armour now carries a **flat AC** of its own,
+and each row authors its own **`dexCap`** — how much of your DEX modifier reaches your
+AC — which every upgrade widens by one.
+
+| | flat AC t1→t5 | dexCap t1→t5 |
+|---|---|---|
+| light | +0 +1 +2 +3 +4 | 10 (uncapped in practice) |
+| medium | +2 +3 +4 +5 +6 | 3 / 6 / 9 / 12 / 15 |
+| heavy | +0 +0 +1 +1 +2 | 0 / 0 / 0 / 1 / 2 |
+
+Measured AC at DEX 10 / 16 / 20 / 26 / 34:
+
+| armour | | |
+|---|---|---|
+| grass armor (light t1) | 10 / 13 / 15 / 18 / 20 | |
+| threads of fate (light t5) | 14 / 17 / 19 / 22 / 24 | |
+| padded jerkin (medium t1) | 12 / 15 / 15 / 15 / 15 | plateaus at its cap of 3 |
+| windwoven coat (medium t5) | 16 / 19 / 21 / 24 / 28 | |
+| rusted mail (heavy t1) | 10 / 10 / 10 / 10 / 10 | |
+
+**A `dexCap` of 0 means none, and upgrades do not open it.** Without that exception a
++5 rusted mail would quietly let 5 DEX through and heavy would stop being the armour
+that gives up AC. Rows authored above zero (knight's plate 1, adamant bulwark 2) still
+widen by one per upgrade like everything else.
+
+### Sprites
+
+Eighteen new weapon sprites, each its subtype's silhouette recoloured to the tier's
+palette — the same trick the armour families already use, so a line reads as one kit
+made better rather than five unrelated objects.
+
+`docs/gear.csv` is regenerated from the shipped tables and now carries the AC and
+dexCap columns too.
+
+## The hatchet is no longer a trap — DONE
+
+Tier-1 axe to-hit **−4 → −2**. At −4 a level-5 warrior swung at to-hit 0 against the
+Piper's AC 14 — a 30% hit rate that meant the axe line's whole selling point, big
+damage, simply never arrived. It measured as the worst weapon in the game while
+reading on paper as the strongest.
+
+At level 5 against AC 14:
+
+| weapon | to-hit | damage | hit rate | ~damage per swing |
+|---|---|---|---|---|
+| **hatchet** | **+2** | 3–8 | **45%** | **3.8** |
+| axe (t2) | +1 | 4–12 | 40% | 4.4 |
+| great axe (t3) | +1 | 6–17 | 40% | 5.8 |
+| sword | +6 | 2–6 | 65% | 4.6 |
+| dagger | +7 | 1–4 | 70% | 3.9 |
+| shortbow | +3 | 2–5 | 50% | 3.3 |
+
+Fewer, bigger hits against the sword's steady ones — a real choice rather than a
+mistake. The axe stays the slowest line (speed 0.8 at tier 1), so its damage per
+*turn* still trails; that is the trade, not the trap.
+
+**A shape worth knowing about:** the axe line's to-hit now runs −2, −3, −3, −2, −2, so
+the tier-1 hatchet aims better than the tier-2 Axe and tier-3 Great Axe above it. That
+is defensible — a hatchet is small and handy where the middle of the line is
+deliberately clumsy, and the bigger weapons pay for their accuracy with damage — but
+it is a deliberate non-monotonicity rather than an oversight, and smoothing the middle
+to −2 across the line is a one-cell change if it reads badly in play.
+
+The real mitigating factor is still to come: an axe skill for Chadwick, or a barbarian
+who carries the line properly.
