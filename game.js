@@ -5788,6 +5788,14 @@
     if (player.gold < SHOP_POTION_PRICE) { log("Not enough gold."); return; }
     if (!invAdd({ key, count: 1 })) { log("Your pack is full."); return; }
     player.gold -= SHOP_POTION_PRICE;
+    // Bought stock is identified stock. The merchant already names every bottle on
+    // the shelf and the purchase line says what you walked out with, so leaving the
+    // pack calling it an "Ochre Potion" was the UI disagreeing with itself rather
+    // than a secret being kept. Identification is by KEY, so this also names any
+    // copies you were already carrying — buying one Potion of Healing tells you the
+    // three unlabelled ones in your pack were healing all along, which is exactly
+    // what learning what the ochre bottle is means.
+    identified.add(key);
     log("You buy a " + CONSUM[key].name + ".");
     shopStock[slot] = weightedShopPotionKey();   // the stall restocks the slot immediately
     renderShop();

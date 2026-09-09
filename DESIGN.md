@@ -2292,3 +2292,27 @@ The live end-to-end runs are thin — two or three blasts a run, because the
 spawn-adjacent-and-kill harness fails more often than it fires. The unit-level numbers
 above are exact and come from the single shared function every one of these call sites
 uses, so the behaviour is not in doubt; the field data is corroboration, not the proof.
+
+---
+
+## Bought stock is identified stock
+
+Buying a potion now identifies it for the rest of the run.
+
+There was never a secret being kept here. The merchant's shelf lists every bottle by
+its real name, and the purchase line says *"You buy a Potion of Healing."* — and then
+the pack went on calling the thing in your bag an **Ochre Potion**. That was the UI
+disagreeing with itself, not a discovery the player still had to make, and it meant the
+one place in the game where you are told exactly what you are getting was also the
+place the information got thrown away.
+
+Identification is by **key**, so a purchase also names any copies you were already
+carrying: buy one Potion of Healing and the three unlabelled bottles in your pack turn
+out to have been healing all along. That is precisely what learning what the ochre
+bottle *is* should mean, and it is the same rule that already applies when you drink
+one.
+
+Measured: carrying an unbought copy showed **"Umber Potion"**; clicking the shop row
+turned that same pack entry into **"Potion of Healing"**, gold went 500 → 480, and a
+potion sitting on the shelf that was never bought stayed a **"Charcoal Potion"**.
+Nothing is identified by proximity — only by paying for it.
