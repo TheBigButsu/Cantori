@@ -2465,3 +2465,60 @@ After both: **600 floors, 4,680 monsters, zero sealed** — against 1 sealed and
 on the same measurement before. `canStepAt` joins the dev surface so a test can ask the
 engine what it permits instead of reimplementing the rule and then measuring its own
 copy — which is how the first pass at this nearly reported a fix that had not happened.
+
+---
+
+## A sprung trap stops you walking
+
+Auto-travel was never cancelled when you stepped on a trap. You would arm a bomb's
+three-turn fuse and keep strolling — the game taking the decision away at the exact
+moment there is one to make, because *where you are standing when it blows* is the
+whole mechanic.
+
+It is cancelled at `triggerTrap` itself rather than at the one call site that walks
+you onto one, so every trap covers it: an arrow that just hurt you, and a teleport
+rune that just moved you somewhere the rest of the path was never computed from. A
+trap sprung **remotely** — by throwing something at it from a distance — cancels
+nothing, because that is a deliberate act, not an interruption. The bomb's actual
+detonation clears the path again, in case you had started walking in the meantime.
+
+Measured: a normal walk queues 38 steps and keeps going; a bomb springing underfoot
+takes 21 queued steps to **0**, an arrow trap 41 to **0**.
+
+## The forest was a hall, not a hub
+
+The floor was a tree. Between any two points there was exactly one route, so there
+was never a choice about how to get anywhere — which is the thing that makes a floor
+feel like a corridor with rooms bolted on.
+
+There *was* an extra-loop pass, and it did nothing. It rolled 15% per room and then
+joined that room to its **nearest** neighbour — but both the flush-attach pass and the
+spanning tree already prefer the nearest room, so the "extra loop" was almost always a
+room it was joined to already. It carved the same route twice.
+
+Measured over 40 forest floors, by the share of corridor tiles that are **cut
+vertices** (a tile where being blocked cuts part of the floor off — a chokepoint with
+no way round): **84.8%**, with 35 of 40 floors above 85% and not one floor below 50%.
+
+The pass now requires a partner the room is **not** already joined to, picking the
+nearest such room so the corridor stays short. The graph is fully connected by that
+point, so every edge added closes a real cycle by construction. How many is a new
+`loopPct` knob in each biome's `layout` block.
+
+| loopPct | corridor chokepoints | floors reading as a hall (≥85%) | floors with real freedom (<50%) |
+|---|---|---|---|
+| 0 | 90.6% | 35 / 40 | 0 |
+| 30 | 62.2% | 4 | 10 |
+| **60** | **60.2%** | **2** | **14** |
+| 80 | 58.5% | 1 | 12 |
+
+Nearly all the gain is bought by the first thirty. Past that, each new corridor brings
+its own spur tiles — which are themselves chokepoints — so the ratio plateaus while the
+floor keeps sprawling. **60** is the shipped default: the hub-with-spokes shape becomes
+the norm, and the occasional single-path floor survives, which is the point. Those are
+good; they just should not be every floor.
+
+`loopPct` lives in `LAYOUT_DEFAULT`, so it reaches every biome including the crypt,
+whose authored `layout` sets `attachPct: 0` and a long `hallLegMax` for a deliberately
+corridor-heavy feel. If that biome wants to stay maze-like, one field on its layout
+block dials it back.
