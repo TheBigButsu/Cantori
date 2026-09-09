@@ -2522,3 +2522,55 @@ good; they just should not be every floor.
 whose authored `layout` sets `attachPct: 0` and a long `hallLegMax` for a deliberately
 corridor-heavy feel. If that biome wants to stay maze-like, one field on its layout
 block dials it back.
+
+---
+
+## The way out now leads out
+
+A stone arch stood in the middle of a forest clearing with explored ground on both
+sides of it. It read as scenery, and it was a dozen steps from where the run started.
+
+The first thing to check was the obvious suspect — that the exit had stopped being
+embedded in a wall, perhaps because the new `loopPct` corridors were carving through
+room rings. It had not: measured across 160 floors, 80 with the extra corridors and 80
+without, the exit was on a room's wall every single time, with one open side on 149 of
+them. That part of the rule was working exactly as written and the corridor change made
+no difference to it.
+
+What the rule never asked was **which side the wall opened onto**. A wall tile between
+two rooms is still a wall tile, so the stairs could legitimately land in a partition
+halfway across the level — a door between two rooms rather than a way out of the place.
+
+Two conditions decide it now:
+
+1. **Rock behind it.** Walking outward from the room, the next 4 tiles must be solid,
+   with the map boundary counting as solid. That is what separates an exit *from* the
+   level from a door *within* it.
+2. **Far from the start**, by walking distance rather than a straight line, so the
+   floor has to be crossed to reach it.
+
+The doorway shape — a wall tile flanked by wall on both sides — is kept as the
+first-choice pass, with three progressively looser passes behind it so a cramped floor
+still gets stairs rather than none. The old last-resort that dropped the stairs in a
+room's *centre* is still there and still never fires.
+
+Measured over 120 floors afterwards:
+
+| | before | after |
+|---|---|---|
+| exactly one open side | 149/160 | **120/120** |
+| opens onto ≥4 tiles of rock | not asked | **120/120** |
+| in the far half of the floor | not asked | **120/120** |
+| floating inside a room | 0 | 0 |
+
+### Why it is not simply the furthest tile
+
+The first version took the maximum walking distance outright, and that put the stairs at
+**96% of the floor's maximum on 117 floors out of 120** — which is its own kind of
+predictable. Every floor became "head for the far corner". It now rolls at random among
+everything in the far quarter, which keeps the average at 90% of maximum and all 120
+floors in the far half, without the way out being in the same place every time.
+
+**Boss floors are untouched.** There the exit opens on the boss room's wall nearest to
+where the boss fell, because the point is that killing the thing opens the way — not
+that you then go looking for it.
