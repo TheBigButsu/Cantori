@@ -855,7 +855,7 @@
   }
   // The permanent +1-to-a-stat draughts, named by the effects applyEffect() already
   // dispatches on. Stone Skin isn't here: it wears off, so it isn't a stat purchase.
-  const STAT_POTION_FX = ["strength", "vitality", "intelligence"];
+  const STAT_POTION_FX = ["strength", "vitality", "intelligence", "dexterity", "resonance"];
   function randomStatPotionKey() {
     const pool = CONSUM_KEYS.filter((k) => CONSUM[k].cat === "potion" &&
       STAT_POTION_FX.indexOf(String(CONSUM[k].effect || "").toLowerCase()) >= 0);
@@ -6163,6 +6163,12 @@
       player.maxMp = computeMaxMp();
       player.mp += Math.max(0, player.maxMp - before);   // the freshly-gained MP is granted too
       log("Your mind sharpens. (+1 INT)", "hit");
+    } else if (fx === "dexterity") {
+      player.stats.DEX += 1;
+      log("Your hands find their quickness. (+1 DEX)", "hit");
+    } else if (fx === "resonance") {
+      player.stats.RES += 1;
+      log("The air around you hums a little louder. (+1 RES)", "hit");
     } else if (fx === "stone skin" || fx === "stone_skin" || fx === "stoneskin") {
       player.stoneSkin = { turns: 40 };
       floatText(player.x, player.y, "🛡", "#bcd3e6");
@@ -7944,6 +7950,16 @@
       startHunting(m);                       // no surprise multiplier, clean numbers
       monsters.push(m); return true;
     },
+    // Drive one monster's attack straight at the player, outside its AI. The whole
+    // incoming-damage order — AC roll, evasion, RES, armour — runs exactly as it
+    // does in play, which is what makes that order measurable rather than argued.
+    monsterHit: (i) => {
+      const m = monsters[i]; if (!m || m.hp <= 0) return null;
+      const before = player.hp;
+      attack(m, player, 0);
+      return { dealt: before - player.hp, hp: player.hp };
+    },
+    resPct: () => resReduction(),
     useIdx: (i) => actItem(i),
     equip: (i) => equipItem(i),
     upgradePending: () => pendingUpgrade,

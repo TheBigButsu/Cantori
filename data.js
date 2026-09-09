@@ -1289,6 +1289,20 @@ window.CANTORI_DATA = {
       "glyph": "!",
       "color": "#cccccc"
     },
+    "dexterity": {
+      "cat": "potion",
+      "name": "Potion of Dexterity",
+      "effect": "dexterity",
+      "glyph": "!",
+      "color": "#9ad0ff"
+    },
+    "resonance": {
+      "cat": "potion",
+      "name": "Potion of Resonance",
+      "effect": "resonance",
+      "glyph": "!",
+      "color": "#b491d6"
+    },
     "skill_point": {
       "cat": "potion",
       "name": "Potion of Insight",

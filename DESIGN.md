@@ -2026,3 +2026,77 @@ in data rather than in the engine.
 kill, at the start of a run — it draws from every boon you don't hold, exactly as
 before; the altar passes one god's roster so a paid offer stays inside the domain that
 was paid for.
+
+---
+
+## Two more stat draughts, and the incoming-damage order written down
+
+**Potion of Dexterity** and **Potion of Resonance** join Strength, Vitality and
+Intelligence: a permanent +1, same as the others, drop weight 1 to match the two
+newest rather than Strength's 2. They also join the merchant's guaranteed opening
+stat slot, which now draws from five potions instead of three.
+
+The cost of adding them is dilution: the drop pool goes from 14 weight to 16, so a
+Potion of Healing falls from 35.7% of a potion drop to 31.3%. On the merchant's shelf
+(which weights the two harmful draughts down) it goes 33.3% either way, because the
+opening heal is guaranteed regardless.
+
+### The order an incoming attack is resolved in
+
+Every monster blow — melee, ranged, and a charge — runs through the one `attack()`
+path, in this order:
+
+1. **Attack roll vs AC.** `d20 + the monster's toHit ≥ playerAC()`. Miss and nothing
+   else happens.
+2. **Evasion.** A separate roll against `dodgeChance()`, taken only after the attack
+   roll already beat your AC — the blow was aimed true and you slipped it. Being hard
+   to *aim at* and hard to *hit* are deliberately different stats.
+3. **Percentage reduction — RES.** `dmg × (1 − m/(m+10))`, where m is the RES
+   modifier. This is the only percentage cut in the game; every other defensive
+   source is flat, and so lands in step 4.
+4. **Flat mitigation — armour.** `armorBlock()`: the worn armour's def roll, plus the
+   heavy sub-type's flat soak, plus worn `defense` enchants, plus Stone Skin. Then a
+   floor of 1, so nothing is ever fully negated.
+
+A charge's momentum bonus is added *after* all four, on purpose — see the comment in
+`attack()`. Healing Smite's shield eats what is left before HP does.
+
+Measured against a keener (8–12 damage, mean 10.0) with armour stripped, dodge at 0
+and 3,800 landing blows per tier — every figure matching the rounding model exactly:
+
+| RES | mod | cut | predicted mean | measured |
+|---|---|---|---|---|
+| 10 | +0 | 0% | 10.0 | 9.991 |
+| 12 | +1 | 9.1% | 9.0 | 8.984 |
+| 14 | +2 | 16.7% | 8.4 | 8.398 |
+| 16 | +3 | 23.1% | 7.6 | 7.590 |
+| 20 | +5 | 33.3% | 6.6 | 6.575 |
+| 24 | +7 | 41.2% | 5.8 | 5.786 |
+| 30 | +10 | 50% | 5.2 | 5.201 |
+
+With rusted mail (1–5) on top: RES +0 measured 6.985 against a predicted 7.0, and RES
++10 measured 2.438 against a predicted 2.2 — the gap there is the floor of 1 catching
+the lowest rolls, exactly as it should.
+
+`window.cantori.monsterHit(i)` drives one monster's attack straight at the player,
+outside its AI, and returns what landed. That is what makes this order measurable
+rather than argued, and it is worth keeping for the next time the question comes up.
+
+### What does NOT go through it
+
+Steps 1 and 2 are attack-roll concepts and can't apply to a bomb. Steps 3 and 4 could,
+and today do not. These land raw:
+
+- **Boss telegraphs.** The Piper's exploding rat (30 flat), the golem's boulder
+  (15–30), its ground slam (20–60), its node blast (0–20). These are the largest
+  numbers in the game and the ones RES and armour do nothing about.
+- **Traps.** Arrow and bomb.
+- **Damage over time.** Burn and poison ticks. (The toxin's %-max-HP halving is
+  deliberately outside all of it.)
+- **A monster's death burst.**
+- **Thorn terrain**, and the self-inflicted costs (wall slam, Retribution's 5 HP).
+
+The defensible reading is that a telegraphed AoE is answered by moving, not by
+armour. The problem is the size: 20–60 unmitigated from a ground slam is most of a
+mid-game health bar whatever you are wearing, so defensive investment has no say in
+the fight the player most wants it to.
