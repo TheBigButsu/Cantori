@@ -54,7 +54,9 @@ window.CANTORI_DATA = {
       "ranged": true,
       "atkMin": 1,
       "hp": 12,
-      "burstPoison": 25
+      "burstPoison": 25,
+      "hexChance": 20,
+      "hexes": "blind"
     },
     "wolf": {
       "name": "Wolf",
@@ -82,12 +84,12 @@ window.CANTORI_DATA = {
       "ac": 18,
       "minFloor": 2,
       "atkMin": 1,
-      "burstRadius": -3
+      "burstRadius": 1
     },
     "bear": {
       "attackSpeed": 1,
       "name": "Bear",
-      "hp": 30,
+      "hp": 20,
       "atkMin": 1,
       "toHit": 4,
       "ac": 12,
@@ -104,7 +106,7 @@ window.CANTORI_DATA = {
     "harpy": {
       "name": "Harpy",
       "flying": true,
-      "atkMax": 10,
+      "atkMax": 8,
       "toHit": 3,
       "ac": 14,
       "ranged": true,
@@ -325,7 +327,7 @@ window.CANTORI_DATA = {
       "dmgMin": 1,
       "dmgMax": 4,
       "toHit": 3,
-      "speed": 1,
+      "speed": 1.2,
       "tier": 1,
       "req": {
         "STR": 8
@@ -341,7 +343,7 @@ window.CANTORI_DATA = {
       "dmgMin": 2,
       "dmgMax": 6,
       "toHit": 3,
-      "speed": 1,
+      "speed": 1.2,
       "tier": 2,
       "req": {
         "STR": 9
@@ -357,7 +359,7 @@ window.CANTORI_DATA = {
       "dmgMin": 3,
       "dmgMax": 9,
       "toHit": 4,
-      "speed": 1,
+      "speed": 1.2,
       "tier": 3,
       "req": {
         "STR": 10
@@ -373,7 +375,7 @@ window.CANTORI_DATA = {
       "dmgMin": 4,
       "dmgMax": 13,
       "toHit": 4,
-      "speed": 1,
+      "speed": 1.2,
       "tier": 4,
       "req": {
         "STR": 11
@@ -389,7 +391,7 @@ window.CANTORI_DATA = {
       "dmgMin": 6,
       "dmgMax": 20,
       "toHit": 5,
-      "speed": 1,
+      "speed": 1.5,
       "tier": 5,
       "req": {
         "STR": 12
@@ -500,7 +502,6 @@ window.CANTORI_DATA = {
       "name": "Axe",
       "dmgMin": 4,
       "dmgMax": 12,
-      "toHit": -3,
       "speed": 0.85,
       "tier": 2,
       "req": {
@@ -508,7 +509,8 @@ window.CANTORI_DATA = {
       },
       "rarity": 28,
       "glyph": "/",
-      "color": "#cbb083"
+      "color": "#cbb083",
+      "toHit": -2
     },
     "great_axe": {
       "cat": "weapon",
@@ -516,7 +518,6 @@ window.CANTORI_DATA = {
       "name": "Great Axe",
       "dmgMin": 6,
       "dmgMax": 17,
-      "toHit": -3,
       "speed": 0.9,
       "tier": 3,
       "req": {
@@ -524,7 +525,8 @@ window.CANTORI_DATA = {
       },
       "rarity": 18,
       "glyph": "/",
-      "color": "#c39a63"
+      "color": "#c39a63",
+      "toHit": -1
     },
     "headsman": {
       "cat": "weapon",
@@ -532,7 +534,6 @@ window.CANTORI_DATA = {
       "name": "Headsman's Axe",
       "dmgMin": 9,
       "dmgMax": 23,
-      "toHit": -2,
       "speed": 0.95,
       "tier": 4,
       "req": {
@@ -540,7 +541,8 @@ window.CANTORI_DATA = {
       },
       "rarity": 10,
       "glyph": "/",
-      "color": "#b8834e"
+      "color": "#b8834e",
+      "toHit": -1
     },
     "worldcleaver": {
       "cat": "weapon",
@@ -548,7 +550,6 @@ window.CANTORI_DATA = {
       "name": "Worldcleaver",
       "dmgMin": 12,
       "dmgMax": 32,
-      "toHit": -2,
       "speed": 1,
       "tier": 5,
       "req": {
@@ -556,7 +557,8 @@ window.CANTORI_DATA = {
       },
       "rarity": 4,
       "glyph": "/",
-      "color": "#e0a03c"
+      "color": "#e0a03c",
+      "toHit": 0
     },
     "shortbow": {
       "cat": "weapon",
@@ -928,7 +930,7 @@ window.CANTORI_DATA = {
       "name": "Bone Charm",
       "tier": 1,
       "minRarity": "green",
-      "glyph": "\u25c8",
+      "glyph": "◈",
       "color": "#e6e0d2"
     },
     "metrognome": {
@@ -947,7 +949,7 @@ window.CANTORI_DATA = {
       "name": "Jade Amulet",
       "tier": 3,
       "minRarity": "green",
-      "glyph": "\u2740",
+      "glyph": "❀",
       "color": "#7ec98a"
     },
     "cord_bead": {
@@ -955,7 +957,7 @@ window.CANTORI_DATA = {
       "name": "Beaded Cord",
       "tier": 1,
       "minRarity": "green",
-      "glyph": "\u2740",
+      "glyph": "❀",
       "color": "#9ad0ff"
     },
     "torc_copper": {
@@ -963,7 +965,7 @@ window.CANTORI_DATA = {
       "name": "Copper Torc",
       "tier": 2,
       "minRarity": "green",
-      "glyph": "\u2740",
+      "glyph": "❀",
       "color": "#c98a5a"
     },
     "pendant_onyx": {
@@ -971,7 +973,7 @@ window.CANTORI_DATA = {
       "name": "Onyx Pendant",
       "tier": 4,
       "minRarity": "green",
-      "glyph": "\u2740",
+      "glyph": "❀",
       "color": "#b491d6"
     },
     "reliquary_gold": {
@@ -979,7 +981,7 @@ window.CANTORI_DATA = {
       "name": "Gilded Reliquary",
       "tier": 5,
       "minRarity": "green",
-      "glyph": "\u2740",
+      "glyph": "❀",
       "color": "#f0c14b"
     },
     "idol_clay": {
@@ -987,7 +989,7 @@ window.CANTORI_DATA = {
       "name": "Clay Idol",
       "tier": 2,
       "minRarity": "green",
-      "glyph": "\u25c8",
+      "glyph": "◈",
       "color": "#c98a5a"
     },
     "figurine_jade": {
@@ -995,7 +997,7 @@ window.CANTORI_DATA = {
       "name": "Jade Figurine",
       "tier": 3,
       "minRarity": "green",
-      "glyph": "\u25c8",
+      "glyph": "◈",
       "color": "#7ec98a"
     },
     "effigy_onyx": {
@@ -1003,7 +1005,7 @@ window.CANTORI_DATA = {
       "name": "Onyx Effigy",
       "tier": 4,
       "minRarity": "green",
-      "glyph": "\u25c8",
+      "glyph": "◈",
       "color": "#b491d6"
     },
     "icon_gold": {
@@ -1011,7 +1013,7 @@ window.CANTORI_DATA = {
       "name": "Gilded Icon",
       "tier": 5,
       "minRarity": "green",
-      "glyph": "\u25c8",
+      "glyph": "◈",
       "color": "#f0c14b"
     }
   },
@@ -1020,19 +1022,19 @@ window.CANTORI_DATA = {
       {
         "key": "white",
         "name": "",
-        "chance": 0.5,
+        "chance": 0.45,
         "color": "#e6e0d2"
       },
       {
         "key": "green",
         "name": "",
-        "chance": 0.33,
+        "chance": 0.35,
         "color": "#7ec98a"
       },
       {
         "key": "blue",
         "name": "",
-        "chance": 0.12,
+        "chance": 0.15,
         "color": "#5a9fe0"
       },
       {
@@ -1122,10 +1124,7 @@ window.CANTORI_DATA = {
         "color": "#ff8f4a",
         "proc": 0.35,
         "slots": [
-          "weapon",
-          "ring",
-          "trinket",
-          "necklace"
+          "weapon"
         ],
         "desc": "Sears on a hit for half the source's power, then keeps burning for a few turns. Only one flame burns at a time.",
         "effect": {
@@ -1148,9 +1147,7 @@ window.CANTORI_DATA = {
         "color": "#9ad0ff",
         "proc": 0.3,
         "slots": [
-          "weapon",
-          "ring",
-          "necklace"
+          "weapon"
         ],
         "desc": "A jolt equal to the source's power, with a chance to stun that fades against higher-level foes.",
         "effect": {
@@ -1195,8 +1192,7 @@ window.CANTORI_DATA = {
         "proc": 1,
         "slots": [
           "armor",
-          "trinket",
-          "necklace"
+          "ring"
         ],
         "desc": "While worn, your steps cost less time — you cover ground faster than your foes. Scales with the item's tier.",
         "effect": {
@@ -1218,7 +1214,7 @@ window.CANTORI_DATA = {
         "proc": 0.5,
         "slots": [
           "armor",
-          "necklace"
+          "ring"
         ],
         "desc": "When you're struck, lash back at the attacker for half the damage you took.",
         "effect": {
@@ -1239,8 +1235,7 @@ window.CANTORI_DATA = {
         "color": "#9ad06a",
         "proc": 0.2,
         "slots": [
-          "weapon",
-          "ring"
+          "weapon"
         ],
         "desc": "Injects a dose equal to a tiered % of the weapon's damage. Doses stack: each proc adds to the poison already ticking, and every turn it deals its current total then fades by 1 — so a big stack keeps hurting long after you've backed off.",
         "effect": {
@@ -1564,9 +1559,9 @@ window.CANTORI_DATA = {
     "piper": {
       "arena": "ring",
       "name": "The Pied Piper",
-      "atkMax": 10,
+      "atkMax": 8,
       "ac": 14,
-      "atkMin": 2,
+      "atkMin": 0,
       "toHit": 3,
       "hp": 150
     },
@@ -1575,8 +1570,8 @@ window.CANTORI_DATA = {
       "name": "Stone Golem",
       "atkMin": 1,
       "hp": 400,
-      "atkMax": 25,
-      "ac": 16,
+      "atkMax": 15,
+      "ac": 14,
       "toHit": 6
     },
     "cultist": {
@@ -1662,9 +1657,9 @@ window.CANTORI_DATA = {
       },
       "boss": "piper",
       "spawnInitial": [
+        7,
         8,
-        10,
-        10,
+        9,
         10
       ],
       "exitSprite": "exit_forest",
@@ -1930,7 +1925,7 @@ window.CANTORI_DATA = {
         "weapon": "Shitty_sword",
         "armor": "rusted_mail"
       },
-      "baseHp": 18,
+      "baseHp": 23,
       "baseMp": 5,
       "regenTurns": 400,
       "vitRegen": 2,
@@ -2337,9 +2332,9 @@ window.CANTORI_DATA = {
       "start": {
         "armor": "padded_jerkin"
       },
-      "baseHp": 16,
+      "baseHp": 19,
       "baseMp": 6,
-      "regenTurns": 400,
+      "regenTurns": 300,
       "vitRegen": 2,
       "mpRegenTurns": 600,
       "intRegen": 2,
