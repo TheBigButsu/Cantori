@@ -2316,3 +2316,98 @@ Measured: carrying an unbought copy showed **"Umber Potion"**; clicking the shop
 turned that same pack entry into **"Potion of Healing"**, gold went 500 → 480, and a
 potion sitting on the shelf that was never bought stayed a **"Charcoal Potion"**.
 Nothing is identified by proximity — only by paying for it.
+
+---
+
+## Necklaces and trinkets stop being stat sticks and start being skills
+
+Both slots carried what every other slot carried — a stat, an enchant, a number —
+which made them the least interesting things you could find. They now carry **skill
+ranks**, and the two slots answer different questions:
+
+- a **necklace** grants ranks in a skill from **the class you are playing**: it sharpens
+  who you already are;
+- a **trinket** grants one from **somebody else's tree**. That is the entire reason the
+  slot exists. ToneTum can find a charm that lets him Spin, and no amount of levelling
+  would ever have got him there.
+
+### The tables
+
+| Rarity | Ranks | Stats | Enchants |
+|---|---|---|---|
+| white | — | — | **cannot roll** |
+| green | +1 | 0 | none |
+| blue | +1 | 1 | none |
+| purple | +2 | 1 | none |
+| gold | +3 | 2 | none |
+
+No enchants on either slot any more: an amulet that also happened to be Flaming would
+bury the thing it is actually for under a proc. White is impossible — the rows carry a
+new `minRarity: "green"`, because a white necklace would now be an *empty* slot rather
+than a modest one.
+
+Which rows a piece can reach is **ceil(tier / 2)** — tiers 1–2 the first row, 3–4 the
+first two, 5 the first three. That interpolates the 1 / 3 / 5 rule onto the even tiers
+instead of leaving them rolling nothing. Eight new rows were authored so every tier
+exists in both categories; the Metrognome opts out with a new `noGrant`, because its
+walk/attack variant is the point of it.
+
+They are also scarcer than they were: `categoryWeights` moves **necklace 10 → 4** and
+**ring 12 → 14**. A slot that hands over a skill should not drop as often as one that
+hands over a number.
+
+### Spent ranks and granted ranks are different things
+
+Granted ranks **never enter `player.skills`**. `skillRank(key)` is spent + worn, capped
+at the skill's max. The split matters in both directions:
+
+- **spent** ranks are what the point counter and the prerequisites read, so an amulet
+  can never buy its way down the tree;
+- **granted** ranks are what the *effect* reads, so the amulet does what the card says.
+
+Take it off and the ranks leave with it, because nothing was ever written down.
+
+**Level gates still bite; prerequisites do not.** A trinket hands an off-class skill to
+someone who could never satisfy its tree, so `req` / `reqAny` / `reqPoints` are ignored
+outright — but the row's own level and any per-rank `minLevel` clamp the grant to 0.
+That is what stops a tier-5 amulet being a level-1 shortcut.
+
+A rolled or scrolled **+X raises the grant by a rank per point**, the same way it raises
+a stat affix. It clamps at the skill's max soon enough, and that clamp is the brake.
+Trinkets still refuse the Scroll of Upgrade, as they always have.
+
+### Measured
+
+A mage run, 400 rolls per row:
+
+- necklaces offered **only ToneTum's skills**; tiers 1–2 stayed inside row 1
+  (Burning Sensation, Keen Intellect, Magic Missile, MP Recovery, Sleep) and tiers 3+
+  added row 2 (Blink, Madness, Mirror Image).
+- trinkets offered **only monk and warrior** skills, never the mage's own; tier 1 stayed
+  in row 1 and tier 5 reached row 3 (Healing/Raging/Spinning Smite, Happy Feet, Now You
+  See Me).
+- no white ever rolled; the Metrognome granted nothing across 200 rolls.
+- a tier-5 necklace forced to each rarity gave exactly 1/0, 1/1, 2/1, 3/2 ranks/stats
+  and zero enchants.
+
+End to end: ToneTum's hotbar read *Wait, Magic Missile*; equipping a purple trinket
+granting Spin made it *Wait, Magic Missile, **Spin*** at rank 3, the card read
+**"Spin +3 (Chadwick), +6 LCK"**, and casting it worked and started an 79-turn cooldown.
+Burning Sensation at 2 spent plus a +2 necklace read **4**, still 4 with the item at +3
+(the max clamp), and **2** again the moment it came off. Blink granted at level 1 read
+**0**, and **4** at level 9.
+
+### Two things worth knowing
+
+**Grants are not gated on identification.** The house rule is that gear works fully
+while unidentified and you simply cannot read its numbers, so an unknown amulet grants
+its ranks like an unknown sword swings its damage. The consequence: an unidentified
+trinket's *active* skill appears on the hotbar before the card will name it. That is the
+same bargain as feeling a sword hit harder than it reads, and better than a slot that
+silently does nothing for the first thirty hits.
+
+**A bug this turned up.** Making the skill-tree cache a per-class map left a stale
+`_skillCache = {…}` assignment inside `applyClass`, which now threw on *every* class
+pick — including the one at boot. The whole first measurement run was against a
+character that had silently stayed a warrior. Neither suite caught it, because both
+drive the game through paths that survive a failed class application.

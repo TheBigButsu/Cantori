@@ -102,6 +102,11 @@
       // much of your DEX modifier reaches your AC. Blank dexCap falls back to the
       // subtype (light uncapped, medium 2 + tier + plus, heavy none).
       { f: "ac", label: "AC", type: "num" }, { f: "dexCap", label: "max DEX→AC", type: "num" },
+      // Jewellery: the rarity a roll cannot fall below (a necklace or trinket is a
+      // SKILL, so a white one would be an empty slot rather than a modest one), and
+      // an opt-out for a piece whose identity is its own — the Metrognome.
+      { f: "minRarity", label: "min rarity", type: "select", opts: ["", "white", "green", "blue", "purple", "gold"] },
+      { f: "noGrant", label: "no skill grant", type: "bool" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     // Armour's own column set. There is no AC column: armour grants no flat AC.
@@ -1383,6 +1388,18 @@
         { name: "Meditate", formula: "HP regeneration x5 (x10 from rank 2) while you hold still; ends on move, strike, or any damage at all", note: "Damage is watched as a total at the end of each turn rather than patched into each source, so a burn, a trap and a blow all break it and so will the next source anyone adds. Rank 3 refunds 2 cooldown turns per point healed; rank 4 leaves +3 damage / to-hit / AC for (character level x 2) turns. It pairs with holding the Wait button, which is how you spend the turns. WARNING: a floor whose spark has gone out at turn 300 regenerates nothing, meditation included - the skill has a deadline." },
         { name: "Happy Feet", formula: "+2 / +4 / +4 AC and +5% dodge / +4 AC and +10% dodge - only while wearing cloth (light) or medium armour", note: "The first passive in the game to add AC, and the first to buy dodge as a flat percentage rather than in 2%-per-point evasion points, so the card can say '+5%' and mean it. Both dodge routes share the one 50% cap. Heavy armour and bare skin get nothing." },
         { name: "Now You See Me", formula: "invisible 5 / 10 / 20 turns; rank 4 also grants +5 damage for 5 turns when the veil drops", note: "Same forgetting as the Scroll of Invisibility - everything hunting you drops the trail - and striking still ends it early. The rank-4 payout lands however the veil ends, walked out or spent on a blow." },
+      ],
+    },
+    {
+      title: "Necklaces and trinkets: worn skill ranks",
+      rows: [
+        { name: "What they carry", formula: "a NECKLACE grants ranks in a skill from the class being played; a TRINKET grants one from another class's tree", note: "That is the whole point of the trinket slot: ToneTum can find a charm that lets him Spin, and no amount of levelling would ever have got him there. Both roll the skill at drop time and store it on the instance as { cls, skill, ranks }." },
+        { name: "Which rows a tier can reach", formula: "ceil(tier / 2) rows \u2014 tiers 1-2 the first row, 3-4 the first two, 5 the first three", note: "A skill's row IS its tier on the Classes tab. This interpolates the 1 / 3 / 5 rule onto the even tiers rather than leaving them rolling nothing. A class with only two rows authored (ToneTum) simply cannot offer a third from any tier." },
+        { name: "Rarity table", formula: "green +1 rank \u00b7 blue +1 rank and a stat \u00b7 purple +2 and a stat \u00b7 gold +3 and two stats", note: "No enchants at all on these two slots \u2014 an amulet that also happened to be Flaming would bury the thing it is actually for under a proc. White is impossible: the rows set min rarity green, because a white one would be an empty slot rather than a modest one." },
+        { name: "+X raises the grant", formula: "effective ranks = the rolled ranks + the item's +X", note: "A rolled or scrolled +X buys a rank the same way it buys a stat, which is what makes a Scroll of Upgrade worth spending on jewellery. It clamps at the skill's max soon enough, and that clamp IS the brake. Trinkets still refuse the scroll (they always have) but a rolled +X on one counts." },
+        { name: "Gates: levels yes, prerequisites no", formula: "clamped by the skill's row level and by any per-rank minLevel; req / reqAny / reqPoints are ignored entirely", note: "A trinket hands an off-class skill to someone who could never satisfy its tree, so prerequisites cannot apply. Character LEVEL still does: a tier-5 amulet granting a row-2 skill does nothing at all until level 5, which is what stops it being a level-1 shortcut. Measured: Blink granted at level 1 reads rank 0, and rank 4 at level 9." },
+        { name: "Spent vs granted", formula: "granted ranks never enter player.skills \u2014 skillRank(key) = spent + worn, capped at the skill's max", note: "Kept apart in both directions: spent ranks are what the point counter and the prerequisites read, so an amulet can never buy its way down the tree; granted ranks are what the EFFECT reads, so it does what the card says. Take it off and the ranks leave with it. Measured: 2 spent in Burning Sensation plus a +2 necklace reads 4, and 2 again the moment it comes off." },
+        { name: "Opting a row out", formula: "`no skill grant` on the gear row", note: "For a piece whose identity is its own \u2014 the Metrognome, whose walk/attack variant is the point of it. Everything else in the two categories grants." },
       ],
     },
     {

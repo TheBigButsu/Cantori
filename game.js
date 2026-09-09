@@ -322,7 +322,7 @@
     player.retribution = null;                 // Chadwick's braced guard
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
-    _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
+    for (const k in _skillCache) delete _skillCache[k];   // force a rebuild (a Playtest draft can change a tree)
     player.skills = {};
     const sk = treeSkills(key).skills;
     // An innate skill is known from level 0 and never costs a point — the class
@@ -449,6 +449,7 @@
     GEAR, GEAR_KEYS, LOOT, randInt: (lo, hi) => randInt(lo, hi),
     getRarityWeights: () => guildBlessingWeights(),
     rollPlus: (floor) => guildPlusRoll(floor),
+    rollGrant: (base, rarity, ranks) => rollSkillGrant(base, rarity, ranks),
   });
   const rollRarity = _loot.rollRarity;
   const maxPlusForFloor = _loot.maxPlusForFloor;
@@ -456,6 +457,29 @@
   const rollGearDrop = _loot.rollGearDrop;
   const rollTrinket = _loot.rollTrinket;
 
+  // Pick the skill a necklace or trinket hands over. A necklace draws from the
+  // class being played — it sharpens who you already are. A trinket draws from
+  // somebody ELSE's tree, which is the entire reason the slot exists: ToneTum can
+  // find a charm that lets him Spin, and no amount of levelling would ever have
+  // got him there.
+  //
+  // Declared up here beside the loot module, which takes it as a dep at load —
+  // it is a function declaration, so it hoists over the skill helpers it calls.
+  function rollSkillGrant(base, rarity, ranks) {
+    const own = player.cls || "warrior";
+    let cls = own;
+    if (base.cat === "trinket") {
+      const others = Object.keys(DATA.classes || {}).filter((c) => c !== own && (DATA.classes[c].skillTree || []).length);
+      if (!others.length) return null;                 // only one class authored — nothing foreign to offer
+      cls = others[randInt(0, others.length - 1)];
+    }
+    const tree = treeSkills(cls).skills;
+    const rows = grantRowsForTier(base.tier || 1);
+    // A skill def's `tier` IS its row, 1-based. Only rows this piece can reach.
+    const pool = Object.keys(tree).filter((k) => (tree[k].tier || 1) <= rows);
+    if (!pool.length) return null;
+    return { cls, skill: pool[randInt(0, pool.length - 1)], ranks: ranks || 1 };
+  }
   // A plain, already-known base item (starting kit, gold/authored items).
   const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [], idNeed: 0, idXp: 0, identified: true });
   // Copy an item instance without its map position (for pack/equip moves).
@@ -735,6 +759,16 @@
       if (g.toHit) parts.push("to hit " + (g.toHit > 0 ? "+" : "") + g.toHit);
     }
     if (!itemIdentified(inst)) { parts.push("unidentified"); return parts.join(", "); }
+    // The grant first: it is what the item IS, and burying it behind two stat
+    // affixes would read as a stat stick that happens to mention a skill.
+    if (inst.grant) {
+      const d = (treeSkills(inst.grant.cls).skills || {})[inst.grant.skill];
+      const n = (inst.grant.ranks || 0) + (inst.plus || 0);
+      const nm = d ? d.name : inst.grant.skill;
+      const foreign = inst.grant.cls !== player.cls
+        ? " (" + ((DATA.classes[inst.grant.cls] || {}).name || inst.grant.cls) + ")" : "";
+      parts.push(nm + " +" + n + foreign);
+    }
     if (inst.variant === "walk") parts.push("+1 walk speed");
     else if (inst.variant === "attack") parts.push("+1 attack speed");
     // Must match gStatBonus, which is triangular in `plus` — the card used a flat
@@ -6062,6 +6096,7 @@
     log("You put away the " + itemName(it) + ".");
     player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
     player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
+    updateHotbar(); renderChar();          // a granted skill leaves with its amulet
     updateHUD(); worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
@@ -6075,6 +6110,7 @@
     log("You drop the " + itemName(it) + ".");
     player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
     player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
+    updateHotbar(); renderChar();          // a granted skill leaves with its amulet
     updateHUD(); worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
@@ -6104,6 +6140,7 @@
     pendingUpgrade = false;
     selectedInvIdx = -1; selectedEquip = null;
     player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);   // Scribe's Intellect scales with gear quality
+    updateHotbar(); renderChar();          // +X raises a granted rank as well as a stat
     updateHUD();
     worldTurn();
     if (dead) { toggleInv(false); return; }
@@ -6127,6 +6164,7 @@
     player.hp = Math.min(player.hp, player.maxHp);
     player.maxMp = computeMaxMp();               // INT affixes/quality bonuses can change max MP
     player.mp = Math.min(player.mp, player.maxMp);
+    syncGrantedSkills(); updateHotbar(); renderChar();   // an amulet can hand you a whole skill
     updateHUD();
     worldTurn();               // equipping takes a turn
     if (dead) { toggleInv(false); return; }
@@ -6446,9 +6484,11 @@
     }
     return nodes;
   }
-  let _skillCache = { cls: null, skills: {}, byId: {} };
+  // Keyed by class rather than holding one entry, because a trinket reads another
+  // class's tree on every render — a single-slot cache thrashed between the two.
+  const _skillCache = {};
   function treeSkills(cls) {
-    if (_skillCache.cls === cls) return _skillCache;
+    if (_skillCache[cls]) return _skillCache[cls];
     const c = DATA.classes[cls] || {};
     const skills = {}, byId = {};
     for (const n of normalizeTree(c.skillTree)) {
@@ -6468,8 +6508,8 @@
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
       for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], tier: 1, minLevel: 0, pos: null }, c.skills[k]);
     }
-    _skillCache = { cls, skills, byId };
-    return _skillCache;
+    _skillCache[cls] = { cls, skills, byId };
+    return _skillCache[cls];
   }
   // Active abilities unlocked by a boon (not part of the class skill tree). Each
   // entry maps a skill key -> { boon: which boon unlocks it, skill: the skill def }.
@@ -6513,13 +6553,95 @@
   }
   function classSkills() {
     const base = treeSkills(player.cls).skills;
-    if (!player.boons || !player.boons.size) return base;
+    const worn = [player.necklace, player.trinket].filter((it) => it && it.grant);
+    if (!worn.length && (!player.boons || !player.boons.size)) return base;
     const out = Object.assign({}, base);
-    for (const sk of Object.keys(BOON_SKILLS)) if (player.boons.has(BOON_SKILLS[sk].boon)) out[sk] = BOON_SKILLS[sk].skill;
+    for (const sk of Object.keys(BOON_SKILLS)) if (player.boons && player.boons.has(BOON_SKILLS[sk].boon)) out[sk] = BOON_SKILLS[sk].skill;
+    // A trinket's skill belongs to another class, so its definition has to be
+    // fetched from that tree and folded in here — that is what makes the hotbar,
+    // the number keys, cooldown ticking and the character screen treat it as an
+    // ordinary skill without any of them knowing where it came from.
+    for (const it of worn) {
+      const g = it.grant;
+      if (out[g.skill]) continue;
+      const d = treeSkills(g.cls).skills[g.skill];
+      if (d) out[g.skill] = d;
+    }
     return out;
   }
   function skillDef(key) { return classSkills()[key]; }
-  function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
+
+  // ---- Jewellery-granted skill ranks ---------------------------------------
+  //
+  // A necklace grants ranks in a skill from YOUR OWN tree; a trinket grants one
+  // from somebody else's, which is the whole point of the slot — ToneTum wearing
+  // a charm that lets him Spin. Both are rolled at drop time and live on the
+  // instance as { cls, skill, ranks }.
+  //
+  // Granted ranks are kept strictly apart from SPENT ranks, and the split matters
+  // in both directions:
+  //   · spent ranks are what skillPointsSpent() counts and what prerequisites
+  //     read, so a necklace can never buy its way down the tree;
+  //   · granted ranks are what the EFFECT reads, so the amulet does what it says.
+  // Take the necklace off and the ranks go with it, because nothing was ever
+  // written into player.skills.
+  //
+  // Which rows a piece can reach is its tier: ceil(tier / 2), so tiers 1-2 reach
+  // the first row, 3-4 the first two, 5 the first three. That interpolates the
+  // 1 / 3 / 5 rule onto the tiers between them rather than leaving even tiers
+  // rolling nothing.
+  const grantRowsForTier = (tier) => Math.max(1, Math.ceil((tier || 1) / 2));
+  // Character-level gates still bite. Prerequisites do NOT — a trinket hands an
+  // off-class skill to someone who could never satisfy its tree — but a rank the
+  // character is too junior for stays out of reach whatever they are wearing,
+  // which is what keeps a tier-5 amulet from being a level-1 shortcut.
+  function rankAllowedByLevel(d) {
+    if (!d) return 0;
+    if (d.minLevel && player.level < d.minLevel) return 0;   // the row itself is shut
+    for (let i = 0; i < d.max; i++) {
+      const r = d.ranks[i];
+      if (r && r.minLevel && player.level < r.minLevel) return i;
+    }
+    return d.max;
+  }
+  // NOT gated on identification. The house rule (see itemIdentified) is that gear
+  // works fully while unidentified and you simply cannot read its numbers, so an
+  // unknown amulet has to grant its ranks like an unknown sword swings its damage.
+  // The consequence is that an unidentified trinket's ACTIVE skill shows up on the
+  // hotbar before its card will name it — which is the same bargain as feeling a
+  // sword hit harder than it reads, and better than a slot that silently does
+  // nothing until some arbitrary number of hits have gone by.
+  const grantItems = () => [player.necklace, player.trinket].filter((it) => it && it.grant);
+  // Ranks this key gets from worn jewellery. A rolled or scrolled +X raises the
+  // grant one rank per point, the same way it raises a stat affix — which is what
+  // "upgrade scrolls can increase the skill levels" means. It clamps at the
+  // skill's max soon enough, and that clamp IS the brake.
+  function grantedRanks(key) {
+    let n = 0;
+    for (const it of grantItems()) if (it.grant.skill === key) n += (it.grant.ranks || 0) + (it.plus || 0);
+    return n;
+  }
+  // The rank an effect should read: what you bought, plus what you are wearing,
+  // capped by the skill's own max and by the level gates above. Never below the
+  // spent rank — you cannot un-learn something by taking a necklace off.
+  function skillRank(key) {
+    const st = player.skills[key], d = skillDef(key);
+    const spent = (st && st.rank) || 0;
+    const g = grantedRanks(key);
+    if (!d || !g) return spent;
+    return Math.max(spent, Math.min(spent + g, d.max, rankAllowedByLevel(d)));
+  }
+  function skillCur(key) { const d = skillDef(key), r = skillRank(key); return d && r > 0 ? d.ranks[r - 1] : null; }
+  // player.skills is the cooldown ledger as well as the rank ledger, and the
+  // hotbar walks its keys — so a skill you only have because of an amulet needs a
+  // slot in it. rank stays 0: nothing was bought, and skillRank() adds the grant
+  // on top. Called wherever jewellery can change hands.
+  function syncGrantedSkills() {
+    for (const it of grantItems()) {
+      const k = it.grant.skill;
+      if (!player.skills[k]) player.skills[k] = { rank: 0, cd: 0 };
+    }
+  }
   // req: every listed [id, minRank] must be at minRank — an AND.
   // reqAny: at least ONE listed [id, minRank] must reach minRank (default 1) —
   // an OR, used for things like "4 points in any one of the first-tier skills."
@@ -6573,7 +6695,7 @@
     let v = 0; const sk = classSkills();
     for (const key in sk) {
       const d = sk[key]; if (d.kind !== "passive") continue;
-      const st = player.skills[key]; if (!st || st.rank < 1) continue;
+      const r = skillRank(key); if (r < 1) continue;
       if (d.when === "unarmed") { if (player.weapon) continue; }
       // "softarmor": cloth (the light subtype) or medium. Heavy and bare skin get
       // nothing — Happy Feet is footwork, and you cannot dance in plate. Checked
@@ -6581,7 +6703,7 @@
       // "softarmor" as the name of a weapon class and never match.
       else if (d.when === "softarmor") { const a = armorSubName(); if (a !== "light" && a !== "medium") continue; }
       else if (d.when && d.when !== weaponSub()) continue;
-      const r = d.ranks[st.rank - 1] || {}; if (r[field] != null) v += r[field];
+      const rd = d.ranks[r - 1] || {}; if (rd[field] != null) v += rd[field];
     }
     return v;
   }
@@ -6589,9 +6711,9 @@
   // (DEX+VIT)/2, riding along the min/max bonus above.
   function unarmedStatBonus() {
     if (player.weapon) return 0;
-    const st = player.skills.unarmed_master; if (!st || st.rank < 1) return 0;
+    const r0 = skillRank("unarmed_master"); if (r0 < 1) return 0;
     const d = classSkills().unarmed_master; if (!d) return 0;
-    const r = d.ranks[st.rank - 1];
+    const r = d.ranks[r0 - 1];
     return (r && r.statScale) ? Math.max(0, mod("DEX") + mod("VIT")) * 2 : 0;
   }
 
@@ -6784,7 +6906,7 @@
   function useSkill(key) {
     if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return;
     const st = player.skills[key], d = skillDef(key);
-    if (!st || st.rank < 1 || !d) return;
+    if (!st || skillRank(key) < 1 || !d) return;
     if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
     // Meditate is the exception: its button doubles as "stand up", and standing up
     // has to work while the cooldown it already started is running.
@@ -6935,9 +7057,9 @@
   }
   // The active rank's data for a learned passive (null if unlearned).
   function passiveRank(key) {
-    const st = player.skills[key], d = skillDef(key);
-    if (!st || st.rank < 1 || !d) return null;
-    return d.ranks[st.rank - 1] || null;
+    const d = skillDef(key), r = skillRank(key);
+    if (!d || r < 1) return null;
+    return d.ranks[r - 1] || null;
   }
 
   // Magic Missile — the mage's answer to "I have no weapon worth swinging", and
@@ -7757,7 +7879,7 @@
     bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn()));   // one tap, exactly one turn
     for (const key of Object.keys(player.skills || {})) {
       const st = player.skills[key], d = skillDef(key);
-      if (!st || st.rank < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
+      if (!st || skillRank(key) < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
       bar.appendChild(makeSlot(d.icon, d.name, st.cd <= 0, st.cd > 0 ? st.cd : 0, pendingSkill === key, () => useSkill(key)));
     }
   }
@@ -7971,7 +8093,12 @@
     give: (k) => { if (GEAR[k]) invAdd(rollItem(k, depth)); else if (defOf(k)) invAdd({ key: k }); },
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
-    rollItem: (k, f) => rollItem(k, f != null ? f : depth),
+    rollItem: (k, f, rarity) => rollItem(k, f != null ? f : depth, rarity),   // rarity: force one, for measuring a tier's table
+    // The rank an effect actually reads (spent + worn, past the level gates), and
+    // the card text — the two things a jewellery grant has to get right.
+    skillRank: (k) => skillRank(k),
+    grantedRanks: (k) => grantedRanks(k),
+    itemAffix: (inst) => itemAffixText(inst),
     // The affix line exactly as the pack, the floor and the merchant print it.
     // Exposed because the card and the engine drifted apart once already: it read
     // a flat `plus` where gStatBonus is triangular in it, and a gear field
