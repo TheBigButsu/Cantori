@@ -2574,3 +2574,27 @@ floors in the far half, without the way out being in the same place every time.
 **Boss floors are untouched.** There the exit opens on the boss room's wall nearest to
 where the boss fell, because the point is that killing the thing opens the way — not
 that you then go looking for it.
+
+---
+
+## The pack's detail line said `spd` twice
+
+`dmg 3–8 · spd 0.8 · spd 0.8, to hit −2, +1 RES`
+
+Two functions each thought they owned the weapon's intrinsic numbers.
+`detailHeaderHTML` printed `dmg … · spd …` itself, then appended `itemAffixText()`,
+which leads with the same speed for weapons. To-hit only ever appeared in the second
+copy, where it sat in the affix list and so read as something the item had *rolled*
+rather than what the weapon simply is.
+
+`itemAffixText(inst, skipBase)` now takes a flag. The detail header prints the whole
+intrinsic set — damage, speed, to-hit — and passes `skipBase: true`, so the affix list
+carries only what the roll added. Everywhere else it is called (the equipped-slot
+cards) that text is the only text there is, so it keeps them.
+
+`dmg 3–8 · spd 0.8 · to hit −2 · +1 RES`
+
+The unidentified branch is untouched and mutually exclusive with the affix one, so an
+unknown hatchet still reads `dmg 3–8 · spd 0.8 · to hit −2 · unidentified (0%)` — the
+base row's numbers belong to the item type rather than to the roll, which is why they
+show before you have identified anything.

@@ -747,11 +747,15 @@
     const p = dispPlus(inst) > 0 ? "+" + dispPlus(inst) + " " : "";
     return p + GEAR[inst.key].name;
   }
-  function itemAffixText(inst) {
+  // `skipBase` drops the intrinsic weapon numbers (speed, to-hit). The pack's detail
+  // header prints those itself, alongside the damage range, and without this it got
+  // them twice: "dmg 3–8 · spd 0.8 · spd 0.8, to hit −2". Everywhere else — the
+  // equipped-slot cards — this is the only text there is, so it keeps them.
+  function itemAffixText(inst, skipBase) {
     if (!isGear(inst)) return "";
     const parts = [];
     const g = GEAR[inst.key];
-    if (g.cat === "weapon") {   // base weapon feel is intrinsic — always shown
+    if (g.cat === "weapon" && !skipBase) {   // base weapon feel is intrinsic — always shown
       if (g.speed != null && g.speed !== 1) parts.push("spd " + g.speed);
       // `accuracy` has not existed on a gear row since the d20 migration; this
       // read silently showed nothing for every weapon, including the ones whose
@@ -6194,9 +6198,17 @@
     let sub;
     if (isGear(e)) {
       const cat = GEAR[e.key].cat;
-      sub = cat === "weapon" ? ("dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1)) : cat === "armor" ? ("def " + defRange(dDefMin(e), dDefMax(e))) : cat;
+      // The base row's own numbers first — they belong to the item type, not to the
+      // roll, so they show even while it is unidentified. To-hit joins them here
+      // rather than arriving later inside the affix list, where it read as an affix.
+      if (cat === "weapon") {
+        const th = GEAR[e.key].toHit;
+        sub = "dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1) +
+          (th ? " · to hit " + (th > 0 ? "+" : "") + th : "");
+      } else if (cat === "armor") sub = "def " + defRange(dDefMin(e), dDefMax(e));
+      else sub = cat;
       if (!itemIdentified(e)) sub += " · unidentified (" + idPct(e) + "%)";
-      else { const aff = itemAffixText(e); if (aff && aff !== "unidentified") sub += " · " + aff; }
+      else { const aff = itemAffixText(e, true); if (aff && aff !== "unidentified") sub += " · " + aff; }
     } else {
       sub = identified.has(e.key) ? (def.cat || "item") : "unidentified " + (def.cat || "item");
       if ((e.count || 1) > 1) sub += " · ×" + e.count;
