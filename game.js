@@ -6327,6 +6327,18 @@
     target.plus = (target.plus || 0) + 1;
     const sIdx = player.inv.findIndex((i) => i.key === "scroll_upgrade");   // re-found by key: robust to any index drift
     if (sIdx >= 0) takeOne(sIdx);
+    // Every other consumable identifies itself in useConsumable(). This one never
+    // reaches that function — actItem routes an upgrade scroll to beginUpgrade()
+    // instead, because it has to ask for a target first — so it was the one thing
+    // in the game you could use and still not know what it was, leaving every other
+    // copy in the pack reading as an unknown rune.
+    //
+    // Identified HERE rather than when the scroll is armed: arming is cancellable,
+    // and a scroll you could name by arming it and backing out would identify the
+    // whole stack for free.
+    const wasUnidentified = !identified.has("scroll_upgrade");
+    identified.add("scroll_upgrade");
+    if (wasUnidentified) log("It was a " + ((CONSUM.scroll_upgrade || {}).name || "Scroll of Upgrade") + "!", "hit");
     log("The scroll's magic seeps into your " + itemName(target) + ". (+" + target.plus + ")", "hit");
     floatText(player.x, player.y, "+1", "#f0c14b");
     pendingUpgrade = false;

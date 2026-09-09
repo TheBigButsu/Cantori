@@ -2644,3 +2644,21 @@ all — reading as "the ambush is broken" when nothing was. Both times the instr
 wrong, not the game. Stepping deliberately **away** from the monster, and reading its
 trail target and blind counter rather than only its position, is what finally measured
 the thing itself.
+
+## The Scroll of Upgrade never learned its own name
+
+Use one and the next copy in the pack still read *Scroll titled "Hagalaz"*.
+
+It was the only consumable in the game that never identified itself, and for a
+structural reason: `actItem` routes an upgrade scroll to `beginUpgrade()` rather than
+`useConsumable()`, because it has to ask which item to spend itself on first — and
+`identified.add(it.key)` lives in `useConsumable`. Every other potion and scroll passes
+through that one line. This one never did.
+
+It is identified when it is **spent**, in `confirmUpgrade`, rather than when it is
+armed. Arming is cancellable, so a scroll you could name by arming it and backing out
+would identify the whole stack for free.
+
+Measured: armed and cancelled, it stays *Scroll titled "Hagalaz"*; spent on a weapon,
+it becomes **Scroll of Upgrade**, the weapon goes to +1, and the log reads *"It was a
+Scroll of Upgrade!"* — the same line every other consumable prints on first use.
