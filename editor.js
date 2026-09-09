@@ -1246,6 +1246,14 @@
       ],
     },
     {
+      title: "Diagonals and getting stuck",
+      rows: [
+        { name: "The corner rule", formula: "a diagonal step is refused only when BOTH orthogonal flanks are a real barrier \u2014 solid (wall, tree) or a shunned hazard (thorn, chasm)", note: "So a wall of brambles still cannot be slipped around without stepping through it, and you cannot cut between two walls. Everything moves on all eight directions, player and monsters alike, through this one predicate (canStep)." },
+        { name: "Water does not flank", formula: "deep water blocks you ENTERING it, never rounding a corner beside it", note: "It used to flank like a wall, and the cost was creatures sealed for good: measured over 600 floors, a bear stood on dry floor with a wall west and water north/east/south \u2014 its only exits were two diagonals, each refused for being flanked by the wall AND a water tile. Nothing repaired it: fixOpenCorners only sweeps wall/floor touches and water is not solid, so it is invisible to the one pass meant to prevent that shape. It bound the player too. The price of the fix is that a walker may cut the corner between two ponds instead of walking the shore \u2014 one tile at the water's edge, against being frozen forever." },
+        { name: "No spawning on islands", formula: "an initial spawn must sit in the player's flood-reach", note: "A pool can leave a one-tile island of dry floor. A monster placed there can never move, never be reached and never be fought, while still counting on the enemy tally \u2014 measured: a bat with water on seven sides and a wall on the eighth. paintTerrain's connectivity vetting is about ROOMS and the way onward, so a single stranded tile inside a room survives it." },
+      ],
+    },
+    {
       title: "Monster AI & doors",
       rows: [
         { name: "Evasion (dodge)", formula: "after an attack roll has already beaten your AC, chance = min(50%, evasion points x 2% + flat evade% from passives)", note: "Evasion is NOT Armour Class and does not feed it. AC is how hard you are to aim at; Evasion is dodging a blow that was aimed true. Armour never gates it — heavy pays for its mitigation by giving up AC entirely, not by giving up the dodge as well; one price is a trade, two is a trap for a build that chose Ourn's coin long before it knew what armour it would find. (Happy Feet's share of it still needs cloth or medium, because that is the passive's own condition.) A d20 AC point is worth about 5%, so Evasion is cheaper per point and hard-capped at half." },

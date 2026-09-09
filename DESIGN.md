@@ -2411,3 +2411,57 @@ silently does nothing for the first thirty hits.
 pick — including the one at boot. The whole first measurement run was against a
 character that had silently stayed a warrior. Neither suite caught it, because both
 drive the game through paths that survive a failed class application.
+
+---
+
+## Water stopped being a wall for the purposes of turning a corner
+
+A snake sat motionless in a pond's corner and would not move. Monsters have always
+moved on all eight directions — the block was the **corner rule** in `canStep`, which
+refused a diagonal whenever both orthogonal flanks were impassable *to that mover*.
+Deep water counted, so a pond flanked like masonry.
+
+Measured over 600 generated floors and 4,680 monsters, that sealed roughly **1 monster
+in 4,700** — and the shape is unmistakable once you see it: a bear on **dry floor**,
+wall to the west, water north, east and south. Its only two exits were the north-west
+and south-west diagonals, and each was refused for being flanked by the wall *and* a
+water tile. Nothing repairs that afterwards: `fixOpenCorners()` only sweeps wall/floor
+touches, and water is not `solid`, so it is invisible to the one pass that exists to
+prevent exactly this geometry.
+
+It bound the **player** too — `playerAct` and auto-travel both ask `canStep` — so the
+same pond could have walled a run into a corner it could not walk out of.
+
+The rule now asks whether a flank is a *real barrier*: `solid` (wall, tree) or a
+shunned hazard (thorn, chasm). Water blocks you **entering** it, never rounding it.
+
+| Flanks | Before | Now |
+|---|---|---|
+| wall + wall | blocked | blocked |
+| thorn + thorn | blocked | blocked |
+| wall + thorn | blocked | blocked |
+| **wall + water** | **blocked** | **allowed** |
+| **water + water** | **blocked** | **allowed** |
+
+What that gives up, deliberately: a walker may now cut the corner between two ponds
+rather than walking the shore. That is a one-tile shortcut at the water's edge, and it
+was never worth a creature frozen in place — water was never meant to be a wall, which
+is what the TILE table already says by pointedly not marking it `solid`.
+
+### And one that no diagonal could have fixed
+
+The same probe turned up a second, rarer case: a bat on a **one-tile island** — water
+on seven sides, wall on the eighth. There is genuinely nowhere to step. It could never
+move, never be reached and never be fought, while still counting on the floor's enemy
+tally, which reads as a monster you cannot find.
+
+`paintTerrain`'s connectivity vetting is about **rooms** and the way onward, so a single
+stranded tile *inside* a room survives it. Rather than teach the painter about islands,
+the spawner now refuses them: an initial spawn must sit inside `floodReach` from where
+the player is standing, which is already computed from the player's own start tile a few
+lines earlier.
+
+After both: **600 floors, 4,680 monsters, zero sealed** — against 1 sealed and 1 island
+on the same measurement before. `canStepAt` joins the dev surface so a test can ask the
+engine what it permits instead of reimplementing the rule and then measuring its own
+copy — which is how the first pass at this nearly reported a fix that had not happened.

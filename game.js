@@ -2163,6 +2163,13 @@
     if (Array.isArray(si)) { const i = floorInBiome(depth) - 1; count = si[i] != null ? si[i] : si[si.length - 1]; }
     else if (si != null) count = si;
     else count = Math.min(9, 3 + Math.floor(depth / 2));
+    // Everywhere a walker can get to from where the player is standing. A pool can
+    // leave a one-tile island of dry floor behind — measured: a bat on floor with
+    // water on seven sides and a wall on the eighth, which is a monster that can
+    // never move, never be reached, and never be fought, while still counting on
+    // the enemy tally. paintTerrain's connectivity vetting is about ROOMS and the
+    // way onward; a single stranded tile inside a room survives it.
+    const reachable = floodReach(player.x, player.y, false);
     // Put one monster somewhere inside `room`, if there is anywhere to put it.
     const placeIn = (room) => {
       for (let t = 0; t < 20; t++) {
@@ -2170,6 +2177,7 @@
         const y = randInt(room.y, room.y + room.h - 1);
         if (map[y][x] !== FLOOR) continue;
         if (x === player.x && y === player.y) continue;
+        if (!reachable.has(y * MAP_W + x)) continue;   // never strand one on an island
         if (monsterAt(x, y)) continue;
         const mk = pickMonster();
         if (!mk) return false;
@@ -3413,14 +3421,30 @@
   function canStep(x, y, dx, dy, mover) {
     const nx = x + dx, ny = y + dy;
     if (!passableFor(mover, nx, ny)) return false;
-    // no diagonal squeeze past a corner flanked by walls OR thorns — so a wall of
-    // brambles can't be slipped around diagonally without stepping through it. Water
-    // flanks the same way for whoever can't enter it: a walker can't cut the corner
-    // between two ponds, a flier doesn't notice them.
+    // No diagonal squeeze past a corner flanked on BOTH sides by a real barrier — a
+    // wall, a tree, or a hazard nothing will cross (thorns, a chasm). So a wall of
+    // brambles still cannot be slipped around without stepping through it.
+    //
+    // Deep water is deliberately NOT a barrier here, even though nothing on foot can
+    // enter it. It used to flank like one, and the cost was creatures sealed in place
+    // for good: measured over 200 generated floors, a bear stood on dry floor with a
+    // wall west of it and water north, east and south — its only two exits were the
+    // north-west and south-west diagonals, and each was refused because it was
+    // flanked by the wall AND a water tile. Nothing repairs that: fixOpenCorners()
+    // only sweeps wall/floor touches, and water is not solid, so it is invisible to
+    // the one pass that exists to prevent exactly this shape.
+    //
+    // It binds the PLAYER too — playerAct and auto-travel both ask canStep — so the
+    // same pond could wall a run into a corner it could not walk out of.
+    //
+    // What this gives up, deliberately: a walker may now cut the corner between two
+    // ponds rather than having to walk around the shore. That is a shortcut of one
+    // tile at the water's edge. Being frozen forever is not a trade worth keeping it
+    // for, and water was never meant to be a wall — see the TILE table, where it is
+    // pointedly not `solid`.
     if (dx !== 0 && dy !== 0) {
-      const blockA = !passableFor(mover, x + dx, y) || shuns(x + dx, y);
-      const blockB = !passableFor(mover, x, y + dy) || shuns(x, y + dy);
-      if (blockA && blockB) return false;
+      const barrier = (bx, by) => tileProp(bx, by, "solid") || shuns(bx, by);
+      if (barrier(x + dx, y) && barrier(x, y + dy)) return false;
     }
     return true;
   }
@@ -8171,7 +8195,11 @@
     // place — a pond between a monster and the player, a thorn wall across a
     // corridor. Recomputes FOV because changing a tile can change what is visible.
     setTile: (x, y, t) => { if (!inBounds(x, y)) return false; map[y][x] = t; computeFOV(); return true; },
-    passableAt: (x, y) => passable(x, y),                          // on foot — deep water says no
+    passableAt: (x, y) => passable(x, y),
+    // The real movement predicate, corner rule included — so a test can ask the
+    // engine "can this thing actually move?" instead of reimplementing the rule
+    // and then measuring its own copy.
+    canStepAt: (x, y, dx, dy, flying) => canStep(x, y, dx, dy, flying ? { flying: true } : null),                          // on foot — deep water says no
     passableFlying: (x, y) => passableFor({ flying: true }, x, y),
     tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),
     tileDeclared: (t) => Object.prototype.hasOwnProperty.call(TILE, t),
