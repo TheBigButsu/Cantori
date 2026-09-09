@@ -2729,19 +2729,39 @@ window.CANTORI_DATA = {
       "name": "Kethara",
       "domain": "Order & Domination",
       "unlock": "start",
-      "boons": []
+      "boons": [
+        "wall",
+        "pull",
+        "gift",
+        "eye",
+        "anger"
+      ]
     },
     "maelon": {
       "name": "Maelon",
       "domain": "Death & Decomposition",
       "unlock": "town",
-      "boons": []
+      "boons": [
+        "compost",
+        "second_chance",
+        "leper",
+        "merciful",
+        "grace",
+        "dread"
+      ]
     },
     "ourn": {
       "name": "Ourn",
       "domain": "Time",
       "unlock": "town",
-      "boons": []
+      "boons": [
+        "foresight",
+        "rhythm",
+        "timed_blow",
+        "dilating",
+        "pride",
+        "speed_of_light"
+      ]
     },
     "label": {
       "name": "The Label",
@@ -2753,7 +2773,13 @@ window.CANTORI_DATA = {
       "name": "The Guild",
       "domain": "Itemization & Customization",
       "unlock": "town",
-      "boons": []
+      "boons": [
+        "artificer",
+        "scribe",
+        "blacksmith",
+        "blessing",
+        "refinement"
+      ]
     },
     "auvris": {
       "name": "Auvris",

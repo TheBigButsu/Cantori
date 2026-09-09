@@ -99,9 +99,18 @@
   let inShop = false;
   let shopKeeper = null;     // {x, y} — wall-mounted, like a torch
   let fountain = null;       // {x, y} — wall-mounted, like a torch
+  let altar = null;          // {x, y} — wall-mounted, like a torch: buys a boon
   let shopStock = [];        // 3 potion keys currently for sale
   let shopHealCost = 0;      // gold cost of the fountain's full heal, fixed for this shop visit
+  let shopRerolls = 0;       // rerolls bought on THIS merchant floor — the price doubles each time
   const SHOP_POTION_PRICE = 20;
+  // A reroll starts at a single coin and doubles: 1, 2, 4, 8, 16 … Cheap enough
+  // that the first one is never a real decision, and steep enough by the fourth
+  // that rerolling until the shelf reads exactly right costs a potion's worth of
+  // gold. The counter is per merchant floor, so the ladder restarts each visit.
+  const SHOP_REROLL_BASE = 1;
+  const shopRerollCost = () => SHOP_REROLL_BASE * Math.pow(2, shopRerolls);
+  const ALTAR_BOON_PRICE = 100;   // gold for one god's offer of three boons
   const sellPrice = (inst) => gearTier(inst.key) * 2;
 
   // Stats → effects, D&D style.
@@ -843,6 +852,22 @@
     let r = Math.random() * total;
     for (const k of pool) { r -= shopWeightOf(k); if (r <= 0) return k; }
     return pool[pool.length - 1];
+  }
+  // The permanent +1-to-a-stat draughts, named by the effects applyEffect() already
+  // dispatches on. Stone Skin isn't here: it wears off, so it isn't a stat purchase.
+  const STAT_POTION_FX = ["strength", "vitality", "intelligence"];
+  function randomStatPotionKey() {
+    const pool = CONSUM_KEYS.filter((k) => CONSUM[k].cat === "potion" &&
+      STAT_POTION_FX.indexOf(String(CONSUM[k].effect || "").toLowerCase()) >= 0);
+    return pool.length ? pool[randInt(0, pool.length - 1)] : weightedShopPotionKey();
+  }
+  // The shelf you walk in on is never a bad roll: a heal, a stat, and one of
+  // whatever else the merchant has. You can reroll it (see rerollShop) but the
+  // opening hand is the one thing the run guarantees you can plan around — three
+  // coin flips at the only shop between two bosses is a run decided by weather.
+  function openingShopStock() {
+    const heal = CONSUM.heal && CONSUM.heal.cat === "potion" ? "heal" : weightedShopPotionKey();
+    return [heal, randomStatPotionKey(), weightedShopPotionKey()];
   }
 
   // ---- Dungeon generation --------------------------------------------------
@@ -1950,7 +1975,10 @@
     map[y + Math.floor(h / 2)][x + w - 2] = STAIRS;
     shopKeeper = { x: x + 4, y: y - 1 };
     fountain = { x: x + w - 5, y: y - 1 };
-    shopStock = [weightedShopPotionKey(), weightedShopPotionKey(), weightedShopPotionKey()];
+    altar = { x: x + Math.floor(w / 2), y: y - 1 };
+    shopStock = openingShopStock();
+    shopRerolls = 0;
+    rollAltarGods();
     shopHealCost = (biomeOf(depth) + 1) * 20;
 
     genStats = computeFill([room]);
@@ -3128,9 +3156,13 @@
   }
 
   // ---- Boons: pick one of three at each boss kill; effects are permanent -------
-  function offerBoons() {
+  //
+  // `pool` narrows the draw to a subset of the boon table — the altar passes one
+  // god's roster so a paid offer stays inside the domain you paid for. Called with
+  // no arguments (boss kill, run start) it draws from every boon you don't hold.
+  function offerBoons(pool, subtitle) {
     const all = DATA.boons || {};
-    const avail = Object.keys(all).filter((k) => !(player.boons && player.boons.has(k)));
+    const avail = (pool || Object.keys(all)).filter((k) => all[k] && !(player.boons && player.boons.has(k)));
     if (!avail.length) return;
     for (let i = avail.length - 1; i > 0; i--) { const j = randInt(0, i); const t = avail[i]; avail[i] = avail[j]; avail[j] = t; }
     const pick = avail.slice(0, 3);
@@ -3147,6 +3179,8 @@
       btn.addEventListener("click", () => pickBoon(k));
       wrap.appendChild(btn);
     }
+    const sub = document.querySelector("#boons .boon-sub");
+    if (sub) sub.textContent = subtitle || "A god extends a blessing \u2014 take one.";
     walkPath = [];                  // don't let a queued walk fire under the modal
     boonPending = true;
     document.getElementById("boons").hidden = false;
@@ -3430,7 +3464,8 @@
   function descend() {
     if (inShop) {   // leaving the merchant floor — now actually advance to the next depth
       inShop = false;
-      shopKeeper = null; fountain = null; shopStock = [];
+      shopKeeper = null; fountain = null; altar = null; shopStock = [];
+      shopRerolls = 0; altarGods = [];
       depth++;
       setDepthLabel();
       generateLevel();
@@ -3467,8 +3502,9 @@
     dead = false;
     depth = 1;
     turnMeter = 5; lastActionCost = 1;
-    inShop = false; shopKeeper = null; fountain = null; shopStock = [];
-    toggleShop(false); toggleFountain(false);
+    inShop = false; shopKeeper = null; fountain = null; altar = null; shopStock = [];
+    shopRerolls = 0; altarGods = [];
+    toggleShop(false); toggleFountain(false); toggleAltar(false);
     resetPlayer();
     setDepthLabel();
     updateHUD();
@@ -4511,6 +4547,12 @@
       if (spot) { const path = findPath(player.x, player.y, spot.x, spot.y); if (path.length) { walkPath = path; return; } }
       return;
     }
+    if (altar && altar.x === tx && altar.y === ty) {
+      if (adjacent) { toggleAltar(true); return; }
+      const spot = adjacentReachableFloor(tx, ty);
+      if (spot) { const path = findPath(player.x, player.y, spot.x, spot.y); if (path.length) { walkPath = path; return; } }
+      return;
+    }
     // tap a wall torch to take it — if it's not adjacent, walk to a tile beside it
     // and lift it automatically on arrival (torches sit on wall tiles, so we can't
     // path onto the torch itself).
@@ -4865,6 +4907,24 @@
     ctx.strokeStyle = shade("#c8d8dc", b); ctx.lineWidth = Math.max(1, tile * 0.05);
     ctx.beginPath(); ctx.ellipse(cx, cy + bob, tile * 0.24, tile * 0.13, 0, 0, Math.PI * 2); ctx.stroke();
   }
+  // A god's altar: a squat stone block under a candle whose flame breathes, so it
+  // reads as tended rather than abandoned at a glance across the merchant's room.
+  function drawAltar(px, py, b, now) {
+    const cx = px + tile / 2;
+    const pulse = 0.85 + Math.sin(now / 260 + px) * 0.15;
+    // block
+    ctx.fillStyle = shade("#6f6a60", b);
+    ctx.fillRect(px + tile * 0.20, py + tile * 0.52, tile * 0.60, tile * 0.40);
+    ctx.fillStyle = shade("#8c867a", b);
+    ctx.fillRect(px + tile * 0.14, py + tile * 0.44, tile * 0.72, tile * 0.12);
+    // candle
+    ctx.fillStyle = shade("#e8e0cc", b);
+    ctx.fillRect(cx - tile * 0.045, py + tile * 0.26, tile * 0.09, tile * 0.18);
+    // flame
+    ctx.beginPath();
+    ctx.ellipse(cx, py + tile * 0.21, tile * 0.06 * pulse, tile * 0.11 * pulse, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade("#f0c14b", b); ctx.fill();
+  }
   // A discovered trap: a dark plate + a coloured ring so it reads at a glance, with
   // a distinct icon per type — a live spiral (teleport), an arrow, or a bomb whose
   // fuse shows its countdown while armed.
@@ -5197,6 +5257,9 @@
     // merchant floor fixtures (wall-mounted, same convention as torches)
     if (shopKeeper && inBounds(shopKeeper.x, shopKeeper.y) && explored[shopKeeper.y][shopKeeper.x]) {
       drawShopkeeper(SX(shopKeeper.x), SY(shopKeeper.y), visible[shopKeeper.y][shopKeeper.x] ? litBright(shopKeeper.x, shopKeeper.y) : MEM);
+    }
+    if (altar && inBounds(altar.x, altar.y) && explored[altar.y][altar.x]) {
+      drawAltar(SX(altar.x), SY(altar.y), visible[altar.y][altar.x] ? litBright(altar.x, altar.y) : MEM, now);
     }
     if (fountain && inBounds(fountain.x, fountain.y) && explored[fountain.y][fountain.x]) {
       drawFountain(SX(fountain.x), SY(fountain.y), visible[fountain.y][fountain.x] ? litBright(fountain.x, fountain.y) : MEM, now);
@@ -5589,6 +5652,12 @@
       row.addEventListener("click", () => buyPotion(i));
       stockHost.appendChild(row);
     });
+    const rr = document.getElementById("shopReroll");
+    if (rr) {
+      const cost = shopRerollCost();
+      rr.textContent = "Reroll the shelf (" + cost + "g)";
+      rr.disabled = player.gold < cost;
+    }
     const sellHost = document.getElementById("shopSell");
     sellHost.innerHTML = "";
     const sellable = [];
@@ -5608,6 +5677,20 @@
       row.addEventListener("click", () => sellGear(i));
       sellHost.appendChild(row);
     }
+  }
+  // Sweep the shelf and lay out three fresh potions. The guarantee in
+  // openingShopStock() is spent — a reroll is the merchant's own weighted stock,
+  // so rerolling a heal away can genuinely leave you worse off. That is the point
+  // of paying for it.
+  function rerollShop() {
+    const cost = shopRerollCost();
+    if (player.gold < cost) { log("Not enough gold."); return; }
+    player.gold -= cost;
+    shopRerolls++;
+    shopStock = [weightedShopPotionKey(), weightedShopPotionKey(), weightedShopPotionKey()];
+    log("The merchant clears the shelf and lays out three more. (\u2212" + cost + " gold)");
+    renderShop();
+    updateHUD();
   }
   function buyPotion(slot) {
     const key = shopStock[slot];
@@ -5657,6 +5740,80 @@
     log("You drink from the fountain and feel fully restored.", "hit");
     updateHUD();
     toggleFountain(false);
+  }
+
+  // ---- The altar: buy a god's attention, then choose from what they offer -----
+  //
+  // Gold has always been a potion budget and nothing else; the altar is the one
+  // place it buys progression. What it sells is deliberately not a boon — it is a
+  // GOD. You pay to be heard by Maelon or by Ourn, and the three the god then puts
+  // in front of you are theirs at random, so 100 gold narrows the roll to a
+  // domain rather than buying the exact boon you wanted.
+  //
+  // A god's roster lives in data.js (`gods.<key>.boons`), not here: the four with
+  // boons today are Kethara, Maelon, Ourn and the Guild, and The Label joins the
+  // altar the moment its array stops being empty.
+  let altarOpen = false;
+  let altarGods = [];        // the shortlist rolled for THIS merchant floor
+  const godBoonKeys = (g) => {
+    const def = (DATA.gods || {})[g] || {};
+    const all = DATA.boons || {};
+    return (def.boons || []).filter((k) => all[k]);
+  };
+  const godOpenBoons = (g) => godBoonKeys(g).filter((k) => !(player.boons && player.boons.has(k)));
+  const ALTAR_GODS_OFFERED = 3;
+  // Rolled once per merchant floor rather than per open, so shutting the panel and
+  // reopening it isn't a free reroll of which gods are listening.
+  function rollAltarGods() {
+    // Only gods who still have something you don't hold — an exhausted god taking
+    // up one of three slots would be a listing that shortens itself as you play.
+    const pool = Object.keys(DATA.gods || {}).filter((g) => godOpenBoons(g).length);
+    for (let i = pool.length - 1; i > 0; i--) { const j = randInt(0, i); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+    altarGods = pool.slice(0, ALTAR_GODS_OFFERED);
+  }
+  function toggleAltar(force) {
+    altarOpen = force === undefined ? !altarOpen : force;
+    if (altarOpen) { toggleMap(false); toggleChar(false); toggleInv(false); toggleExamine(false); toggleShop(false); toggleFountain(false); renderAltar(); }
+    const el = document.getElementById("altar");
+    if (el) el.hidden = !altarOpen;
+  }
+  function renderAltar() {
+    const sub = document.getElementById("altarSub");
+    const acts = document.getElementById("altarChoices");
+    acts.innerHTML = "";
+    // A god with nothing left to give is dropped from the shortlist rather than
+    // shown greyed out — you already hold everything they had.
+    const listening = altarGods.filter((g) => godOpenBoons(g).length);
+    if (!listening.length) {
+      sub.textContent = "The altar is silent. Every god who might hear you has already given all they have.";
+    } else {
+      sub.textContent = ALTAR_BOON_PRICE + " gold buys one god's attention — they choose which three to offer.";
+      for (const g of listening) {
+        const def = (DATA.gods || {})[g] || {};
+        const left = godOpenBoons(g).length;
+        const btn = document.createElement("button");
+        btn.className = "boon-choice"; btn.type = "button";
+        if (player.gold < ALTAR_BOON_PRICE) btn.disabled = true;
+        btn.innerHTML = `<span class="b-icon" style="color:#f0c14b">\u2749</span>` +
+          `<span class="b-text"><span class="b-name" style="color:#f0c14b">${def.name || g}</span>` +
+          `<span class="b-desc">${def.domain || ""} \u00b7 ${left} boon${left === 1 ? "" : "s"} still unspoken</span></span>`;
+        btn.addEventListener("click", () => buyGodBoon(g));
+        acts.appendChild(btn);
+      }
+    }
+    acts.appendChild(mkBtn("Leave", "", () => toggleAltar(false)));
+  }
+  function buyGodBoon(g) {
+    if (player.gold < ALTAR_BOON_PRICE) { log("Not enough gold."); return; }
+    // Charge only once there is something to hand over — a god with an empty
+    // roster must never take the coin.
+    if (!godOpenBoons(g).length) { renderAltar(); return; }
+    player.gold -= ALTAR_BOON_PRICE;
+    const def = (DATA.gods || {})[g] || {};
+    log((def.name || "A god") + " turns to look at you. (\u2212" + ALTAR_BOON_PRICE + " gold)", "hit");
+    toggleAltar(false);
+    updateHUD();
+    offerBoons(godBoonKeys(g), (def.name || "A god") + " offers \u2014 take one.");
   }
   function playerAtk() {
     // Both ends move: the low end takes STR's low roll, the high end its high roll,
@@ -7209,6 +7366,7 @@
     if (torch) { log("A wall torch — tap it to take it; fire clears thorns."); return; }
     if (shopKeeper && shopKeeper.x === x && shopKeeper.y === y) { log("A merchant — tap to buy potions or sell your gear."); return; }
     if (fountain && fountain.x === x && fountain.y === y) { log("A fountain — tap to pay for a full heal."); return; }
+    if (altar && altar.x === x && altar.y === y) { log("A god's altar — tap to buy a god's attention for " + ALTAR_BOON_PRICE + " gold."); return; }
     const t = map[y][x];
     log(t === WALL ? (sarcophagi.has(y * MAP_W + x) ? "A stone sarcophagus — sealed, and going nowhere. It blocks the way as surely as a wall." : "A wall.") : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
@@ -7436,7 +7594,7 @@
   };
   function restBusy() {
     return dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen ||
-      fountainOpen || examineMode || pendingThrow != null || !!pendingSkill;
+      fountainOpen || altarOpen || examineMode || pendingThrow != null || !!pendingSkill;
   }
   function startRest() {
     if (restTimer || restBusy()) return;
@@ -7549,6 +7707,7 @@
     if (boonPending || classPending) return;      // choose your boon/character first
     if (shopOpen) { if (e.key === "Escape") toggleShop(false); return; }
     if (fountainOpen) { if (e.key === "Escape") toggleFountain(false); return; }
+    if (altarOpen) { if (e.key === "Escape") toggleAltar(false); return; }
     const key = (e.key || "").toLowerCase();
     if (key === "c") { e.preventDefault(); toggleChar(); return; }
     if (charOpen) { if (e.key === "Escape" || key === "c") toggleChar(false); return; }
@@ -7583,7 +7742,7 @@
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
   document.getElementById("btnRest").addEventListener("click", () => toggleRest());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen) return; walkPath = []; worldTurn(); }
+  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen || altarOpen) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -7595,6 +7754,8 @@
   { const el = document.getElementById("shop"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleShop(false); }); }
   { const el = document.getElementById("shopClose"); if (el) el.addEventListener("click", () => toggleShop(false)); }
   { const el = document.getElementById("fountain"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleFountain(false); }); }
+  { const el = document.getElementById("altar"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleAltar(false); }); }
+  { const el = document.getElementById("shopReroll"); if (el) el.addEventListener("click", rerollShop); }
 
   // character screen: tabs, close, tap-outside
   document.getElementById("charClose").addEventListener("click", () => toggleChar(false));
@@ -7749,7 +7910,9 @@
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         inShop, shopKeeper: shopKeeper ? { x: shopKeeper.x, y: shopKeeper.y } : null,
         fountain: fountain ? { x: fountain.x, y: fountain.y } : null,
+        altar: altar ? { x: altar.x, y: altar.y } : null,
         shopStock: shopStock.slice(), shopHealCost, shopOpen, fountainOpen,
+        shopRerolls, shopRerollCost: shopRerollCost(), altarOpen, altarGods: altarGods.slice(),
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
@@ -7830,6 +7993,12 @@
     },
     turns: () => turns,
     shopRoll: () => weightedShopPotionKey(),
+    rerollShop, shopRerollCost, openingShopStock,
+    openShop: () => toggleShop(true),
+    openAltar: () => toggleAltar(true),
+    altarBuy: (g) => buyGodBoon(g),
+    godBoons: (g) => godBoonKeys(g),
+    openBoonsOf: (g) => godOpenBoons(g),
     decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },

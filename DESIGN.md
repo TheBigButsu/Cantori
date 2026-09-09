@@ -1970,3 +1970,59 @@ hit has to be taken from concealment — stepping into the open first hands the
 awareness straight back. And `stopHunting` now floats a **"?"** over the monster when
 it loses you, because an ambush window the player cannot see is luck rather than a
 mechanic.
+
+---
+
+## The merchant floor grows a second and a third thing to spend on
+
+The peaceful floor after each boss sold two things: potions at 20g and a full heal from
+the fountain. Both are consumption. Gold had no route into progression at all, which is
+why it piled up unspent in the late floors of a good run.
+
+### The opening shelf is guaranteed
+
+The three slots you walk in on are now **a Potion of Healing, a random stat potion
+(Strength / Vitality / Intelligence), and one weighted roll.** Before this, all three
+were weighted rolls, which meant the single shop between two bosses could hand you
+poison, paralysis and stone skin — a run decided by weather rather than by play. The
+opening hand is the thing you can plan the next biome around; everything past it is the
+merchant's own stock.
+
+### Rerolling costs a coin, then two, then four
+
+**1 gold, doubling with each reroll on that floor: 1, 2, 4, 8, 16 …** The counter is per
+merchant floor and restarts every visit.
+
+The first reroll is deliberately not a decision — it is a coin, and a shelf you dislike
+should not be a wall. The doubling is what stops it becoming one: by the fourth reroll
+you have spent a potion's worth of gold, so hunting for an exact shelf costs the thing
+you were shopping for. And a reroll replaces all three slots with weighted rolls, so the
+opening guarantee is spent the moment you use it — rerolling a heal away can genuinely
+leave you worse off. That risk is what makes it a choice rather than a button.
+
+### The altar sells a god, not a boon
+
+**100 gold buys one god's attention.** They then put **three random boons you don't
+already hold** in front of you, and you keep one.
+
+What is on sale is deliberately the *god*, not the boon. Paying narrows the roll to a
+domain — Maelon's attrition, Ourn's tempo, Kethara's faith, the Guild's itemisation —
+without letting gold simply buy the exact boon you wanted. You are choosing what kind of
+run to have, and then taking what that god happens to offer.
+
+Which gods are listening is **rolled once per merchant floor**, up to three of those who
+still have something to give, so closing the panel and reopening it is not a free
+reroll. A god whose roster you have exhausted drops off the shortlist entirely, and when
+every god has given all they have the altar says so rather than taking the coin. The
+gold is only deducted once there is something to hand over.
+
+The rosters live in `data.js` under `gods.<key>.boons` — arrays that had sat empty since
+the gods table was written. Kethara has 5, Maelon 6, Ourn 6, the Guild 5; The Label and
+the sealed Auvris have none yet and so never appear at the altar. Adding a boon to a
+god's array is all it takes to put it on sale, which is the point of keeping the mapping
+in data rather than in the engine.
+
+`offerBoons()` grew an optional pool argument to support this. Called bare — at a boss
+kill, at the start of a run — it draws from every boon you don't hold, exactly as
+before; the altar passes one god's roster so a paid offer stays inside the domain that
+was paid for.

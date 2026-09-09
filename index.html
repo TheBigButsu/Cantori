@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="icon" href="./icons/icon-192.png">
 
-  <link rel="stylesheet" href="./styles.css?v=133">
+  <link rel="stylesheet" href="./styles.css?v=134">
 </head>
 <body>
   <div id="app">
@@ -105,6 +105,9 @@
       <div class="shop-section">
         <div class="shop-label">For Sale — tap to buy</div>
         <div class="shop-stock" id="shopStock"></div>
+        <div class="inv-actions" style="justify-content:center;margin-top:8px">
+          <button id="shopReroll" type="button">Reroll the shelf</button>
+        </div>
       </div>
       <div class="shop-section">
         <div class="shop-label">Sell Your Gear — tap to sell</div>
@@ -119,6 +122,14 @@
       <div class="go-title">FOUNTAIN</div>
       <div class="go-sub" id="fountainSub"></div>
       <div class="inv-actions" id="fountainActions" style="justify-content:center;margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div id="altar" hidden>
+    <div class="boon-card">
+      <div class="boon-title">THE ALTAR</div>
+      <div class="boon-sub" id="altarSub"></div>
+      <div class="boon-choices" id="altarChoices"></div>
     </div>
   </div>
 
@@ -154,9 +165,9 @@
     </div>
   </div>
 
-  <script src="./data.js?v=133"></script>
-  <script src="./loot.js?v=133"></script>
-  <script src="./bosses.js?v=133"></script>
-  <script src="./game.js?v=133"></script>
+  <script src="./data.js?v=134"></script>
+  <script src="./loot.js?v=134"></script>
+  <script src="./bosses.js?v=134"></script>
+  <script src="./game.js?v=134"></script>
 </body>
 </html>
