@@ -222,8 +222,12 @@
   // Armour does not gate Evasion. Heavy pays for its mitigation by giving up AC
   // entirely, not by giving up the dodge as well — one price is a trade, two is a
   // trap for a build that chose Ourn's coin long before it knew what it would find.
+  // LCK buys dodge directly: one percentage point per point of modifier. It shares
+  // the one cap with everything else, so luck cannot stack past 50% either.
+  const EVA_PCT_PER_LCK_MOD = 1;
+  const luckDodge = () => Math.max(0, mod("LCK")) * EVA_PCT_PER_LCK_MOD / 100;
   const dodgeChance = () => Math.min(EVA_CAP,
-    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100);
+    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100 + luckDodge());
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -427,14 +431,37 @@
   // Guild's Blessing: White drop% falls by 1 per character level, redistributed
   // equally across Green/Blue/Purple (Gold untouched). Returns null (pure, unmodified
   // roll) unless the boon is owned — loot.js falls back to its default table then.
+  // LCK shaves the white slice and hands it to everything else IN PROPORTION to what
+  // each already had — so a lucky character does not suddenly see gold at green's
+  // rate, the whole table above white just scales up together. One percentage point
+  // of white per point of LCK modifier.
+  const LOOT_WHITE_PER_LCK_MOD = 0.01;
+  const luckWhiteCut = () => Math.max(0, mod("LCK")) * LOOT_WHITE_PER_LCK_MOD;
+  // Both rarity shapers in one place, because they compose: the Guild's Blessing
+  // spreads its share equally by design ("redistributed equally to Green/Blue/
+  // Purple" is what the boon card promises) while luck spreads proportionally, and
+  // applying them one after the other keeps each honest about what it said it does.
   function guildBlessingWeights() {
-    if (!(player.boons && player.boons.has("blessing"))) return null;
+    const hasBoon = !!(player.boons && player.boons.has("blessing"));
+    const cut = luckWhiteCut();
+    if (!hasBoon && cut <= 0) return null;         // pure roll — no override needed
     const w = {};
     for (const r of LOOT.rarities) w[r.key] = Math.max(0, r.chance);
-    const reduction = Math.min(w.white || 0, player.level / 100);
-    w.white = Math.max(0, (w.white || 0) - reduction);
-    const targets = ["green", "blue", "purple"].filter((k) => w[k] != null);
-    if (targets.length && reduction > 0) { const share = reduction / targets.length; for (const k of targets) w[k] = (w[k] || 0) + share; }
+    if (hasBoon) {
+      const reduction = Math.min(w.white || 0, player.level / 100);
+      w.white = Math.max(0, (w.white || 0) - reduction);
+      const targets = ["green", "blue", "purple"].filter((k) => w[k] != null);
+      if (targets.length && reduction > 0) { const share = reduction / targets.length; for (const k of targets) w[k] = (w[k] || 0) + share; }
+    }
+    if (cut > 0) {
+      const take = Math.min(w.white || 0, cut);
+      const rest = Object.keys(w).filter((k) => k !== "white");
+      let restTotal = 0; for (const k of rest) restTotal += w[k];
+      if (take > 0 && restTotal > 0) {
+        w.white -= take;
+        for (const k of rest) w[k] += take * (w[k] / restTotal);   // proportional, not equal
+      }
+    }
     return w;
   }
   // Guild's Refinement: doubles the max +X a drop can roll, and weights toward the
@@ -1291,8 +1318,22 @@
   // item landing on it) rather than the player stepping on it — location-based
   // traps (arrow, bomb) play out the same, but player-centric ones don't grab the
   // player when they're nowhere near.
+  // LCK talks you out of a trap: 2 percentage points per point of modifier. It only
+  // applies to a trap you stepped on yourself — a rune you sprang from a distance by
+  // throwing something at it was never going to catch you anyway.
+  const TRAP_SKIP_PER_LCK_MOD = 2;
+  const luckTrapSkip = () => Math.max(0, mod("LCK")) * TRAP_SKIP_PER_LCK_MOD / 100;
   function triggerTrap(t, remote) {
     t.revealed = true;
+    // Not sprung, so it is still live under your feet — but you can see it now, and
+    // walking off it is free. A near miss you get to notice, rather than a silent
+    // coin flip that leaves you none the wiser.
+    if (!remote && Math.random() < luckTrapSkip()) {
+      walkPath = [];
+      floatText(player.x, player.y, "lucky!", "#f0c14b");
+      log("Your foot finds the edge of a " + ((TRAPS[t.key] || {}).name || "trap") + " — it doesn't go off.", "hit");
+      return;
+    }
     // Whatever you were doing, stop doing it. A queued walk that carries on over a
     // sprung trap is the game taking the decision away at the exact moment there is
     // one to make: a bomb has just started a three-turn fuse and where you stand
@@ -2173,8 +2214,20 @@
     // The two GUARANTEED drops below still land — they are the biome's economy, not
     // clutter, and skipping them would quietly cost a Scroll of Upgrade whenever the
     // biome happened to pick its 5th floor.
-    let count = isBossDepth(depth) ? 0 : randInt(2, 4);
-    if (Math.random() < 0.10 * count) count += 1;     // ~+10% loot per floor
+    // Volume dial. The old floor averaged 3.3 drops split 18/62/20, which is 2.05
+    // gear and 0.66 consumables. The targets are gear ×1.15 and consumables ×1.25
+    // with gold left alone, and you cannot get there by moving the split — raising
+    // two shares has to come out of the third. So the COUNT goes up and the split
+    // is re-normalised around the new totals: 3.78 drops at 16/62/22 gives 2.34
+    // gear and 0.83 consumables, which is +15% and +26% with gold within 2%.
+    // Volume dial, set from measured floors rather than arithmetic — the old floor
+    // really averaged 2.22 gear and 0.92 consumables, which is not what the weights
+    // and the count multiply out to on paper. The targets are gear ×1.15 and
+    // consumables ×1.25 with gold left where it is, and you cannot get there by
+    // moving the split alone: raising two shares has to come out of the third. So
+    // the COUNT goes up ~15% and the split is re-normalised around the new totals.
+    let count = isBossDepth(depth) ? 0 : randInt(2, 5);
+    if (Math.random() < 0.125 * count) count += 1;    // and sometimes one more
     // Drop-type mix (gold / gear / consumable) is data-driven so it's tunable in
     // the editor. Default favours gear so weapons & armor aren't drowned out by potions.
     const dw = (LOOT.dropWeights || { gold: 20, gear: 55, consumable: 25 });
@@ -7833,7 +7886,7 @@
   function charStatsHTML() {
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
     const df = defRange(armorDefMin(), armorDefMax());
-    const effDesc = { STR: (strDmgLo() === strDmgHi() ? sgnNum(strDmgLo()) : sgnNum(strDmgLo()) + "–" + strDmgHi()) + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC() + (evasionPoints() > 0 ? " / dodge " + Math.round(dodgeChance() * 100) + "%" : ""), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" };
+    const effDesc = { STR: (strDmgLo() === strDmgHi() ? sgnNum(strDmgLo()) : sgnNum(strDmgLo()) + "–" + strDmgHi()) + " dmg", VIT: computeMaxHp() + " HP", DEX: "to-hit " + sgnNum(playerToHit()) + " / AC " + playerAC() + (dodgeChance() > 0 ? " / dodge " + Math.round(dodgeChance() * 100) + "%" : ""), INT: computeMaxMp() + " MP", RES: "-" + Math.round(resReduction() * 100) + "% dmg taken", LCK: Math.round(critChance() * 100) + "% crit" + (mod("LCK") > 0 ? " / +" + Math.round(luckDodge() * 100) + "% dodge / " + Math.round(luckTrapSkip() * 100) + "% trap dodge / better loot" : "") };
     // The modifier is what every formula actually reads, so it is what the screen
     // leads with — the raw score is shown beside it, not instead of it.
     const cells = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map((k) => {

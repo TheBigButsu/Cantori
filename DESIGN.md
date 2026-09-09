@@ -2662,3 +2662,68 @@ would identify the whole stack for free.
 Measured: armed and cancelled, it stays *Scroll titled "Hagalaz"*; spent on a weapon,
 it becomes **Scroll of Upgrade**, the weapon goes to +1, and the log reads *"It was a
 Scroll of Upgrade!"* — the same line every other consumable prints on first use.
+
+---
+
+## More loot, and LCK finally earns its slot
+
+### The drop rate went up, measured rather than calculated
+
+The split alone could not do it. `dropWeights` is a three-way share, so raising gear
+and consumables together has to come out of gold — and gold was meant to stay put. The
+per-floor **count** goes up instead, and the split is re-normalised around the new
+totals.
+
+The first attempt derived the target from the config on paper and was simply wrong: the
+old floor was supposed to average 2.05 gear and 0.66 consumables, and actually averaged
+**2.22 and 0.92**. Everything below is measured over generated floors instead.
+
+| per floor | before | after | asked for |
+|---|---|---|---|
+| gear | 2.22 | **2.54** | ×1.15 → ×**1.145** |
+| consumables | 0.92 | **1.20** | ×1.25 → ×**1.31** |
+| gold | 0.56 | **0.54** | unchanged → ×**0.96** |
+
+Count is now `randInt(2, 5)` with a `0.125 × count` chance of one more; weights are
+14 / 60 / 26. Consumables land a little generous — run-to-run variation is around **±4%
+even across 700 floors**, which is the same order as the precision being asked for, so
+chasing the last few points would be fitting noise. Worth knowing before anyone tunes
+this again: measure it, don't derive it.
+
+### LCK now does four things
+
+It was a crit stat and nothing else. Each is driven off the ability modifier, so the
+numbers below are per point of *modifier*, not per point of score.
+
+| | rate | measured |
+|---|---|---|
+| Crit | +2 pp | unchanged |
+| **Evasion** | +1 pp of dodge | modifiers 1/3/5/10 → exactly 1% / 3% / 5% / 10% |
+| **Loot** | white −1 pp, redistributed **proportionally** | white 50.4 → 44.0 → 39.8% at modifiers 0/5/10 |
+| **Traps** | ×2 pp chance it doesn't go off | 0% / 9% / 20.8% / 31.2% at modifiers 0/5/10/15 |
+
+**Evasion** shares the one 50% cap, so luck cannot stack past it either.
+
+**Loot** redistributes *in proportion to what each rarity already had*, not equally — a
+lucky character does not suddenly see gold at green's rate; the whole table above white
+scales up together. Green went 33 → 37 → 40 while purple went 4.7 → 5.2 → 5.8. It
+composes with the Guild's Blessing, which keeps spreading its own share **equally**,
+because that is what the boon card promises.
+
+**Traps** reveal but do not spring: the thing is still live under your feet, you can now
+see it, and walking off is free. A near miss you get to notice rather than a silent coin
+flip. It does not apply to a trap sprung remotely by throwing something at it — that was
+never going to catch you.
+
+The character screen said `LCK — 11% crit` and left the other three invisible; it now
+names all four. DEX's line also only offered a dodge figure when `evasionPoints() > 0`,
+which stopped being the right question the moment luck could buy dodge on its own.
+
+### A measurement note
+
+The trap effect first read as **0% at every luck value**. The cause was the probe, not
+the game: it scraped the message log by a running index, and the log panel only retains
+its last few lines, so every read after the first came back empty and scored as "the
+trap fired". Reading the trap's own `sprung` flag gave the numbers above immediately.
+That is three separate times this session that log-scraping or a stale copy has produced
+a confident wrong answer — prefer engine state to rendered text.

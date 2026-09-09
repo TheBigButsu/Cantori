@@ -1058,9 +1058,9 @@ window.CANTORI_DATA = {
     ],
     "purpleSecondStatChance": 0.75,
     "dropWeights": {
-      "gold": 18,
-      "gear": 62,
-      "consumable": 20
+      "gold": 14,
+      "gear": 60,
+      "consumable": 26
     },
     "categoryWeights": {
       "weapon": 45,
