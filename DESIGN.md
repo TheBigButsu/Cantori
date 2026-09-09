@@ -2238,3 +2238,57 @@ Both are the same shape as the `setStat` one — the instrument, not the mechani
   tear and made `burstMp` read as zero. Measure mana on a slow-regen character.
 - **A kill grants XP**, and a level-up raises `maxMp` mid-action. Any before/after read
   across a kill has to discard samples where `level` or `maxMp` moved.
+
+---
+
+## The death burst joins the ladder, and the ladder grows a second axis
+
+A burst should roll to hit, be dodgeable, and be resisted by RES — but armour should
+be no help at all. You can be *clear* of a body coming apart; you cannot *plate* your
+way out of standing next to one.
+
+The ladder as first written could not say that. Armour was welded to the entry rung:
+"enter below evasion" implied "and skip armour", which covered a burn tick and nothing
+else. So the model gained the axis it was actually missing — **where a source enters,
+and whether armour answers, are separate questions and are now separate arguments.**
+
+`DMG_TICK` is gone as a rung; there are three entry points and a `noArmor` flag:
+
+| Source | Enters at | Armour |
+|---|---|---|
+| Melee, ranged, charge | 1 to-hit | yes |
+| Boss telegraphs | 1 to-hit | yes |
+| **Death burst** | **1 to-hit** | **no** |
+| Traps | 2 evade | yes |
+| Burn / poison ticks | 3 reduce | no |
+
+Measured on the ladder directly, 4,000 samples a case, a 20-damage figure at `toHit 3`
+against AC 10–11 with rusted mail (1–5) worn:
+
+| | burst (no armour) | an ordinary blow |
+|---|---|---|
+| RES 0, no armour | 20.00 | 20.00 |
+| RES 0, **mail on** | **20.00** | 17.01 |
+| RES 50%, mail on | **10.00** | 7.02 |
+
+Armour changes the burst by nothing and the blow by mail's average 3. RES halves both.
+Hit rates track each other at 65–70%, so AC and evasion answer a burst exactly as they
+answer a bite.
+
+### Turned aside means turned aside
+
+The follow-on effects are all shares of the damage that victim took, so a burst that
+misses or is dodged now applies **no burn, no poison, no mana tear — and no stun
+either**, which is the one that needed saying: the stun rolls independently of the
+damage, so without the gate a dodged blast would still have frozen you. Confirmed live:
+a blast that went wide left poison, burn, stun and MP all untouched.
+
+Monsters caught in a burst are unchanged — they take it raw, as they always did. The
+ladder is a player-side thing.
+
+### Sampling note
+
+The live end-to-end runs are thin — two or three blasts a run, because the
+spawn-adjacent-and-kill harness fails more often than it fires. The unit-level numbers
+above are exact and come from the single shared function every one of these call sites
+uses, so the behaviour is not in doubt; the field data is corroboration, not the proof.

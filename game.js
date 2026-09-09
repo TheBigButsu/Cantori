@@ -2759,14 +2759,14 @@
       // A tick enters the ladder at the bottom rung: RES resists it, armour
       // cannot — it is already inside you. The stored b.dmg keeps decaying at its
       // own rate, so RES softens each tick without changing the burn's shape.
-      const took = mitigateDamage(b.dmg, DMG_TICK);
+      const took = mitigateDamage(b.dmg, { noArmor: true });
       player.hp -= took; flash(player); floatText(player.x, player.y, "🔥-" + took, "#ff8f4a");
       b.dmg = Math.max(1, b.dmg - 1);
       if (--b.rounds <= 0) { player.burn = null; log("The flames on you gutter out."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
     }
     if (player.poison > 0) {
-      const pt = mitigateDamage(player.poison, DMG_TICK);
+      const pt = mitigateDamage(player.poison, { noArmor: true });
       player.hp -= pt; flash(player); floatText(player.x, player.y, "☠-" + pt, "#9ad06a");
       if (--player.poison <= 0) { player.poison = 0; log("The poison works itself out of you."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
@@ -2812,18 +2812,31 @@
     // The player first: a burst that kills you should not be adjudicated after the
     // monsters it also killed have finished dying.
     if (cheb(src.x, src.y, player.x, player.y) <= r) {
-      const dmg = randInt(1, Math.max(1, top));
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-      log("The blast catches you. (-" + dmg + ")", "hurt");
-      burnPlayer(share(dmg, src.burstBurn));
-      poisonPlayer(share(dmg, src.burstPoison));
-      const mp = share(dmg, src.burstMp);
-      if (mp > 0 && player.mp > 0) {
-        const lost = Math.min(player.mp, mp);
-        player.mp -= lost; floatText(player.x, player.y, "-" + lost + " MP", "#7ea8e0");
+      // The burst climbs the ladder from the top, but armour sits it out: the blast
+      // is aimed (there is a body coming apart at a known tile) and you can be clear
+      // of it, so AC and evasion both answer — but plate is no answer to standing
+      // next to it, and RES is what a burst is resisted with.
+      const dmg = incomingDamage(randInt(1, Math.max(1, top)), DMG_TOHIT, {
+        acc: src.toHit,
+        noArmor: true,
+        missMsg: "The " + monName(src) + "'s blast goes wide of you.",
+        dodgeMsg: "You are already moving when the " + monName(src) + " comes apart.",
+      });
+      // Turned aside means turned aside: no burn, no poison, no mana torn off and no
+      // stun either. Every one of those is a share of a blow that did not land.
+      if (dmg > 0) {
+        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+        log("The blast catches you. (-" + dmg + ")", "hurt");
+        burnPlayer(share(dmg, src.burstBurn));
+        poisonPlayer(share(dmg, src.burstPoison));
+        const mp = share(dmg, src.burstMp);
+        if (mp > 0 && player.mp > 0) {
+          const lost = Math.min(player.mp, mp);
+          player.mp -= lost; floatText(player.x, player.y, "-" + lost + " MP", "#7ea8e0");
+        }
+        const st = randInt(Number(src.burstStunMin) || 0, Number(src.burstStunMax) || 0);
+        if (st > 0) { player.stun = (player.stun || 0) + st; floatText(player.x, player.y, "stunned", "#e0a848"); }
       }
-      const st = randInt(Number(src.burstStunMin) || 0, Number(src.burstStunMax) || 0);
-      if (st > 0) { player.stun = (player.stun || 0) + st; floatText(player.x, player.y, "stunned", "#e0a848"); }
       updateHUD();
       if (player.hp <= 0) { bursting = false; die(); return; }
     }
@@ -2855,30 +2868,42 @@
   //   3 reduce    RES, the only percentage cut in the game
   //   4 mitigate  armour and every other flat soak, floored at 1
   //
-  // What a source of damage chooses is not which rungs to use but where it
-  // ENTERS: from there it runs every remaining rung. A monster's blow enters at
-  // 1. A trap enters at 2 — nothing about a pressure plate can be parried, but
-  // you can throw yourself clear of it and a breastplate still catches the arrow.
-  // A burn or poison tick enters at 4 and is the one thing that skips armour,
-  // because it is already inside you: nothing left to dodge, and no plate between
-  // it and your blood.
+  // A source of damage answers two questions: where it ENTERS (from there it runs
+  // every remaining rung), and whether armour answers at all.
+  //
+  //   monster blow, boss telegraph   enter at 1, armour answers
+  //   trap                           enter at 2, armour answers — nothing about a
+  //                                  pressure plate can be parried, but you can
+  //                                  throw yourself clear and a breastplate still
+  //                                  catches the arrow
+  //   death burst                    enter at 1, armour SITS OUT — it is aimed, and
+  //                                  you can be clear of it, but plate is no answer
+  //                                  to being stood next to something coming apart
+  //   burn / poison tick             enter at 3, armour sits out — already inside
+  //                                  you: nothing to dodge, no plate in the way
   //
   // A boss's telegraphed move enters at 1 like anything else unless its playbook
   // says otherwise. A line you are standing in the middle of is still a blow that
   // has to land, and before this every one of them ignored the whole ladder — 20
   // to 60 raw from a ground slam meant defensive investment had no say in exactly
   // the fight the player most wanted it to.
-  const DMG_TOHIT = 1, DMG_EVADE = 2, DMG_REDUCE = 3, DMG_TICK = 4;
-  // Rungs 3 and 4 — what actually reaches your HP once the rolls are past.
-  function mitigateDamage(dmg, rung) {
+  // Three entry rungs, and one flag for the fourth. Armour used to be welded to the
+  // rung — "enter below evasion" implied "and skip armour" — which was fine until a
+  // death burst needed to roll to hit, be dodgeable, be resisted, and STILL ignore
+  // plate. Where you enter and whether armour answers are genuinely separate
+  // questions, so they are separate arguments.
+  const DMG_TOHIT = 1, DMG_EVADE = 2, DMG_REDUCE = 3;
+  // Rung 3, then rung 4 unless the source says armour sits this one out.
+  function mitigateDamage(dmg, o) {
+    o = o || {};
     dmg = Math.round(dmg * (1 - resReduction()));
-    if (rung < DMG_TICK) dmg -= armorBlock();
+    if (!o.noArmor) dmg -= armorBlock();
     return Math.max(1, dmg);
   }
-  // The whole ladder from `rung` down. `o.acc` is the attacker's to-hit, needed
-  // only at rung 1. Returns the damage that lands, or 0 for a blow turned aside —
-  // the caller narrates the hit, this narrates the misses, so an arrow trap and a
-  // wolf can miss in their own words.
+  // The whole ladder from `rung` down. `o.acc` is the attacker's to-hit, needed only
+  // at rung 1; `o.noArmor` drops rung 4. Returns the damage that lands, or 0 for a
+  // blow turned aside — the caller narrates the hit, this narrates the misses, so an
+  // arrow trap and a wolf can miss in their own words.
   function incomingDamage(dmg, rung, o) {
     o = o || {};
     if (rung <= DMG_TOHIT && !rollHit(o.acc != null ? o.acc : MON_TOHIT, playerAC())) {
@@ -2891,7 +2916,7 @@
       if (o.dodgeMsg) log(o.dodgeMsg, "hit");
       return 0;
     }
-    return mitigateDamage(dmg, rung);
+    return mitigateDamage(dmg, o);
   }
 
   // ---- Combat: strikes, kills, and what a kill pays ------------------------
@@ -5263,7 +5288,7 @@
     // The incoming-damage ladder, so a boss's telegraphed move resolves the same
     // way a wolf's bite does. A playbook that wants a move to land regardless
     // passes DMG.REDUCE (or REDUCE/TICK) instead of DMG.TOHIT and says why.
-    incomingDamage, DMG: { TOHIT: DMG_TOHIT, EVADE: DMG_EVADE, REDUCE: DMG_REDUCE, TICK: DMG_TICK },
+    incomingDamage, DMG: { TOHIT: DMG_TOHIT, EVADE: DMG_EVADE, REDUCE: DMG_REDUCE },
   });
 
   // ---- Draw: dungeon view --------------------------------------------------
@@ -8041,8 +8066,8 @@
     // 2 evade, 3 RES + armour, 4 RES only — with `acc` as the attacker's
     // accuracy. This is the same call every boss telegraph, trap and tick makes,
     // so a measurement of it is a measurement of them.
-    ladder: (dmg, rung, acc) => incomingDamage(dmg, rung, { acc }),
-    DMG_RUNGS: () => ({ toHit: DMG_TOHIT, evade: DMG_EVADE, reduce: DMG_REDUCE, tick: DMG_TICK }),
+    ladder: (dmg, rung, acc, noArmor) => incomingDamage(dmg, rung, { acc, noArmor: !!noArmor }),
+    DMG_RUNGS: () => ({ toHit: DMG_TOHIT, evade: DMG_EVADE, reduce: DMG_REDUCE }),
     useIdx: (i) => actItem(i),
     equip: (i) => equipItem(i),
     upgradePending: () => pendingUpgrade,
