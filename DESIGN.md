@@ -2411,3 +2411,254 @@ silently does nothing for the first thirty hits.
 pick — including the one at boot. The whole first measurement run was against a
 character that had silently stayed a warrior. Neither suite caught it, because both
 drive the game through paths that survive a failed class application.
+
+---
+
+## Water stopped being a wall for the purposes of turning a corner
+
+A snake sat motionless in a pond's corner and would not move. Monsters have always
+moved on all eight directions — the block was the **corner rule** in `canStep`, which
+refused a diagonal whenever both orthogonal flanks were impassable *to that mover*.
+Deep water counted, so a pond flanked like masonry.
+
+Measured over 600 generated floors and 4,680 monsters, that sealed roughly **1 monster
+in 4,700** — and the shape is unmistakable once you see it: a bear on **dry floor**,
+wall to the west, water north, east and south. Its only two exits were the north-west
+and south-west diagonals, and each was refused for being flanked by the wall *and* a
+water tile. Nothing repairs that afterwards: `fixOpenCorners()` only sweeps wall/floor
+touches, and water is not `solid`, so it is invisible to the one pass that exists to
+prevent exactly this geometry.
+
+It bound the **player** too — `playerAct` and auto-travel both ask `canStep` — so the
+same pond could have walled a run into a corner it could not walk out of.
+
+The rule now asks whether a flank is a *real barrier*: `solid` (wall, tree) or a
+shunned hazard (thorn, chasm). Water blocks you **entering** it, never rounding it.
+
+| Flanks | Before | Now |
+|---|---|---|
+| wall + wall | blocked | blocked |
+| thorn + thorn | blocked | blocked |
+| wall + thorn | blocked | blocked |
+| **wall + water** | **blocked** | **allowed** |
+| **water + water** | **blocked** | **allowed** |
+
+What that gives up, deliberately: a walker may now cut the corner between two ponds
+rather than walking the shore. That is a one-tile shortcut at the water's edge, and it
+was never worth a creature frozen in place — water was never meant to be a wall, which
+is what the TILE table already says by pointedly not marking it `solid`.
+
+### And one that no diagonal could have fixed
+
+The same probe turned up a second, rarer case: a bat on a **one-tile island** — water
+on seven sides, wall on the eighth. There is genuinely nowhere to step. It could never
+move, never be reached and never be fought, while still counting on the floor's enemy
+tally, which reads as a monster you cannot find.
+
+`paintTerrain`'s connectivity vetting is about **rooms** and the way onward, so a single
+stranded tile *inside* a room survives it. Rather than teach the painter about islands,
+the spawner now refuses them: an initial spawn must sit inside `floodReach` from where
+the player is standing, which is already computed from the player's own start tile a few
+lines earlier.
+
+After both: **600 floors, 4,680 monsters, zero sealed** — against 1 sealed and 1 island
+on the same measurement before. `canStepAt` joins the dev surface so a test can ask the
+engine what it permits instead of reimplementing the rule and then measuring its own
+copy — which is how the first pass at this nearly reported a fix that had not happened.
+
+---
+
+## A sprung trap stops you walking
+
+Auto-travel was never cancelled when you stepped on a trap. You would arm a bomb's
+three-turn fuse and keep strolling — the game taking the decision away at the exact
+moment there is one to make, because *where you are standing when it blows* is the
+whole mechanic.
+
+It is cancelled at `triggerTrap` itself rather than at the one call site that walks
+you onto one, so every trap covers it: an arrow that just hurt you, and a teleport
+rune that just moved you somewhere the rest of the path was never computed from. A
+trap sprung **remotely** — by throwing something at it from a distance — cancels
+nothing, because that is a deliberate act, not an interruption. The bomb's actual
+detonation clears the path again, in case you had started walking in the meantime.
+
+Measured: a normal walk queues 38 steps and keeps going; a bomb springing underfoot
+takes 21 queued steps to **0**, an arrow trap 41 to **0**.
+
+## The forest was a hall, not a hub
+
+The floor was a tree. Between any two points there was exactly one route, so there
+was never a choice about how to get anywhere — which is the thing that makes a floor
+feel like a corridor with rooms bolted on.
+
+There *was* an extra-loop pass, and it did nothing. It rolled 15% per room and then
+joined that room to its **nearest** neighbour — but both the flush-attach pass and the
+spanning tree already prefer the nearest room, so the "extra loop" was almost always a
+room it was joined to already. It carved the same route twice.
+
+Measured over 40 forest floors, by the share of corridor tiles that are **cut
+vertices** (a tile where being blocked cuts part of the floor off — a chokepoint with
+no way round): **84.8%**, with 35 of 40 floors above 85% and not one floor below 50%.
+
+The pass now requires a partner the room is **not** already joined to, picking the
+nearest such room so the corridor stays short. The graph is fully connected by that
+point, so every edge added closes a real cycle by construction. How many is a new
+`loopPct` knob in each biome's `layout` block.
+
+| loopPct | corridor chokepoints | floors reading as a hall (≥85%) | floors with real freedom (<50%) |
+|---|---|---|---|
+| 0 | 90.6% | 35 / 40 | 0 |
+| 30 | 62.2% | 4 | 10 |
+| **60** | **60.2%** | **2** | **14** |
+| 80 | 58.5% | 1 | 12 |
+
+Nearly all the gain is bought by the first thirty. Past that, each new corridor brings
+its own spur tiles — which are themselves chokepoints — so the ratio plateaus while the
+floor keeps sprawling. **60** is the shipped default: the hub-with-spokes shape becomes
+the norm, and the occasional single-path floor survives, which is the point. Those are
+good; they just should not be every floor.
+
+`loopPct` lives in `LAYOUT_DEFAULT`, so it reaches every biome including the crypt,
+whose authored `layout` sets `attachPct: 0` and a long `hallLegMax` for a deliberately
+corridor-heavy feel. If that biome wants to stay maze-like, one field on its layout
+block dials it back.
+
+---
+
+## The way out now leads out
+
+A stone arch stood in the middle of a forest clearing with explored ground on both
+sides of it. It read as scenery, and it was a dozen steps from where the run started.
+
+The first thing to check was the obvious suspect — that the exit had stopped being
+embedded in a wall, perhaps because the new `loopPct` corridors were carving through
+room rings. It had not: measured across 160 floors, 80 with the extra corridors and 80
+without, the exit was on a room's wall every single time, with one open side on 149 of
+them. That part of the rule was working exactly as written and the corridor change made
+no difference to it.
+
+What the rule never asked was **which side the wall opened onto**. A wall tile between
+two rooms is still a wall tile, so the stairs could legitimately land in a partition
+halfway across the level — a door between two rooms rather than a way out of the place.
+
+Two conditions decide it now:
+
+1. **Rock behind it.** Walking outward from the room, the next 4 tiles must be solid,
+   with the map boundary counting as solid. That is what separates an exit *from* the
+   level from a door *within* it.
+2. **Far from the start**, by walking distance rather than a straight line, so the
+   floor has to be crossed to reach it.
+
+The doorway shape — a wall tile flanked by wall on both sides — is kept as the
+first-choice pass, with three progressively looser passes behind it so a cramped floor
+still gets stairs rather than none. The old last-resort that dropped the stairs in a
+room's *centre* is still there and still never fires.
+
+Measured over 120 floors afterwards:
+
+| | before | after |
+|---|---|---|
+| exactly one open side | 149/160 | **120/120** |
+| opens onto ≥4 tiles of rock | not asked | **120/120** |
+| in the far half of the floor | not asked | **120/120** |
+| floating inside a room | 0 | 0 |
+
+### Why it is not simply the furthest tile
+
+The first version took the maximum walking distance outright, and that put the stairs at
+**96% of the floor's maximum on 117 floors out of 120** — which is its own kind of
+predictable. Every floor became "head for the far corner". It now rolls at random among
+everything in the far quarter, which keeps the average at 90% of maximum and all 120
+floors in the far half, without the way out being in the same place every time.
+
+**Boss floors are untouched.** There the exit opens on the boss room's wall nearest to
+where the boss fell, because the point is that killing the thing opens the way — not
+that you then go looking for it.
+
+---
+
+## The pack's detail line said `spd` twice
+
+`dmg 3–8 · spd 0.8 · spd 0.8, to hit −2, +1 RES`
+
+Two functions each thought they owned the weapon's intrinsic numbers.
+`detailHeaderHTML` printed `dmg … · spd …` itself, then appended `itemAffixText()`,
+which leads with the same speed for weapons. To-hit only ever appeared in the second
+copy, where it sat in the affix list and so read as something the item had *rolled*
+rather than what the weapon simply is.
+
+`itemAffixText(inst, skipBase)` now takes a flag. The detail header prints the whole
+intrinsic set — damage, speed, to-hit — and passes `skipBase: true`, so the affix list
+carries only what the roll added. Everywhere else it is called (the equipped-slot
+cards) that text is the only text there is, so it keeps them.
+
+`dmg 3–8 · spd 0.8 · to hit −2 · +1 RES`
+
+The unidentified branch is untouched and mutually exclusive with the affix one, so an
+unknown hatchet still reads `dmg 3–8 · spd 0.8 · to hit −2 · unidentified (0%)` — the
+base row's numbers belong to the item type rather than to the roll, which is why they
+show before you have identified anything.
+
+## The patience clock only runs when the chase is going nowhere
+
+A bat kept not following the player into a bush. It turned out not to be about
+bushes being unwalkable — monsters enter them fine, and when the bat was directly
+behind the player it followed straight through and attacked. The failure needed
+distance to show up:
+
+```
+step1  player enters the bush     bat 4 tiles back, hunting
+step2  player exits; bush closes behind
+step4  bat -> WANDERING, aware false      <- gave up mid-chase
+wait1  bat reaches the bush -> hunting again
+```
+
+It never refused the bush. It **gave up before reaching it**. `HUNT_PATIENCE` — cut
+from 10 to 2 earlier to make breaking line of sight a real ambush tactic — started
+burning the instant sight broke. In a forest every room mouth holds a bush, bushes
+block sight, and they close behind whoever walked through. So walking from one room to
+the next broke the chase, and ordinary movement was springing the ambush by accident.
+
+The clock now runs only while the chase is going **nowhere**: the monster has reached
+the end of the trail and still cannot see you, or it could not move at all this turn
+(jammed against something it will not cross — the case the old early give-up existed to
+catch). While it still has ground to cover toward where it last saw you, it is chasing,
+and chasing is not giving up.
+
+The ambush never depended on the monster losing you *instantly*. It depends on the
+monster walking to where you **were** while you are somewhere else — it just has to get
+there first now.
+
+| | before | after |
+|---|---|---|
+| chases surviving a bush | 1 / 5 | **5 / 5** |
+| monsters forgetting a vanished player | — | **8 / 8, in 1–2 turns** |
+
+### Two measurement traps, both mine
+
+The first probe teleported the player with `place()` instead of walking, so the bat
+looked frozen on the bush when it had actually closed to melee and was attacking. The
+second put the player *adjacent* to the monster while "fleeing", so it took the
+`d === 1 -> attack` branch every turn and never reached the trail logic under test at
+all — reading as "the ambush is broken" when nothing was. Both times the instrument was
+wrong, not the game. Stepping deliberately **away** from the monster, and reading its
+trail target and blind counter rather than only its position, is what finally measured
+the thing itself.
+
+## The Scroll of Upgrade never learned its own name
+
+Use one and the next copy in the pack still read *Scroll titled "Hagalaz"*.
+
+It was the only consumable in the game that never identified itself, and for a
+structural reason: `actItem` routes an upgrade scroll to `beginUpgrade()` rather than
+`useConsumable()`, because it has to ask which item to spend itself on first — and
+`identified.add(it.key)` lives in `useConsumable`. Every other potion and scroll passes
+through that one line. This one never did.
+
+It is identified when it is **spent**, in `confirmUpgrade`, rather than when it is
+armed. Arming is cancellable, so a scroll you could name by arming it and backing out
+would identify the whole stack for free.
+
+Measured: armed and cancelled, it stays *Scroll titled "Hagalaz"*; spent on a weapon,
+it becomes **Scroll of Upgrade**, the weapon goes to +1, and the log reads *"It was a
+Scroll of Upgrade!"* — the same line every other consumable prints on first use.

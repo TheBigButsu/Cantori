@@ -747,11 +747,15 @@
     const p = dispPlus(inst) > 0 ? "+" + dispPlus(inst) + " " : "";
     return p + GEAR[inst.key].name;
   }
-  function itemAffixText(inst) {
+  // `skipBase` drops the intrinsic weapon numbers (speed, to-hit). The pack's detail
+  // header prints those itself, alongside the damage range, and without this it got
+  // them twice: "dmg 3–8 · spd 0.8 · spd 0.8, to hit −2". Everywhere else — the
+  // equipped-slot cards — this is the only text there is, so it keeps them.
+  function itemAffixText(inst, skipBase) {
     if (!isGear(inst)) return "";
     const parts = [];
     const g = GEAR[inst.key];
-    if (g.cat === "weapon") {   // base weapon feel is intrinsic — always shown
+    if (g.cat === "weapon" && !skipBase) {   // base weapon feel is intrinsic — always shown
       if (g.speed != null && g.speed !== 1) parts.push("spd " + g.speed);
       // `accuracy` has not existed on a gear row since the d20 migration; this
       // read silently showed nothing for every weapon, including the ones whose
@@ -995,6 +999,12 @@
     const cen = rooms.map(roomCenter);
     const manh = (a, b) => Math.abs(cen[a].x - cen[b].x) + Math.abs(cen[a].y - cen[b].y);
     const comps = () => new Set(rooms.map((_, i) => find(i))).size;
+    // Which room pairs already have a way between them WITHOUT going round. The
+    // loop pass below needs this: an extra corridor between two rooms that are
+    // already joined is not a second route, it is the same route drawn twice.
+    const edgeKey = (a, b) => (a < b ? a + ":" + b : b + ":" + a);
+    const linked = new Set();
+    for (const [ai, bi] of (attachEdges || [])) linked.add(edgeKey(ai, bi));
     let guard = 0;
     while (comps() > 1 && guard++ < 200) {           // join nearest rooms across components
       let best = null;
@@ -1005,14 +1015,37 @@
       }
       if (!best) break;
       carveCorridor(cen[best.a], cen[best.b]); union(best.a, best.b);
+      linked.add(edgeKey(best.a, best.b));
     }
-    // A few extra loops for alternate routes — kept sparse so hallways don't pile
-    // up on each other into a wide blob where several rooms cluster together.
-    for (let a = 0; a < rooms.length; a++) {
-      if (Math.random() > 0.15) continue;
+    // Extra corridors that genuinely add a SECOND way round.
+    //
+    // This used to roll 15% per room and then join that room to its NEAREST
+    // neighbour — which, because both the flush-attach pass and the spanning tree
+    // above already prefer the nearest room, was almost always a room it was
+    // joined to already. So the "loops" re-carved existing links and the floor
+    // stayed a tree: measured across 40 forest floors, 85% of all corridor tiles
+    // were cut vertices, meaning a corridor you could be blocked in with no way
+    // round. Half the floors were above 88%. That is the "it's a hall, not a hub"
+    // feeling — there was only ever one route, so there was never a choice.
+    //
+    // Now the partner must be a room this one is NOT already joined to, and the
+    // nearest such room is picked so the new corridor stays short. The graph is
+    // already fully connected by this point, so every edge added here closes a
+    // real cycle by construction.
+    const L = layoutOf();
+    const wanted = Math.round(rooms.length * (L.loopPct || 0) / 100);
+    for (let i = 0, tries = 0; i < wanted && tries < rooms.length * 6; tries++) {
+      const a = randInt(0, rooms.length - 1);
       let nb = -1, nd = Infinity;
-      for (let b = 0; b < rooms.length; b++) { if (b === a) continue; const d = manh(a, b); if (d < nd) { nd = d; nb = b; } }
-      if (nb >= 0) carveCorridor(cen[a], cen[nb]);
+      for (let b = 0; b < rooms.length; b++) {
+        if (b === a || linked.has(edgeKey(a, b))) continue;
+        const d = manh(a, b);
+        if (d < nd) { nd = d; nb = b; }
+      }
+      if (nb < 0) continue;
+      carveCorridor(cen[a], cen[nb]);
+      linked.add(edgeKey(a, nb));
+      i++;
     }
   }
   // Post-connection cleanup: where several rooms cluster close together, their
@@ -1171,7 +1204,22 @@
   // packing knobs — attachPct, attachCap, roomPad — matter as much as the sizes.
   // Together they take the used extent from 36² to 29² and the walk to the stairs
   // from 30 steps to 24, which is what "the floor feels empty" was actually about.
-  const LAYOUT_DEFAULT = { roomSideMin: 2, roomSideMax: 7, roomAreaMax: 36, attachPct: 85, attachCap: 90, roomPad: 2, hallLegMax: 6, roomTarget: 180, sarcophagusPct: 0 };
+  // loopPct: extra corridors as a % of the room count, each joining two rooms that
+  // are NOT already joined — so each one closes a real cycle and buys the player a
+  // second way round. 0 leaves the floor a pure tree (one route everywhere).
+  //
+  // 60 was measured, not guessed. Sweeping it over 40 forest floors apiece, by the
+  // share of corridor tiles that are cut vertices (a spot you can be blocked in
+  // with no way round) and by how many floors read as a pure hall (>=85%):
+  //     0 -> 90.6% chokepoints, 35 of 40 floors a hall, none with real freedom
+  //    30 -> 62.2%,  4 halls, 10 free
+  //    60 -> 60.2%,  2 halls, 14 free
+  //    80 -> 58.5%,  1 hall,  12 free, and noticeably more corridor sprawl
+  // Nearly all the gain is bought by the first thirty; past that each new corridor
+  // brings its own spur tiles, which are themselves chokepoints, so the ratio
+  // plateaus. 60 keeps the occasional single-path floor — those are good, they just
+  // should not be every floor — while making the hub-with-spokes shape the norm.
+  const LAYOUT_DEFAULT = { roomSideMin: 2, roomSideMax: 7, roomAreaMax: 36, attachPct: 85, attachCap: 90, roomPad: 2, hallLegMax: 6, roomTarget: 180, sarcophagusPct: 0, loopPct: 60 };
   const layoutOf = (b) => Object.assign({}, LAYOUT_DEFAULT, (b || biome || {}).layout || {});
 
   const doorWord = () => (biome && biome.door === "bush" ? "bushes" : "door");
@@ -1245,6 +1293,14 @@
   // player when they're nowhere near.
   function triggerTrap(t, remote) {
     t.revealed = true;
+    // Whatever you were doing, stop doing it. A queued walk that carries on over a
+    // sprung trap is the game taking the decision away at the exact moment there is
+    // one to make: a bomb has just started a three-turn fuse and where you stand
+    // when it goes off is the entire mechanic, an arrow has just hurt you, and a
+    // teleport rune has moved you somewhere the rest of the path was never computed
+    // from. `remote` is a trap you sprang by throwing something at it from a
+    // distance, which is a deliberate act and not a reason to cancel anything.
+    if (!remote) walkPath = [];
     const def = TRAPS[t.key] || {};
     if (def.effect === "bomb") {                // arms a fuse instead of firing now
       t.sprung = true; t.armed = 3;             // explodes 3 of the player's turns later
@@ -1331,6 +1387,7 @@
       if (mm && mm.hp > 0) { mm.hp -= dmg; flash(mm); floatText(mm.x, mm.y, "-" + dmg, "#ff8f4a"); if (mm.hp <= 0) killMonster(mm, "is blown apart"); }
     }
     if (cheb(t.x, t.y, player.x, player.y) <= 1) {   // player caught in the 3×3
+      walkPath = [];                                 // caught in it — stop walking and look
       const took = incomingDamage(dmg, DMG_EVADE, { dodgeMsg: "You dive clear of the blast." });
       if (took > 0) {
         player.hp -= took; flash(player); floatText(player.x, player.y, "-" + took, "#ff8f84");
@@ -2163,6 +2220,13 @@
     if (Array.isArray(si)) { const i = floorInBiome(depth) - 1; count = si[i] != null ? si[i] : si[si.length - 1]; }
     else if (si != null) count = si;
     else count = Math.min(9, 3 + Math.floor(depth / 2));
+    // Everywhere a walker can get to from where the player is standing. A pool can
+    // leave a one-tile island of dry floor behind — measured: a bat on floor with
+    // water on seven sides and a wall on the eighth, which is a monster that can
+    // never move, never be reached, and never be fought, while still counting on
+    // the enemy tally. paintTerrain's connectivity vetting is about ROOMS and the
+    // way onward; a single stranded tile inside a room survives it.
+    const reachable = floodReach(player.x, player.y, false);
     // Put one monster somewhere inside `room`, if there is anywhere to put it.
     const placeIn = (room) => {
       for (let t = 0; t < 20; t++) {
@@ -2170,6 +2234,7 @@
         const y = randInt(room.y, room.y + room.h - 1);
         if (map[y][x] !== FLOOR) continue;
         if (x === player.x && y === player.y) continue;
+        if (!reachable.has(y * MAP_W + x)) continue;   // never strand one on an island
         if (monsterAt(x, y)) continue;
         const mk = pickMonster();
         if (!mk) return false;
@@ -2200,30 +2265,114 @@
   // tries every other room, closest-generated-to-`room` first, before ever
   // falling back to just standing it in the room's open center.
   const findStairs = () => { for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[y][x] === STAIRS) return { x, y }; return null; };
-  function placeExit(rooms, room) {
-    const flankedSpots = (r) => {
-      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL);
-      return ring.filter(([x, y]) => {
-        // North/south edge (y outside the room) → flank left/right; east/west edge → flank up/down.
-        const horiz = y < r.y || y >= r.y + r.h;
-        const [fax, fay] = horiz ? [x - 1, y] : [x, y - 1];
-        const [fbx, fby] = horiz ? [x + 1, y] : [x, y + 1];
-        return inBounds(fax, fay) && map[fay][fax] === WALL && inBounds(fbx, fby) && map[fby][fbx] === WALL;
-      });
-    };
-    const pick = (arr) => arr[randInt(0, arr.length - 1)];
-    // A spot is only usable if you can actually stand next to it. Since terrain is
-    // painted before this runs, a ring tile whose whole inward side is deep water
-    // would open onto a pond — carve the stairs somewhere you can walk to instead.
-    const standable = ([x, y]) => DIRS8.some(([dx, dy]) => passable(x + dx, y + dy));
-    const order = [room].concat(rooms.filter((r) => r !== room).slice().reverse());
-    for (const r of order) {
-      const flanked = flankedSpots(r).filter(standable);
-      if (flanked.length) { const [x, y] = pick(flanked); map[y][x] = STAIRS; return; }
+  // How deep the rock runs beyond a wall tile, walking outward. The map edge counts
+  // as rock: past the boundary really is nothing.
+  const EXIT_ROCK = 4;          // tiles of nothing behind the exit for it to read as "out"
+  function rockDepth(x, y, dx, dy) {
+    let n = 0;
+    for (let i = 1; i <= EXIT_ROCK; i++) {
+      const nx = x + dx * i, ny = y + dy * i;
+      if (!inBounds(nx, ny)) return EXIT_ROCK;   // the boundary itself: as outward as it gets
+      if (map[ny][nx] !== WALL) break;
+      n++;
     }
-    for (const r of order) {
-      const ring = roomRing(r).filter(([x, y]) => inBounds(x, y) && map[y][x] === WALL).filter(standable);
-      if (ring.length) { const [x, y] = pick(ring); map[y][x] = STAIRS; return; }
+    return n;
+  }
+  // The way onward. It has always been embedded in a room's wall rather than dropped
+  // on open floor, and that part was never the problem — measured across 160 floors it
+  // held every time. What it did NOT ask was which SIDE of the wall it opened onto, so
+  // the stairs could sit in a partition between two rooms halfway across the level: a
+  // stone arch standing in the middle of a forest, with explored ground on both sides
+  // of it. It read as scenery, and it was often a dozen steps from where you started.
+  //
+  // Two things decide it now, in order:
+  //   1. rock behind it — the tiles beyond, going outward from the room, must be
+  //      solid for EXIT_ROCK tiles (the map boundary counts). That is what makes it
+  //      an exit from the level rather than a door between two of its rooms.
+  //   2. distance from the player, by actual walking distance rather than a straight
+  //      line, so the way out is the far side of the floor and the floor has to be
+  //      crossed to reach it.
+  // The doorway look — a wall tile flanked by wall on both sides — is kept as the
+  // first-choice shape, with looser passes behind it so a cramped floor still gets
+  // stairs rather than none.
+  function placeExit(rooms, room) {
+    // One flood from the player, so every candidate can be scored without a fresh
+    // search each time. Distances are over ground you can actually walk.
+    const dist = new Map();
+    {
+      const q = [[player.x, player.y]];
+      dist.set(player.y * MAP_W + player.x, 0);
+      for (let h = 0; h < q.length; h++) {
+        const [cx, cy] = q[h], d = dist.get(cy * MAP_W + cx);
+        for (const [dx, dy] of DIRS8) {
+          const nx = cx + dx, ny = cy + dy;
+          if (!passable(nx, ny)) continue;
+          const k = ny * MAP_W + nx;
+          if (dist.has(k)) continue;
+          dist.set(k, d + 1); q.push([nx, ny]);
+        }
+      }
+    }
+    // Which way is "out" from this room for a tile on its ring.
+    const outward = (r, x, y) => {
+      if (y < r.y) return [0, -1];
+      if (y >= r.y + r.h) return [0, 1];
+      if (x < r.x) return [-1, 0];
+      if (x >= r.x + r.w) return [1, 0];
+      return null;
+    };
+    // A spot is only usable if you can stand next to it — and the tile you would
+    // stand on has to be one you can actually walk to, which is also where the
+    // distance score comes from. Terrain is painted before this runs, so a ring tile
+    // whose whole inward side is deep water would otherwise open onto a pond.
+    const reachFrom = ([x, y]) => {
+      let best = -1;
+      for (const [dx, dy] of DIRS8) {
+        const k = (y + dy) * MAP_W + (x + dx);
+        if (passable(x + dx, y + dy) && dist.has(k)) best = Math.max(best, dist.get(k));
+      }
+      return best;
+    };
+    const flanked = ([r, x, y]) => {
+      const horiz = y < r.y || y >= r.y + r.h;
+      const [fax, fay] = horiz ? [x - 1, y] : [x, y - 1];
+      const [fbx, fby] = horiz ? [x + 1, y] : [x, y + 1];
+      return inBounds(fax, fay) && map[fay][fax] === WALL && inBounds(fbx, fby) && map[fby][fbx] === WALL;
+    };
+    // Every wall tile on every room's ring, with its outward direction, how much rock
+    // lies behind it, and how far it is to walk to.
+    const cand = [];
+    for (const r of rooms) {
+      for (const [x, y] of roomRing(r)) {
+        if (!inBounds(x, y) || map[y][x] !== WALL) continue;
+        const out = outward(r, x, y); if (!out) continue;
+        const d = reachFrom([x, y]); if (d < 0) continue;   // nothing walkable beside it
+        cand.push({ x, y, r, rock: rockDepth(x, y, out[0], out[1]), dist: d, flank: flanked([r, x, y]) });
+      }
+    }
+    // Best shape first, then loosen: an outward-facing doorway, then any outward
+    // facing wall, then any wall at all. Within each pass, the furthest one to walk to.
+    const passes = [
+      (c) => c.flank && c.rock >= EXIT_ROCK,
+      (c) => c.rock >= EXIT_ROCK,
+      (c) => c.flank,
+      () => true,
+    ];
+    // Not the single furthest tile every time — that put the stairs at 96% of the
+    // maximum walking distance on 117 floors out of 120, which is its own kind of
+    // predictable: every floor becomes "head for the far corner". Take the far
+    // quarter of what qualifies and roll among those, so it is reliably a long way
+    // off without being the same long way off each time.
+    const EXIT_FAR_BAND = 0.75;
+    for (const ok of passes) {
+      const pool = cand.filter(ok);
+      if (!pool.length) continue;
+      let far = 0;
+      for (const c of pool) if (c.dist > far) far = c.dist;
+      const good = pool.filter((c) => c.dist >= far * EXIT_FAR_BAND);
+      const c = good[randInt(0, good.length - 1)];
+      map[c.y][c.x] = STAIRS;
+      return;
     }
     // Absolute last resort — every room's whole perimeter is shared (doors/attachments).
     map[Math.floor(room.y + room.h / 2)][Math.floor(room.x + room.w / 2)] = STAIRS;
@@ -3413,14 +3562,30 @@
   function canStep(x, y, dx, dy, mover) {
     const nx = x + dx, ny = y + dy;
     if (!passableFor(mover, nx, ny)) return false;
-    // no diagonal squeeze past a corner flanked by walls OR thorns — so a wall of
-    // brambles can't be slipped around diagonally without stepping through it. Water
-    // flanks the same way for whoever can't enter it: a walker can't cut the corner
-    // between two ponds, a flier doesn't notice them.
+    // No diagonal squeeze past a corner flanked on BOTH sides by a real barrier — a
+    // wall, a tree, or a hazard nothing will cross (thorns, a chasm). So a wall of
+    // brambles still cannot be slipped around without stepping through it.
+    //
+    // Deep water is deliberately NOT a barrier here, even though nothing on foot can
+    // enter it. It used to flank like one, and the cost was creatures sealed in place
+    // for good: measured over 200 generated floors, a bear stood on dry floor with a
+    // wall west of it and water north, east and south — its only two exits were the
+    // north-west and south-west diagonals, and each was refused because it was
+    // flanked by the wall AND a water tile. Nothing repairs that: fixOpenCorners()
+    // only sweeps wall/floor touches, and water is not solid, so it is invisible to
+    // the one pass that exists to prevent exactly this shape.
+    //
+    // It binds the PLAYER too — playerAct and auto-travel both ask canStep — so the
+    // same pond could wall a run into a corner it could not walk out of.
+    //
+    // What this gives up, deliberately: a walker may now cut the corner between two
+    // ponds rather than having to walk around the shore. That is a shortcut of one
+    // tile at the water's edge. Being frozen forever is not a trade worth keeping it
+    // for, and water was never meant to be a wall — see the TILE table, where it is
+    // pointedly not `solid`.
     if (dx !== 0 && dy !== 0) {
-      const blockA = !passableFor(mover, x + dx, y) || shuns(x + dx, y);
-      const blockB = !passableFor(mover, x, y + dy) || shuns(x, y + dy);
-      if (blockA && blockB) return false;
+      const barrier = (bx, by) => tileProp(bx, by, "solid") || shuns(bx, by);
+      if (barrier(x + dx, y) && barrier(x, y + dy)) return false;
     }
     return true;
   }
@@ -3999,7 +4164,7 @@
     // A Horror always knows. Breaking line of sight buys distance and a chance to
     // reach the stairs — it does not buy escape, which is the whole point of it.
     if (canSee(m) || m.horror) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
-    else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
+    else if (!m.target) { stopHunting(m); return; }
     // A decoy beside it is more interesting than you are. Only adjacency is checked:
     // an image that pulled monsters across the room would be a wall, not a feint.
     const near = nearestDecoy(m.x, m.y, 1);
@@ -4024,12 +4189,31 @@
       return;
     }
     if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }
-    if (!m.target) { stopHunting(m); return; }
 
-    // Out of sight: walk the trail. Arriving to an empty tile is not proof you
-    // vanished — hand off to WANDERING, which pokes around here before drifting.
-    if (m.x === m.target.x && m.y === m.target.y) { stopHunting(m); return; }
-    stepMonsterTo(m, m.target.x, m.target.y);
+    // Out of sight: walk the trail to where you were last seen.
+    //
+    // The patience clock used to start the moment sight broke, which read as a
+    // monster refusing to follow you. In a forest every room mouth holds a bush,
+    // bushes block sight and close behind whoever walked through — so simply
+    // walking from one room to the next broke the chase, and a bat four tiles back
+    // dropped to WANDERING before it ever reached the bush you went through.
+    // Ordinary movement was springing the ambush rule by accident.
+    //
+    // It now only burns while the chase is going NOWHERE: the monster has reached
+    // the end of the trail and still cannot see you, or it could not move at all
+    // this turn (jammed against something it will not cross — the case the old
+    // early give-up existed to catch). While it still has ground to cover toward
+    // where it last saw you, it is chasing, and chasing is not giving up.
+    //
+    // The ambush is intact, because it never depended on the monster losing you
+    // instantly: it depends on the monster walking to where you WERE while you are
+    // somewhere else. It just has to get there first now.
+    const wasX = m.x, wasY = m.y;
+    if (m.x !== m.target.x || m.y !== m.target.y) stepMonsterTo(m, m.target.x, m.target.y);
+    const arrived = m.x === m.target.x && m.y === m.target.y;
+    const stalled = m.x === wasX && m.y === wasY;
+    if (arrived || stalled) { if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; } }
+    else m.huntBlind = 0;
   }
   // Kept for the boss playbooks (bosses.js), which describe their turns in these
   // terms: "chase the trail" and "mill about". Both are the shared states.
@@ -6033,9 +6217,17 @@
     let sub;
     if (isGear(e)) {
       const cat = GEAR[e.key].cat;
-      sub = cat === "weapon" ? ("dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1)) : cat === "armor" ? ("def " + defRange(dDefMin(e), dDefMax(e))) : cat;
+      // The base row's own numbers first — they belong to the item type, not to the
+      // roll, so they show even while it is unidentified. To-hit joins them here
+      // rather than arriving later inside the affix list, where it read as an affix.
+      if (cat === "weapon") {
+        const th = GEAR[e.key].toHit;
+        sub = "dmg " + dDmgMin(e) + "–" + dDmgMax(e) + " · spd " + (GEAR[e.key].speed || 1) +
+          (th ? " · to hit " + (th > 0 ? "+" : "") + th : "");
+      } else if (cat === "armor") sub = "def " + defRange(dDefMin(e), dDefMax(e));
+      else sub = cat;
       if (!itemIdentified(e)) sub += " · unidentified (" + idPct(e) + "%)";
-      else { const aff = itemAffixText(e); if (aff && aff !== "unidentified") sub += " · " + aff; }
+      else { const aff = itemAffixText(e, true); if (aff && aff !== "unidentified") sub += " · " + aff; }
     } else {
       sub = identified.has(e.key) ? (def.cat || "item") : "unidentified " + (def.cat || "item");
       if ((e.count || 1) > 1) sub += " · ×" + e.count;
@@ -6135,6 +6327,18 @@
     target.plus = (target.plus || 0) + 1;
     const sIdx = player.inv.findIndex((i) => i.key === "scroll_upgrade");   // re-found by key: robust to any index drift
     if (sIdx >= 0) takeOne(sIdx);
+    // Every other consumable identifies itself in useConsumable(). This one never
+    // reaches that function — actItem routes an upgrade scroll to beginUpgrade()
+    // instead, because it has to ask for a target first — so it was the one thing
+    // in the game you could use and still not know what it was, leaving every other
+    // copy in the pack reading as an unknown rune.
+    //
+    // Identified HERE rather than when the scroll is armed: arming is cancellable,
+    // and a scroll you could name by arming it and backing out would identify the
+    // whole stack for free.
+    const wasUnidentified = !identified.has("scroll_upgrade");
+    identified.add("scroll_upgrade");
+    if (wasUnidentified) log("It was a " + ((CONSUM.scroll_upgrade || {}).name || "Scroll of Upgrade") + "!", "hit");
     log("The scroll's magic seeps into your " + itemName(target) + ". (+" + target.plus + ")", "hit");
     floatText(player.x, player.y, "+1", "#f0c14b");
     pendingUpgrade = false;
@@ -8171,7 +8375,11 @@
     // place — a pond between a monster and the player, a thorn wall across a
     // corridor. Recomputes FOV because changing a tile can change what is visible.
     setTile: (x, y, t) => { if (!inBounds(x, y)) return false; map[y][x] = t; computeFOV(); return true; },
-    passableAt: (x, y) => passable(x, y),                          // on foot — deep water says no
+    passableAt: (x, y) => passable(x, y),
+    // The real movement predicate, corner rule included — so a test can ask the
+    // engine "can this thing actually move?" instead of reimplementing the rule
+    // and then measuring its own copy.
+    canStepAt: (x, y, dx, dy, flying) => canStep(x, y, dx, dy, flying ? { flying: true } : null),                          // on foot — deep water says no
     passableFlying: (x, y) => passableFor({ flying: true }, x, y),
     tileConstants: () => ({ WALL, FLOOR, STAIRS, DOOR, THORN, WATER, CHASM, RUBBLE, GRASS }),
     tileDeclared: (t) => Object.prototype.hasOwnProperty.call(TILE, t),
