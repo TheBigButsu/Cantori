@@ -19,6 +19,11 @@ window.CantoriLoot = function (deps) {
   //   rollPlus(floor)    -> integer plus | null                          (Guild's Refinement)
   const getRarityWeights = typeof deps.getRarityWeights === "function" ? deps.getRarityWeights : null;
   const rollPlusOverride = typeof deps.rollPlus === "function" ? deps.rollPlus : null;
+  //   rollGrant(base, rarity)  -> { cls, skill, ranks } | null
+  // Necklaces and trinkets carry skill ranks rather than enchants, and which skill
+  // is legal depends on the class tree — which is game state this module has none
+  // of. So the caller supplies it and this module only decides WHEN to ask.
+  const rollGrantHook = typeof deps.rollGrant === "function" ? deps.rollGrant : null;
 
   function rollRarity() {
     const override = getRarityWeights && getRarityWeights();
@@ -41,10 +46,24 @@ window.CantoriLoot = function (deps) {
 
   // Roll a full gear instance for a base key found on a given floor. `forcedRarity`
   // (optional) overrides the normal rarity roll — used for the boss trinket floor.
+  // Rarities at or above a row's authored `minRarity`, renormalised. A necklace is
+  // no longer a bare trinket with a number on it — it is a skill — so a white one
+  // would be an empty slot rather than a modest one, and the row says so in data.
+  function rollRarityAtLeast(floorKey) {
+    const idx = LOOT.rarities.findIndex((r) => r.key === floorKey);
+    if (idx < 0) return rollRarity();
+    const dist = {};
+    for (let i = idx; i < LOOT.rarities.length; i++) {
+      const r = LOOT.rarities[i];
+      if (r.chance > 0) dist[r.key] = r.chance;
+    }
+    if (!Object.keys(dist).length) return floorKey;
+    return rollRarityFrom(dist);
+  }
   function rollItem(key, floor, forcedRarity) {
     const base = GEAR[key];
     const tier = base.tier || 1;
-    const rarity = forcedRarity || rollRarity();
+    const rarity = forcedRarity || (base.minRarity ? rollRarityAtLeast(base.minRarity) : rollRarity());
     const overridePlus = rollPlusOverride && rollPlusOverride(floor);
     const plus = (overridePlus != null) ? overridePlus : randInt(0, maxPlusForFloor(floor));
     const stats = [], enchants = [];
@@ -70,7 +89,19 @@ window.CantoriLoot = function (deps) {
     // for), take a stat instead — the item still carries the number of properties
     // its rarity promised rather than silently rolling one fewer.
     const addEnchant = () => { const e = draw(enchantPool); if (e) enchants.push(e); else addStat(); };
-    if (rarity === "green") { addStat(); }
+    // Necklaces and trinkets run their own affix table: what they carry is SKILL
+    // RANKS, and a stat or two beside them. No enchants at all — an amulet that
+    // also happened to be Flaming would bury the thing it is actually for under a
+    // proc, and the rank is already the interesting number on the card.
+    const GRANTS_SKILL = { trinket: 1, necklace: 1 };
+    let grant = null;
+    if (GRANTS_SKILL[base.cat] && !base.noGrant) {
+      const ranks = rarity === "purple" ? 2 : rarity === "gold" ? 3 : 1;
+      grant = rollGrantHook ? rollGrantHook(base, rarity, ranks) : null;
+      if (rarity === "blue" || rarity === "purple") addStat();
+      else if (rarity === "gold") { addStat(); addStat(); }
+      // green: the rank and nothing else. white cannot reach here (minRarity).
+    } else if (rarity === "green") { addStat(); }
     else if (rarity === "blue") { addStat(); addEnchant(); }
     else if (rarity === "purple") {
       addStat(); addEnchant();
@@ -78,9 +109,9 @@ window.CantoriLoot = function (deps) {
     }
     else if (rarity === "gold") { addStat(); addStat(); addEnchant(); addEnchant(); }   // gold: the richest roll
     // white gets nothing but its (possible) plus.
-    // Jewelry is worthless as a bare item, so a ring / trinket / necklace always
-    // carries at least one property — roll an enchant if it can, otherwise a stat.
-    const JEWELRY = { ring: 1, trinket: 1, necklace: 1 };
+    // Jewelry is worthless as a bare item, so a ring always carries at least one
+    // property. Necklaces and trinkets have their grant and no longer need this.
+    const JEWELRY = { ring: 1 };
     if (JEWELRY[base.cat] && stats.length === 0 && enchants.length === 0) {
       if (ekeys.length && Math.random() < 0.5) addEnchant(); else addStat();
     }
@@ -96,8 +127,9 @@ window.CantoriLoot = function (deps) {
     const ID_EFFORT = 0.5;
     const rank = LOOT.rarities.findIndex((r) => r.key === rarity) + 1;
     const idNeed = Math.max(1, Math.round((tier + plus) * (randInt(1, 10) + (rank > 0 ? rank : 5)) * ID_EFFORT));
-    const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0;
+    const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0 && !grant;
     const inst = { key, rarity, plus, stats, enchants, idNeed, idXp: 0, identified: nothingHidden };
+    if (grant) inst.grant = grant;
     // A base with `variants` picks one at drop (e.g. the Metrognome's walk/attack mode).
     if (Array.isArray(base.variants) && base.variants.length) inst.variant = base.variants[randInt(0, base.variants.length - 1)];
     return inst;

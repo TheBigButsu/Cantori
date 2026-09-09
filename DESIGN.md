@@ -1970,3 +1970,444 @@ hit has to be taken from concealment — stepping into the open first hands the
 awareness straight back. And `stopHunting` now floats a **"?"** over the monster when
 it loses you, because an ambush window the player cannot see is luck rather than a
 mechanic.
+
+---
+
+## The merchant floor grows a second and a third thing to spend on
+
+The peaceful floor after each boss sold two things: potions at 20g and a full heal from
+the fountain. Both are consumption. Gold had no route into progression at all, which is
+why it piled up unspent in the late floors of a good run.
+
+### The opening shelf is guaranteed
+
+The three slots you walk in on are now **a Potion of Healing, a random stat potion
+(Strength / Vitality / Intelligence), and one weighted roll.** Before this, all three
+were weighted rolls, which meant the single shop between two bosses could hand you
+poison, paralysis and stone skin — a run decided by weather rather than by play. The
+opening hand is the thing you can plan the next biome around; everything past it is the
+merchant's own stock.
+
+### Rerolling costs a coin, then two, then four
+
+**1 gold, doubling with each reroll on that floor: 1, 2, 4, 8, 16 …** The counter is per
+merchant floor and restarts every visit.
+
+The first reroll is deliberately not a decision — it is a coin, and a shelf you dislike
+should not be a wall. The doubling is what stops it becoming one: by the fourth reroll
+you have spent a potion's worth of gold, so hunting for an exact shelf costs the thing
+you were shopping for. And a reroll replaces all three slots with weighted rolls, so the
+opening guarantee is spent the moment you use it — rerolling a heal away can genuinely
+leave you worse off. That risk is what makes it a choice rather than a button.
+
+### The altar sells a god, not a boon
+
+**100 gold buys one god's attention.** They then put **three random boons you don't
+already hold** in front of you, and you keep one.
+
+What is on sale is deliberately the *god*, not the boon. Paying narrows the roll to a
+domain — Maelon's attrition, Ourn's tempo, Kethara's faith, the Guild's itemisation —
+without letting gold simply buy the exact boon you wanted. You are choosing what kind of
+run to have, and then taking what that god happens to offer.
+
+Which gods are listening is **rolled once per merchant floor**, up to three of those who
+still have something to give, so closing the panel and reopening it is not a free
+reroll. A god whose roster you have exhausted drops off the shortlist entirely, and when
+every god has given all they have the altar says so rather than taking the coin. The
+gold is only deducted once there is something to hand over.
+
+The rosters live in `data.js` under `gods.<key>.boons` — arrays that had sat empty since
+the gods table was written. Kethara has 5, Maelon 6, Ourn 6, the Guild 5; The Label and
+the sealed Auvris have none yet and so never appear at the altar. Adding a boon to a
+god's array is all it takes to put it on sale, which is the point of keeping the mapping
+in data rather than in the engine.
+
+`offerBoons()` grew an optional pool argument to support this. Called bare — at a boss
+kill, at the start of a run — it draws from every boon you don't hold, exactly as
+before; the altar passes one god's roster so a paid offer stays inside the domain that
+was paid for.
+
+---
+
+## Two more stat draughts, and the incoming-damage order written down
+
+**Potion of Dexterity** and **Potion of Resonance** join Strength, Vitality and
+Intelligence: a permanent +1, same as the others, drop weight 1 to match the two
+newest rather than Strength's 2. They also join the merchant's guaranteed opening
+stat slot, which now draws from five potions instead of three.
+
+The cost of adding them is dilution: the drop pool goes from 14 weight to 16, so a
+Potion of Healing falls from 35.7% of a potion drop to 31.3%. On the merchant's shelf
+(which weights the two harmful draughts down) it goes 33.3% either way, because the
+opening heal is guaranteed regardless.
+
+### The order an incoming attack is resolved in
+
+Every monster blow — melee, ranged, and a charge — runs through the one `attack()`
+path, in this order:
+
+1. **Attack roll vs AC.** `d20 + the monster's toHit ≥ playerAC()`. Miss and nothing
+   else happens.
+2. **Evasion.** A separate roll against `dodgeChance()`, taken only after the attack
+   roll already beat your AC — the blow was aimed true and you slipped it. Being hard
+   to *aim at* and hard to *hit* are deliberately different stats.
+3. **Percentage reduction — RES.** `dmg × (1 − m/(m+10))`, where m is the RES
+   modifier. This is the only percentage cut in the game; every other defensive
+   source is flat, and so lands in step 4.
+4. **Flat mitigation — armour.** `armorBlock()`: the worn armour's def roll, plus the
+   heavy sub-type's flat soak, plus worn `defense` enchants, plus Stone Skin. Then a
+   floor of 1, so nothing is ever fully negated.
+
+A charge's momentum bonus is added *after* all four, on purpose — see the comment in
+`attack()`. Healing Smite's shield eats what is left before HP does.
+
+Measured against a keener (8–12 damage, mean 10.0) with armour stripped, dodge at 0
+and 3,800 landing blows per tier — every figure matching the rounding model exactly:
+
+| RES | mod | cut | predicted mean | measured |
+|---|---|---|---|---|
+| 10 | +0 | 0% | 10.0 | 9.991 |
+| 12 | +1 | 9.1% | 9.0 | 8.984 |
+| 14 | +2 | 16.7% | 8.4 | 8.398 |
+| 16 | +3 | 23.1% | 7.6 | 7.590 |
+| 20 | +5 | 33.3% | 6.6 | 6.575 |
+| 24 | +7 | 41.2% | 5.8 | 5.786 |
+| 30 | +10 | 50% | 5.2 | 5.201 |
+
+With rusted mail (1–5) on top: RES +0 measured 6.985 against a predicted 7.0, and RES
++10 measured 2.438 against a predicted 2.2 — the gap there is the floor of 1 catching
+the lowest rolls, exactly as it should.
+
+`window.cantori.monsterHit(i)` drives one monster's attack straight at the player,
+outside its AI, and returns what landed. That is what makes this order measurable
+rather than argued, and it is worth keeping for the next time the question comes up.
+
+### What does NOT go through it
+
+Steps 1 and 2 are attack-roll concepts and can't apply to a bomb. Steps 3 and 4 could,
+and today do not. These land raw:
+
+- **Boss telegraphs.** The Piper's exploding rat (30 flat), the golem's boulder
+  (15–30), its ground slam (20–60), its node blast (0–20). These are the largest
+  numbers in the game and the ones RES and armour do nothing about.
+- **Traps.** Arrow and bomb.
+- **Damage over time.** Burn and poison ticks. (The toxin's %-max-HP halving is
+  deliberately outside all of it.)
+- **A monster's death burst.**
+- **Thorn terrain**, and the self-inflicted costs (wall slam, Retribution's 5 HP).
+
+The defensible reading is that a telegraphed AoE is answered by moving, not by
+armour. The problem is the size: 20–60 unmitigated from a ground slam is most of a
+mid-game health bar whatever you are wearing, so defensive investment has no say in
+the fight the player most wants it to.
+
+---
+
+## The ladder is now one function, and everything climbs onto it
+
+The order was already right for a monster's blow, but it was written *inside*
+`attack()`, and every other source of damage simply didn't have it. That is how the
+Golem came to hit for 20–60 with armour and RES watching from the sidelines: nothing
+was wrong with the code, there just wasn't any shared code to be wrong.
+
+`incomingDamage(dmg, rung, opts)` now holds all four rungs, and `attack()` is one of
+its callers rather than the place it lives. A source picks where it **enters**; from
+there it runs every remaining rung.
+
+| Source | Enters at | Gets |
+|---|---|---|
+| Melee, ranged, charge | 1 to-hit | AC roll, evasion, RES, armour |
+| **Boss telegraphs** | 1 to-hit | AC roll, evasion, RES, armour |
+| **Traps** (arrow, bomb) | 2 evade | evasion, RES, armour |
+| **Burn and poison ticks** | 4 tick | RES only — armour is skipped |
+
+### Boss telegraphs roll to hit
+
+The Piper's exploding rat, the Golem's boulder, its ground slam and its node blast all
+call `bossHit()`, which enters at rung 1 with that boss's own `toHit` (Piper 3,
+Golem 6). Standing out of the line is still the first defence — every one of those
+moves checks position before it ever reaches the ladder — but it is no longer the
+*only* one.
+
+A playbook that wants a move to bypass a rung says so at its own call site with a
+reason. That is the "unless stated in the boss move set" escape hatch, and it is a
+deliberate one-liner rather than a data field, because a move that ignores armour
+should have to be argued for in a comment next to the code that does it.
+
+The Golem's node still heals it by exactly what **lands**, so armour and RES now cut
+the transfusion as well as the wound.
+
+### Traps enter at evasion
+
+Nothing about a pressure plate can be parried, so there is no attack roll — but you
+can throw yourself clear of it, and a breastplate still catches the arrow. Measured on
+depth 8 with no armour: an arrow trap's mean landed damage falls from **8.68 at RES 0
+to 4.70 at RES 50%**, and evasion turns a share of them aside entirely, which it never
+did before.
+
+### Ticks get RES and nothing else
+
+A burn or a poison is already inside you: nothing left to dodge, and no plate between
+it and your blood. Measured with regeneration switched off (the floor's spark out, so
+an HP delta *is* the damage):
+
+| RES cut | burn of 20 | poison of 12 | with rusted mail |
+|---|---|---|---|
+| 0% | 20 | 12 | identical |
+| 33.3% | 13 | 8 | identical |
+| 50% | 10 | 6 | identical |
+
+The stored tick keeps decaying at its own rate, so RES softens each tick without
+changing the burn's shape.
+
+### The ladder itself, measured
+
+`window.cantori.ladder(dmg, rung, acc)` runs one figure down it — the same call every
+telegraph, trap and tick makes. 4,000 samples per case:
+
+| Case | hit rate | mean when it lands |
+|---|---|---|
+| Piper's rat (30, toHit 3) vs AC 11, no armour, RES 0 | 65.5% | 30.00 |
+| …with rusted mail (1–5) | 70.3% | 26.98 |
+| …mail + RES 50% | 69.9% | 12.01 |
+| Golem slam (40, toHit 6) vs AC 11, no armour, RES 0 | 80.6% | 40.00 |
+| …mail + RES 50% | 85.1% | 17.01 |
+
+Every mean is exactly `round(raw × (1 − cut)) − 3`, the 3 being rusted mail's average
+block. End to end, a real Piper fight on depth 5 produced the "turned aside" branch —
+a rat line that resolved without doing 30 damage, which was not a thing that could
+happen before.
+
+### Left raw, on purpose for now
+
+A monster's death burst, thorn terrain, and the self-inflicted costs (Dragon Kick into
+a wall, Retribution's 5 HP). The toxin's %-max-HP halving stays outside everything by
+design. Any of them joins the ladder the same way: pick a rung at the call site.
+
+### A dev-surface fix that had already cost two measurements
+
+`setStat` poked a stat without recomputing `maxHp`/`maxMp`. The pools are **stored,
+not derived on read**, so raising VIT to 120 left the test character on 20 HP — and a
+"burn does 0 damage" reading that was really the character dying. It now recomputes
+both and grants the difference, like every other path that moves a stat. Also new:
+`monsterHit(i)` drives one monster's attack outside its AI, and `ladder(dmg, rung,
+acc)` runs the ladder directly.
+
+---
+
+## The one field in the burst block that lies
+
+`burstDmg` is a **sentinel, not a literal**:
+
+```js
+const top = Number(src.burstDmg) > 0 ? Number(src.burstDmg) : depth;
+```
+
+0 or blank means *"scale with the floor"*. The Hollow Acolyte is authored at
+`burstDmg: 0`, so its blast rolls **1–11 on depth 11 and 1–15 on depth 15** — not
+nothing. Confirmed in play: killing one on depth 11 produced blasts of 1 to 7, where a
+literal reading of the 0 would have given a flat 1 every time.
+
+Every other field in the block *is* a literal: a percentage of the damage that victim
+just took. `burstMp: 100` tears off mana **equal to the damage dealt**; it does not
+empty the pool. Measured on a level-30 warrior with a 62-point pool: blasts of 10, 6
+and 5 took exactly 10, 6 and 5 MP. The tear is capped by the mana you actually have,
+which is why a warrior shrugs it off and a caster pays twice for standing too close.
+
+So a plain `0` sitting in a box labelled "burst dmg" reads as "no damage" and means the
+opposite. Rather than change the behaviour — a literal 0 meaning "none" would silently
+alter any future row — the shorthand is now stated everywhere it can be read:
+
+- the editor's column header is **"burst dmg (0 = depth)"**, and `burstRadius` says
+  **"(blank = no burst)"** because that is the switch that turns bursting on at all;
+- the burn/poison/MP columns say **"% of dmg"** rather than bare "%";
+- the reference tab's one dense "Death burst" row is now five, one per trap;
+- `deathBurst()` carries the warning at the line that does it.
+
+The cost of the shorthand, stated plainly so it can be reversed later: **a burst that
+deals no direct damage and only applies the statuses cannot be authored today.** If
+that turns out to be wanted, the fix is to move the sentinel to blank and let a literal
+0 mean zero.
+
+### Two measurement traps this turned up
+
+Both are the same shape as the `setStat` one — the instrument, not the mechanic:
+
+- **The floor's spark gates HP regeneration only.** MP regeneration has no
+  `sparkGone` guard, so a high-INT mage refilling 4+ MP a turn swallowed the entire MP
+  tear and made `burstMp` read as zero. Measure mana on a slow-regen character.
+- **A kill grants XP**, and a level-up raises `maxMp` mid-action. Any before/after read
+  across a kill has to discard samples where `level` or `maxMp` moved.
+
+---
+
+## The death burst joins the ladder, and the ladder grows a second axis
+
+A burst should roll to hit, be dodgeable, and be resisted by RES — but armour should
+be no help at all. You can be *clear* of a body coming apart; you cannot *plate* your
+way out of standing next to one.
+
+The ladder as first written could not say that. Armour was welded to the entry rung:
+"enter below evasion" implied "and skip armour", which covered a burn tick and nothing
+else. So the model gained the axis it was actually missing — **where a source enters,
+and whether armour answers, are separate questions and are now separate arguments.**
+
+`DMG_TICK` is gone as a rung; there are three entry points and a `noArmor` flag:
+
+| Source | Enters at | Armour |
+|---|---|---|
+| Melee, ranged, charge | 1 to-hit | yes |
+| Boss telegraphs | 1 to-hit | yes |
+| **Death burst** | **1 to-hit** | **no** |
+| Traps | 2 evade | yes |
+| Burn / poison ticks | 3 reduce | no |
+
+Measured on the ladder directly, 4,000 samples a case, a 20-damage figure at `toHit 3`
+against AC 10–11 with rusted mail (1–5) worn:
+
+| | burst (no armour) | an ordinary blow |
+|---|---|---|
+| RES 0, no armour | 20.00 | 20.00 |
+| RES 0, **mail on** | **20.00** | 17.01 |
+| RES 50%, mail on | **10.00** | 7.02 |
+
+Armour changes the burst by nothing and the blow by mail's average 3. RES halves both.
+Hit rates track each other at 65–70%, so AC and evasion answer a burst exactly as they
+answer a bite.
+
+### Turned aside means turned aside
+
+The follow-on effects are all shares of the damage that victim took, so a burst that
+misses or is dodged now applies **no burn, no poison, no mana tear — and no stun
+either**, which is the one that needed saying: the stun rolls independently of the
+damage, so without the gate a dodged blast would still have frozen you. Confirmed live:
+a blast that went wide left poison, burn, stun and MP all untouched.
+
+Monsters caught in a burst are unchanged — they take it raw, as they always did. The
+ladder is a player-side thing.
+
+### Sampling note
+
+The live end-to-end runs are thin — two or three blasts a run, because the
+spawn-adjacent-and-kill harness fails more often than it fires. The unit-level numbers
+above are exact and come from the single shared function every one of these call sites
+uses, so the behaviour is not in doubt; the field data is corroboration, not the proof.
+
+---
+
+## Bought stock is identified stock
+
+Buying a potion now identifies it for the rest of the run.
+
+There was never a secret being kept here. The merchant's shelf lists every bottle by
+its real name, and the purchase line says *"You buy a Potion of Healing."* — and then
+the pack went on calling the thing in your bag an **Ochre Potion**. That was the UI
+disagreeing with itself, not a discovery the player still had to make, and it meant the
+one place in the game where you are told exactly what you are getting was also the
+place the information got thrown away.
+
+Identification is by **key**, so a purchase also names any copies you were already
+carrying: buy one Potion of Healing and the three unlabelled bottles in your pack turn
+out to have been healing all along. That is precisely what learning what the ochre
+bottle *is* should mean, and it is the same rule that already applies when you drink
+one.
+
+Measured: carrying an unbought copy showed **"Umber Potion"**; clicking the shop row
+turned that same pack entry into **"Potion of Healing"**, gold went 500 → 480, and a
+potion sitting on the shelf that was never bought stayed a **"Charcoal Potion"**.
+Nothing is identified by proximity — only by paying for it.
+
+---
+
+## Necklaces and trinkets stop being stat sticks and start being skills
+
+Both slots carried what every other slot carried — a stat, an enchant, a number —
+which made them the least interesting things you could find. They now carry **skill
+ranks**, and the two slots answer different questions:
+
+- a **necklace** grants ranks in a skill from **the class you are playing**: it sharpens
+  who you already are;
+- a **trinket** grants one from **somebody else's tree**. That is the entire reason the
+  slot exists. ToneTum can find a charm that lets him Spin, and no amount of levelling
+  would ever have got him there.
+
+### The tables
+
+| Rarity | Ranks | Stats | Enchants |
+|---|---|---|---|
+| white | — | — | **cannot roll** |
+| green | +1 | 0 | none |
+| blue | +1 | 1 | none |
+| purple | +2 | 1 | none |
+| gold | +3 | 2 | none |
+
+No enchants on either slot any more: an amulet that also happened to be Flaming would
+bury the thing it is actually for under a proc. White is impossible — the rows carry a
+new `minRarity: "green"`, because a white necklace would now be an *empty* slot rather
+than a modest one.
+
+Which rows a piece can reach is **ceil(tier / 2)** — tiers 1–2 the first row, 3–4 the
+first two, 5 the first three. That interpolates the 1 / 3 / 5 rule onto the even tiers
+instead of leaving them rolling nothing. Eight new rows were authored so every tier
+exists in both categories; the Metrognome opts out with a new `noGrant`, because its
+walk/attack variant is the point of it.
+
+They are also scarcer than they were: `categoryWeights` moves **necklace 10 → 4** and
+**ring 12 → 14**. A slot that hands over a skill should not drop as often as one that
+hands over a number.
+
+### Spent ranks and granted ranks are different things
+
+Granted ranks **never enter `player.skills`**. `skillRank(key)` is spent + worn, capped
+at the skill's max. The split matters in both directions:
+
+- **spent** ranks are what the point counter and the prerequisites read, so an amulet
+  can never buy its way down the tree;
+- **granted** ranks are what the *effect* reads, so the amulet does what the card says.
+
+Take it off and the ranks leave with it, because nothing was ever written down.
+
+**Level gates still bite; prerequisites do not.** A trinket hands an off-class skill to
+someone who could never satisfy its tree, so `req` / `reqAny` / `reqPoints` are ignored
+outright — but the row's own level and any per-rank `minLevel` clamp the grant to 0.
+That is what stops a tier-5 amulet being a level-1 shortcut.
+
+A rolled or scrolled **+X raises the grant by a rank per point**, the same way it raises
+a stat affix. It clamps at the skill's max soon enough, and that clamp is the brake.
+Trinkets still refuse the Scroll of Upgrade, as they always have.
+
+### Measured
+
+A mage run, 400 rolls per row:
+
+- necklaces offered **only ToneTum's skills**; tiers 1–2 stayed inside row 1
+  (Burning Sensation, Keen Intellect, Magic Missile, MP Recovery, Sleep) and tiers 3+
+  added row 2 (Blink, Madness, Mirror Image).
+- trinkets offered **only monk and warrior** skills, never the mage's own; tier 1 stayed
+  in row 1 and tier 5 reached row 3 (Healing/Raging/Spinning Smite, Happy Feet, Now You
+  See Me).
+- no white ever rolled; the Metrognome granted nothing across 200 rolls.
+- a tier-5 necklace forced to each rarity gave exactly 1/0, 1/1, 2/1, 3/2 ranks/stats
+  and zero enchants.
+
+End to end: ToneTum's hotbar read *Wait, Magic Missile*; equipping a purple trinket
+granting Spin made it *Wait, Magic Missile, **Spin*** at rank 3, the card read
+**"Spin +3 (Chadwick), +6 LCK"**, and casting it worked and started an 79-turn cooldown.
+Burning Sensation at 2 spent plus a +2 necklace read **4**, still 4 with the item at +3
+(the max clamp), and **2** again the moment it came off. Blink granted at level 1 read
+**0**, and **4** at level 9.
+
+### Two things worth knowing
+
+**Grants are not gated on identification.** The house rule is that gear works fully
+while unidentified and you simply cannot read its numbers, so an unknown amulet grants
+its ranks like an unknown sword swings its damage. The consequence: an unidentified
+trinket's *active* skill appears on the hotbar before the card will name it. That is the
+same bargain as feeling a sword hit harder than it reads, and better than a slot that
+silently does nothing for the first thirty hits.
+
+**A bug this turned up.** Making the skill-tree cache a per-class map left a stale
+`_skillCache = {…}` assignment inside `applyClass`, which now threw on *every* class
+pick — including the one at boot. The whole first measurement run was against a
+character that had silently stayed a warrior. Neither suite caught it, because both
+drive the game through paths that survive a failed class application.

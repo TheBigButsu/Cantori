@@ -927,10 +927,12 @@ window.CANTORI_DATA = {
       "cat": "trinket",
       "name": "Bone Charm",
       "tier": 1,
-      "glyph": "*",
-      "color": "#d8cfb0"
+      "minRarity": "green",
+      "glyph": "\u25c8",
+      "color": "#e6e0d2"
     },
     "metrognome": {
+      "noGrant": true,
       "cat": "trinket",
       "name": "Metrognome",
       "glyph": "*",
@@ -943,9 +945,74 @@ window.CANTORI_DATA = {
     "amulet_jade": {
       "cat": "necklace",
       "name": "Jade Amulet",
-      "glyph": "\"",
-      "color": "#7ec9a0",
-      "tier": 3
+      "tier": 3,
+      "minRarity": "green",
+      "glyph": "\u2740",
+      "color": "#7ec98a"
+    },
+    "cord_bead": {
+      "cat": "necklace",
+      "name": "Beaded Cord",
+      "tier": 1,
+      "minRarity": "green",
+      "glyph": "\u2740",
+      "color": "#9ad0ff"
+    },
+    "torc_copper": {
+      "cat": "necklace",
+      "name": "Copper Torc",
+      "tier": 2,
+      "minRarity": "green",
+      "glyph": "\u2740",
+      "color": "#c98a5a"
+    },
+    "pendant_onyx": {
+      "cat": "necklace",
+      "name": "Onyx Pendant",
+      "tier": 4,
+      "minRarity": "green",
+      "glyph": "\u2740",
+      "color": "#b491d6"
+    },
+    "reliquary_gold": {
+      "cat": "necklace",
+      "name": "Gilded Reliquary",
+      "tier": 5,
+      "minRarity": "green",
+      "glyph": "\u2740",
+      "color": "#f0c14b"
+    },
+    "idol_clay": {
+      "cat": "trinket",
+      "name": "Clay Idol",
+      "tier": 2,
+      "minRarity": "green",
+      "glyph": "\u25c8",
+      "color": "#c98a5a"
+    },
+    "figurine_jade": {
+      "cat": "trinket",
+      "name": "Jade Figurine",
+      "tier": 3,
+      "minRarity": "green",
+      "glyph": "\u25c8",
+      "color": "#7ec98a"
+    },
+    "effigy_onyx": {
+      "cat": "trinket",
+      "name": "Onyx Effigy",
+      "tier": 4,
+      "minRarity": "green",
+      "glyph": "\u25c8",
+      "color": "#b491d6"
+    },
+    "icon_gold": {
+      "cat": "trinket",
+      "name": "Gilded Icon",
+      "tier": 5,
+      "minRarity": "green",
+      "glyph": "\u25c8",
+      "color": "#f0c14b"
     }
   },
   "loot": {
@@ -998,8 +1065,8 @@ window.CANTORI_DATA = {
     "categoryWeights": {
       "weapon": 45,
       "armor": 33,
-      "ring": 12,
-      "necklace": 10
+      "ring": 14,
+      "necklace": 4
     },
     "trinketRarity": {
       "blue": 40,
@@ -1290,6 +1357,20 @@ window.CANTORI_DATA = {
       "effect": "intelligence",
       "glyph": "!",
       "color": "#cccccc"
+    },
+    "dexterity": {
+      "cat": "potion",
+      "name": "Potion of Dexterity",
+      "effect": "dexterity",
+      "glyph": "!",
+      "color": "#9ad0ff"
+    },
+    "resonance": {
+      "cat": "potion",
+      "name": "Potion of Resonance",
+      "effect": "resonance",
+      "glyph": "!",
+      "color": "#b491d6"
     },
     "skill_point": {
       "cat": "potion",
@@ -2841,19 +2922,39 @@ window.CANTORI_DATA = {
       "name": "Kethara",
       "domain": "Order & Domination",
       "unlock": "start",
-      "boons": []
+      "boons": [
+        "wall",
+        "pull",
+        "gift",
+        "eye",
+        "anger"
+      ]
     },
     "maelon": {
       "name": "Maelon",
       "domain": "Death & Decomposition",
       "unlock": "town",
-      "boons": []
+      "boons": [
+        "compost",
+        "second_chance",
+        "leper",
+        "merciful",
+        "grace",
+        "dread"
+      ]
     },
     "ourn": {
       "name": "Ourn",
       "domain": "Time",
       "unlock": "town",
-      "boons": []
+      "boons": [
+        "foresight",
+        "rhythm",
+        "timed_blow",
+        "dilating",
+        "pride",
+        "speed_of_light"
+      ]
     },
     "label": {
       "name": "The Label",
@@ -2865,7 +2966,13 @@ window.CANTORI_DATA = {
       "name": "The Guild",
       "domain": "Itemization & Customization",
       "unlock": "town",
-      "boons": []
+      "boons": [
+        "artificer",
+        "scribe",
+        "blacksmith",
+        "blessing",
+        "refinement"
+      ]
     },
     "auvris": {
       "name": "Auvris",

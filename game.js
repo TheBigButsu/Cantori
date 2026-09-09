@@ -99,9 +99,18 @@
   let inShop = false;
   let shopKeeper = null;     // {x, y} — wall-mounted, like a torch
   let fountain = null;       // {x, y} — wall-mounted, like a torch
+  let altar = null;          // {x, y} — wall-mounted, like a torch: buys a boon
   let shopStock = [];        // 3 potion keys currently for sale
   let shopHealCost = 0;      // gold cost of the fountain's full heal, fixed for this shop visit
+  let shopRerolls = 0;       // rerolls bought on THIS merchant floor — the price doubles each time
   const SHOP_POTION_PRICE = 20;
+  // A reroll starts at a single coin and doubles: 1, 2, 4, 8, 16 … Cheap enough
+  // that the first one is never a real decision, and steep enough by the fourth
+  // that rerolling until the shelf reads exactly right costs a potion's worth of
+  // gold. The counter is per merchant floor, so the ladder restarts each visit.
+  const SHOP_REROLL_BASE = 1;
+  const shopRerollCost = () => SHOP_REROLL_BASE * Math.pow(2, shopRerolls);
+  const ALTAR_BOON_PRICE = 100;   // gold for one god's offer of three boons
   const sellPrice = (inst) => gearTier(inst.key) * 2;
 
   // Stats → effects, D&D style.
@@ -313,7 +322,7 @@
     player.retribution = null;                 // Chadwick's braced guard
     activeWalls = []; pullZone = null;
     assignPotionLooks();                        // scramble unidentified potion colours for this run
-    _skillCache = { cls: null, skills: {}, byId: {} };    // force a rebuild for the new class
+    for (const k in _skillCache) delete _skillCache[k];   // force a rebuild (a Playtest draft can change a tree)
     player.skills = {};
     const sk = treeSkills(key).skills;
     // An innate skill is known from level 0 and never costs a point — the class
@@ -440,6 +449,7 @@
     GEAR, GEAR_KEYS, LOOT, randInt: (lo, hi) => randInt(lo, hi),
     getRarityWeights: () => guildBlessingWeights(),
     rollPlus: (floor) => guildPlusRoll(floor),
+    rollGrant: (base, rarity, ranks) => rollSkillGrant(base, rarity, ranks),
   });
   const rollRarity = _loot.rollRarity;
   const maxPlusForFloor = _loot.maxPlusForFloor;
@@ -447,6 +457,29 @@
   const rollGearDrop = _loot.rollGearDrop;
   const rollTrinket = _loot.rollTrinket;
 
+  // Pick the skill a necklace or trinket hands over. A necklace draws from the
+  // class being played — it sharpens who you already are. A trinket draws from
+  // somebody ELSE's tree, which is the entire reason the slot exists: ToneTum can
+  // find a charm that lets him Spin, and no amount of levelling would ever have
+  // got him there.
+  //
+  // Declared up here beside the loot module, which takes it as a dep at load —
+  // it is a function declaration, so it hoists over the skill helpers it calls.
+  function rollSkillGrant(base, rarity, ranks) {
+    const own = player.cls || "warrior";
+    let cls = own;
+    if (base.cat === "trinket") {
+      const others = Object.keys(DATA.classes || {}).filter((c) => c !== own && (DATA.classes[c].skillTree || []).length);
+      if (!others.length) return null;                 // only one class authored — nothing foreign to offer
+      cls = others[randInt(0, others.length - 1)];
+    }
+    const tree = treeSkills(cls).skills;
+    const rows = grantRowsForTier(base.tier || 1);
+    // A skill def's `tier` IS its row, 1-based. Only rows this piece can reach.
+    const pool = Object.keys(tree).filter((k) => (tree[k].tier || 1) <= rows);
+    if (!pool.length) return null;
+    return { cls, skill: pool[randInt(0, pool.length - 1)], ranks: ranks || 1 };
+  }
   // A plain, already-known base item (starting kit, gold/authored items).
   const mkBase = (key) => ({ key, rarity: "white", plus: 0, stats: [], enchants: [], idNeed: 0, idXp: 0, identified: true });
   // Copy an item instance without its map position (for pack/equip moves).
@@ -726,6 +759,16 @@
       if (g.toHit) parts.push("to hit " + (g.toHit > 0 ? "+" : "") + g.toHit);
     }
     if (!itemIdentified(inst)) { parts.push("unidentified"); return parts.join(", "); }
+    // The grant first: it is what the item IS, and burying it behind two stat
+    // affixes would read as a stat stick that happens to mention a skill.
+    if (inst.grant) {
+      const d = (treeSkills(inst.grant.cls).skills || {})[inst.grant.skill];
+      const n = (inst.grant.ranks || 0) + (inst.plus || 0);
+      const nm = d ? d.name : inst.grant.skill;
+      const foreign = inst.grant.cls !== player.cls
+        ? " (" + ((DATA.classes[inst.grant.cls] || {}).name || inst.grant.cls) + ")" : "";
+      parts.push(nm + " +" + n + foreign);
+    }
     if (inst.variant === "walk") parts.push("+1 walk speed");
     else if (inst.variant === "attack") parts.push("+1 attack speed");
     // Must match gStatBonus, which is triangular in `plus` — the card used a flat
@@ -843,6 +886,22 @@
     let r = Math.random() * total;
     for (const k of pool) { r -= shopWeightOf(k); if (r <= 0) return k; }
     return pool[pool.length - 1];
+  }
+  // The permanent +1-to-a-stat draughts, named by the effects applyEffect() already
+  // dispatches on. Stone Skin isn't here: it wears off, so it isn't a stat purchase.
+  const STAT_POTION_FX = ["strength", "vitality", "intelligence", "dexterity", "resonance"];
+  function randomStatPotionKey() {
+    const pool = CONSUM_KEYS.filter((k) => CONSUM[k].cat === "potion" &&
+      STAT_POTION_FX.indexOf(String(CONSUM[k].effect || "").toLowerCase()) >= 0);
+    return pool.length ? pool[randInt(0, pool.length - 1)] : weightedShopPotionKey();
+  }
+  // The shelf you walk in on is never a bad roll: a heal, a stat, and one of
+  // whatever else the merchant has. You can reroll it (see rerollShop) but the
+  // opening hand is the one thing the run guarantees you can plan around — three
+  // coin flips at the only shop between two bosses is a run decided by weather.
+  function openingShopStock() {
+    const heal = CONSUM.heal && CONSUM.heal.cat === "potion" ? "heal" : weightedShopPotionKey();
+    return [heal, randomStatPotionKey(), weightedShopPotionKey()];
   }
 
   // ---- Dungeon generation --------------------------------------------------
@@ -1230,7 +1289,7 @@
   // with depth: (1..3)×floor, capped at (player level + floor).
   function arrowTrap(t) {
     const floor = depth;
-    const dmg = Math.max(1, Math.min(player.level + floor, randInt(1, 3) * floor));
+    let dmg = Math.max(1, Math.min(player.level + floor, randInt(1, 3) * floor));
     let tgt = { kind: "player", x: player.x, y: player.y }, td = cheb(t.x, t.y, player.x, player.y);
     for (const m of monsters) {
       if (m.hp <= 0) continue;
@@ -1240,6 +1299,10 @@
     spawnProjectile(t.x, t.y, tgt.x, tgt.y, "#e8d08a");
     spawnStreak(t.x, t.y, tgt.x, tgt.y, "#c9a24a", 240);
     if (tgt.kind === "player") {
+      // A trap enters the ladder at evasion: there is nothing to parry, but you
+      // can throw yourself clear, and armour still catches what reaches you.
+      dmg = incomingDamage(dmg, DMG_EVADE, { dodgeMsg: "You throw yourself flat — the arrow whistles past." });
+      if (dmg <= 0) { updateHUD(); return; }
       player.hp -= dmg; flash(player); floatText(player.x, player.y, "➶-" + dmg, "#ff8f84");
       log("A hidden arrow strikes you! (-" + dmg + ")", "hurt");
       if (player.hp <= 0) { updateHUD(); die(); return; }
@@ -1268,9 +1331,12 @@
       if (mm && mm.hp > 0) { mm.hp -= dmg; flash(mm); floatText(mm.x, mm.y, "-" + dmg, "#ff8f4a"); if (mm.hp <= 0) killMonster(mm, "is blown apart"); }
     }
     if (cheb(t.x, t.y, player.x, player.y) <= 1) {   // player caught in the 3×3
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-      log("The bomb erupts — you're caught in the blast! (-" + dmg + ")", "hurt");
-      if (player.hp <= 0) { updateHUD(); die(); return; }
+      const took = incomingDamage(dmg, DMG_EVADE, { dodgeMsg: "You dive clear of the blast." });
+      if (took > 0) {
+        player.hp -= took; flash(player); floatText(player.x, player.y, "-" + took, "#ff8f84");
+        log("The bomb erupts — you're caught in the blast! (-" + took + ")", "hurt");
+        if (player.hp <= 0) { updateHUD(); die(); return; }
+      }
     } else log("The bomb erupts in a gout of fire.");
     updateHUD();
   }
@@ -1950,7 +2016,10 @@
     map[y + Math.floor(h / 2)][x + w - 2] = STAIRS;
     shopKeeper = { x: x + 4, y: y - 1 };
     fountain = { x: x + w - 5, y: y - 1 };
-    shopStock = [weightedShopPotionKey(), weightedShopPotionKey(), weightedShopPotionKey()];
+    altar = { x: x + Math.floor(w / 2), y: y - 1 };
+    shopStock = openingShopStock();
+    shopRerolls = 0;
+    rollAltarGods();
     shopHealCost = (biomeOf(depth) + 1) * 20;
 
     genStats = computeFill([room]);
@@ -2721,13 +2790,18 @@
     if (dead) return;
     if (player.burn) {
       const b = player.burn;
-      player.hp -= b.dmg; flash(player); floatText(player.x, player.y, "🔥-" + b.dmg, "#ff8f4a");
+      // A tick enters the ladder at the bottom rung: RES resists it, armour
+      // cannot — it is already inside you. The stored b.dmg keeps decaying at its
+      // own rate, so RES softens each tick without changing the burn's shape.
+      const took = mitigateDamage(b.dmg, { noArmor: true });
+      player.hp -= took; flash(player); floatText(player.x, player.y, "🔥-" + took, "#ff8f4a");
       b.dmg = Math.max(1, b.dmg - 1);
       if (--b.rounds <= 0) { player.burn = null; log("The flames on you gutter out."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
     }
     if (player.poison > 0) {
-      player.hp -= player.poison; flash(player); floatText(player.x, player.y, "☠-" + player.poison, "#9ad06a");
+      const pt = mitigateDamage(player.poison, { noArmor: true });
+      player.hp -= pt; flash(player); floatText(player.x, player.y, "☠-" + pt, "#9ad06a");
       if (--player.poison <= 0) { player.poison = 0; log("The poison works itself out of you."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
     }
@@ -2755,7 +2829,16 @@
     if (bursting) return;
     bursting = true;
     const r = Math.max(1, src.burstRadius || 1);
+    // burstDmg is a SENTINEL, not a literal: 0 or blank means "scale with the floor",
+    // so the Acolyte's authored 0 rolls 1–11 on depth 11 and 1–15 on depth 15. It is
+    // the only field in this block that isn't what it says, which is why the editor
+    // labels it "burst dmg (0 = depth)" — a plain 0 in a damage box reads as "none"
+    // and means the opposite. The cost of the shorthand is that a burst which deals
+    // NO direct damage and only applies the statuses cannot currently be authored.
     const top = Number(src.burstDmg) > 0 ? Number(src.burstDmg) : depth;
+    // Every other field IS a literal: a percentage of the damage this victim just
+    // took. burstMp 100 tears off mana equal to the damage dealt — it does not empty
+    // the pool, it just means a caster pays twice for standing too close.
     const share = (dmg, pct) => Math.max(0, Math.round(dmg * (Number(pct) || 0) / 100));
     spawnBurst(src.x, src.y, src.color || "#c58fd6");
     flashScreen("#e0685a", 180);
@@ -2763,18 +2846,31 @@
     // The player first: a burst that kills you should not be adjudicated after the
     // monsters it also killed have finished dying.
     if (cheb(src.x, src.y, player.x, player.y) <= r) {
-      const dmg = randInt(1, Math.max(1, top));
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-      log("The blast catches you. (-" + dmg + ")", "hurt");
-      burnPlayer(share(dmg, src.burstBurn));
-      poisonPlayer(share(dmg, src.burstPoison));
-      const mp = share(dmg, src.burstMp);
-      if (mp > 0 && player.mp > 0) {
-        const lost = Math.min(player.mp, mp);
-        player.mp -= lost; floatText(player.x, player.y, "-" + lost + " MP", "#7ea8e0");
+      // The burst climbs the ladder from the top, but armour sits it out: the blast
+      // is aimed (there is a body coming apart at a known tile) and you can be clear
+      // of it, so AC and evasion both answer — but plate is no answer to standing
+      // next to it, and RES is what a burst is resisted with.
+      const dmg = incomingDamage(randInt(1, Math.max(1, top)), DMG_TOHIT, {
+        acc: src.toHit,
+        noArmor: true,
+        missMsg: "The " + monName(src) + "'s blast goes wide of you.",
+        dodgeMsg: "You are already moving when the " + monName(src) + " comes apart.",
+      });
+      // Turned aside means turned aside: no burn, no poison, no mana torn off and no
+      // stun either. Every one of those is a share of a blow that did not land.
+      if (dmg > 0) {
+        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+        log("The blast catches you. (-" + dmg + ")", "hurt");
+        burnPlayer(share(dmg, src.burstBurn));
+        poisonPlayer(share(dmg, src.burstPoison));
+        const mp = share(dmg, src.burstMp);
+        if (mp > 0 && player.mp > 0) {
+          const lost = Math.min(player.mp, mp);
+          player.mp -= lost; floatText(player.x, player.y, "-" + lost + " MP", "#7ea8e0");
+        }
+        const st = randInt(Number(src.burstStunMin) || 0, Number(src.burstStunMax) || 0);
+        if (st > 0) { player.stun = (player.stun || 0) + st; floatText(player.x, player.y, "stunned", "#e0a848"); }
       }
-      const st = randInt(Number(src.burstStunMin) || 0, Number(src.burstStunMax) || 0);
-      if (st > 0) { player.stun = (player.stun || 0) + st; floatText(player.x, player.y, "stunned", "#e0a848"); }
       updateHUD();
       if (player.hp <= 0) { bursting = false; die(); return; }
     }
@@ -2792,6 +2888,69 @@
       else startHunting(m);
     }
     bursting = false;
+  }
+
+  // ---- The incoming-damage ladder ------------------------------------------
+  //
+  // Four rungs, always resolved in this order:
+  //
+  //   1 to-hit    d20 + the attacker's accuracy against playerAC()
+  //   2 evade     a separate roll against dodgeChance() — the blow was aimed true
+  //               and you slipped it, which is a different thing from being hard
+  //               to aim at, and keeping them separate is what makes Foresight's
+  //               coin a real choice
+  //   3 reduce    RES, the only percentage cut in the game
+  //   4 mitigate  armour and every other flat soak, floored at 1
+  //
+  // A source of damage answers two questions: where it ENTERS (from there it runs
+  // every remaining rung), and whether armour answers at all.
+  //
+  //   monster blow, boss telegraph   enter at 1, armour answers
+  //   trap                           enter at 2, armour answers — nothing about a
+  //                                  pressure plate can be parried, but you can
+  //                                  throw yourself clear and a breastplate still
+  //                                  catches the arrow
+  //   death burst                    enter at 1, armour SITS OUT — it is aimed, and
+  //                                  you can be clear of it, but plate is no answer
+  //                                  to being stood next to something coming apart
+  //   burn / poison tick             enter at 3, armour sits out — already inside
+  //                                  you: nothing to dodge, no plate in the way
+  //
+  // A boss's telegraphed move enters at 1 like anything else unless its playbook
+  // says otherwise. A line you are standing in the middle of is still a blow that
+  // has to land, and before this every one of them ignored the whole ladder — 20
+  // to 60 raw from a ground slam meant defensive investment had no say in exactly
+  // the fight the player most wanted it to.
+  // Three entry rungs, and one flag for the fourth. Armour used to be welded to the
+  // rung — "enter below evasion" implied "and skip armour" — which was fine until a
+  // death burst needed to roll to hit, be dodgeable, be resisted, and STILL ignore
+  // plate. Where you enter and whether armour answers are genuinely separate
+  // questions, so they are separate arguments.
+  const DMG_TOHIT = 1, DMG_EVADE = 2, DMG_REDUCE = 3;
+  // Rung 3, then rung 4 unless the source says armour sits this one out.
+  function mitigateDamage(dmg, o) {
+    o = o || {};
+    dmg = Math.round(dmg * (1 - resReduction()));
+    if (!o.noArmor) dmg -= armorBlock();
+    return Math.max(1, dmg);
+  }
+  // The whole ladder from `rung` down. `o.acc` is the attacker's to-hit, needed only
+  // at rung 1; `o.noArmor` drops rung 4. Returns the damage that lands, or 0 for a
+  // blow turned aside — the caller narrates the hit, this narrates the misses, so an
+  // arrow trap and a wolf can miss in their own words.
+  function incomingDamage(dmg, rung, o) {
+    o = o || {};
+    if (rung <= DMG_TOHIT && !rollHit(o.acc != null ? o.acc : MON_TOHIT, playerAC())) {
+      floatText(player.x, player.y, "miss", "#cfe6b0");
+      if (o.missMsg) log(o.missMsg);
+      return 0;
+    }
+    if (rung <= DMG_EVADE && Math.random() < dodgeChance()) {
+      floatText(player.x, player.y, "dodge", "#9ad0ff");
+      if (o.dodgeMsg) log(o.dodgeMsg, "hit");
+      return 0;
+    }
+    return mitigateDamage(dmg, o);
   }
 
   // ---- Combat: strikes, kills, and what a kill pays ------------------------
@@ -2928,24 +3087,13 @@
       }
     } else {
       bump(attacker, player.x, player.y);
-      const acc = attacker.toHit != null ? attacker.toHit : MON_TOHIT;
-      if (!rollHit(acc, playerAC())) {                 // it rolls against your AC
-        floatText(player.x, player.y, "miss", "#cfe6b0");
-        log("You evade the " + monName(attacker) + ".");
-        return;
-      }
-      // Evasion is rolled AFTER the attack roll beat your AC: the blow was aimed
-      // true and you slipped it. That is a different thing from being hard to aim
-      // at, and keeping it separate is what makes Foresight's coin a real choice.
-      if (Math.random() < dodgeChance()) {
-        floatText(player.x, player.y, "dodge", "#9ad0ff");
-        log("You slip aside from the " + monName(attacker) + "'s blow.");
-        return;
-      }
-      let dmg = randInt(attacker.atkMin, attacker.atkMax);
-      // RES applies first, as a % reduction of the raw hit; armor (and other
-      // flat mitigation) then reduces whatever's left.
-      dmg = Math.max(1, Math.round(dmg * (1 - resReduction())) - armorBlock());
+      // An ordinary blow enters the ladder at the top — see incomingDamage().
+      let dmg = incomingDamage(randInt(attacker.atkMin, attacker.atkMax), DMG_TOHIT, {
+        acc: attacker.toHit != null ? attacker.toHit : MON_TOHIT,
+        missMsg: "You evade the " + monName(attacker) + ".",
+        dodgeMsg: "You slip aside from the " + monName(attacker) + "'s blow.",
+      });
+      if (dmg <= 0) return;
       // A charge's momentum is added AFTER mitigation, so it always lands: +1 for
       // every tile crossed, guaranteed. It used to go in with the base damage and
       // was simply eaten — a bear that thundered four squares still hit for 1
@@ -3128,9 +3276,13 @@
   }
 
   // ---- Boons: pick one of three at each boss kill; effects are permanent -------
-  function offerBoons() {
+  //
+  // `pool` narrows the draw to a subset of the boon table — the altar passes one
+  // god's roster so a paid offer stays inside the domain you paid for. Called with
+  // no arguments (boss kill, run start) it draws from every boon you don't hold.
+  function offerBoons(pool, subtitle) {
     const all = DATA.boons || {};
-    const avail = Object.keys(all).filter((k) => !(player.boons && player.boons.has(k)));
+    const avail = (pool || Object.keys(all)).filter((k) => all[k] && !(player.boons && player.boons.has(k)));
     if (!avail.length) return;
     for (let i = avail.length - 1; i > 0; i--) { const j = randInt(0, i); const t = avail[i]; avail[i] = avail[j]; avail[j] = t; }
     const pick = avail.slice(0, 3);
@@ -3147,6 +3299,8 @@
       btn.addEventListener("click", () => pickBoon(k));
       wrap.appendChild(btn);
     }
+    const sub = document.querySelector("#boons .boon-sub");
+    if (sub) sub.textContent = subtitle || "A god extends a blessing \u2014 take one.";
     walkPath = [];                  // don't let a queued walk fire under the modal
     boonPending = true;
     document.getElementById("boons").hidden = false;
@@ -3430,7 +3584,8 @@
   function descend() {
     if (inShop) {   // leaving the merchant floor — now actually advance to the next depth
       inShop = false;
-      shopKeeper = null; fountain = null; shopStock = [];
+      shopKeeper = null; fountain = null; altar = null; shopStock = [];
+      shopRerolls = 0; altarGods = [];
       depth++;
       setDepthLabel();
       generateLevel();
@@ -3467,8 +3622,9 @@
     dead = false;
     depth = 1;
     turnMeter = 5; lastActionCost = 1;
-    inShop = false; shopKeeper = null; fountain = null; shopStock = [];
-    toggleShop(false); toggleFountain(false);
+    inShop = false; shopKeeper = null; fountain = null; altar = null; shopStock = [];
+    shopRerolls = 0; altarGods = [];
+    toggleShop(false); toggleFountain(false); toggleAltar(false);
     resetPlayer();
     setDepthLabel();
     updateHUD();
@@ -4511,6 +4667,12 @@
       if (spot) { const path = findPath(player.x, player.y, spot.x, spot.y); if (path.length) { walkPath = path; return; } }
       return;
     }
+    if (altar && altar.x === tx && altar.y === ty) {
+      if (adjacent) { toggleAltar(true); return; }
+      const spot = adjacentReachableFloor(tx, ty);
+      if (spot) { const path = findPath(player.x, player.y, spot.x, spot.y); if (path.length) { walkPath = path; return; } }
+      return;
+    }
     // tap a wall torch to take it — if it's not adjacent, walk to a tile beside it
     // and lift it automatically on arrival (torches sit on wall tiles, so we can't
     // path onto the torch itself).
@@ -4865,6 +5027,24 @@
     ctx.strokeStyle = shade("#c8d8dc", b); ctx.lineWidth = Math.max(1, tile * 0.05);
     ctx.beginPath(); ctx.ellipse(cx, cy + bob, tile * 0.24, tile * 0.13, 0, 0, Math.PI * 2); ctx.stroke();
   }
+  // A god's altar: a squat stone block under a candle whose flame breathes, so it
+  // reads as tended rather than abandoned at a glance across the merchant's room.
+  function drawAltar(px, py, b, now) {
+    const cx = px + tile / 2;
+    const pulse = 0.85 + Math.sin(now / 260 + px) * 0.15;
+    // block
+    ctx.fillStyle = shade("#6f6a60", b);
+    ctx.fillRect(px + tile * 0.20, py + tile * 0.52, tile * 0.60, tile * 0.40);
+    ctx.fillStyle = shade("#8c867a", b);
+    ctx.fillRect(px + tile * 0.14, py + tile * 0.44, tile * 0.72, tile * 0.12);
+    // candle
+    ctx.fillStyle = shade("#e8e0cc", b);
+    ctx.fillRect(cx - tile * 0.045, py + tile * 0.26, tile * 0.09, tile * 0.18);
+    // flame
+    ctx.beginPath();
+    ctx.ellipse(cx, py + tile * 0.21, tile * 0.06 * pulse, tile * 0.11 * pulse, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade("#f0c14b", b); ctx.fill();
+  }
   // A discovered trap: a dark plate + a coloured ring so it reads at a glance, with
   // a distinct icon per type — a live spiral (teleport), an arrow, or a bomb whose
   // fuse shows its countdown while armed.
@@ -5139,6 +5319,10 @@
     floatText, inBounds, lineOfSight, log, monsterAt, patrolStep, randInt, sayMonster, shuns,
     snapEntity, snapPlayer, spawnBurst, spawnNear, spawnProjectile, spawnStreak, startHunting, stepMonsterTo,
     tileProp, updateHUD, normalAct: defaultAct,
+    // The incoming-damage ladder, so a boss's telegraphed move resolves the same
+    // way a wolf's bite does. A playbook that wants a move to land regardless
+    // passes DMG.REDUCE (or REDUCE/TICK) instead of DMG.TOHIT and says why.
+    incomingDamage, DMG: { TOHIT: DMG_TOHIT, EVADE: DMG_EVADE, REDUCE: DMG_REDUCE },
   });
 
   // ---- Draw: dungeon view --------------------------------------------------
@@ -5197,6 +5381,9 @@
     // merchant floor fixtures (wall-mounted, same convention as torches)
     if (shopKeeper && inBounds(shopKeeper.x, shopKeeper.y) && explored[shopKeeper.y][shopKeeper.x]) {
       drawShopkeeper(SX(shopKeeper.x), SY(shopKeeper.y), visible[shopKeeper.y][shopKeeper.x] ? litBright(shopKeeper.x, shopKeeper.y) : MEM);
+    }
+    if (altar && inBounds(altar.x, altar.y) && explored[altar.y][altar.x]) {
+      drawAltar(SX(altar.x), SY(altar.y), visible[altar.y][altar.x] ? litBright(altar.x, altar.y) : MEM, now);
     }
     if (fountain && inBounds(fountain.x, fountain.y) && explored[fountain.y][fountain.x]) {
       drawFountain(SX(fountain.x), SY(fountain.y), visible[fountain.y][fountain.x] ? litBright(fountain.x, fountain.y) : MEM, now);
@@ -5589,6 +5776,12 @@
       row.addEventListener("click", () => buyPotion(i));
       stockHost.appendChild(row);
     });
+    const rr = document.getElementById("shopReroll");
+    if (rr) {
+      const cost = shopRerollCost();
+      rr.textContent = "Reroll the shelf (" + cost + "g)";
+      rr.disabled = player.gold < cost;
+    }
     const sellHost = document.getElementById("shopSell");
     sellHost.innerHTML = "";
     const sellable = [];
@@ -5609,12 +5802,34 @@
       sellHost.appendChild(row);
     }
   }
+  // Sweep the shelf and lay out three fresh potions. The guarantee in
+  // openingShopStock() is spent — a reroll is the merchant's own weighted stock,
+  // so rerolling a heal away can genuinely leave you worse off. That is the point
+  // of paying for it.
+  function rerollShop() {
+    const cost = shopRerollCost();
+    if (player.gold < cost) { log("Not enough gold."); return; }
+    player.gold -= cost;
+    shopRerolls++;
+    shopStock = [weightedShopPotionKey(), weightedShopPotionKey(), weightedShopPotionKey()];
+    log("The merchant clears the shelf and lays out three more. (\u2212" + cost + " gold)");
+    renderShop();
+    updateHUD();
+  }
   function buyPotion(slot) {
     const key = shopStock[slot];
     if (!key) return;
     if (player.gold < SHOP_POTION_PRICE) { log("Not enough gold."); return; }
     if (!invAdd({ key, count: 1 })) { log("Your pack is full."); return; }
     player.gold -= SHOP_POTION_PRICE;
+    // Bought stock is identified stock. The merchant already names every bottle on
+    // the shelf and the purchase line says what you walked out with, so leaving the
+    // pack calling it an "Ochre Potion" was the UI disagreeing with itself rather
+    // than a secret being kept. Identification is by KEY, so this also names any
+    // copies you were already carrying — buying one Potion of Healing tells you the
+    // three unlabelled ones in your pack were healing all along, which is exactly
+    // what learning what the ochre bottle is means.
+    identified.add(key);
     log("You buy a " + CONSUM[key].name + ".");
     shopStock[slot] = weightedShopPotionKey();   // the stall restocks the slot immediately
     renderShop();
@@ -5658,6 +5873,80 @@
     updateHUD();
     toggleFountain(false);
   }
+
+  // ---- The altar: buy a god's attention, then choose from what they offer -----
+  //
+  // Gold has always been a potion budget and nothing else; the altar is the one
+  // place it buys progression. What it sells is deliberately not a boon — it is a
+  // GOD. You pay to be heard by Maelon or by Ourn, and the three the god then puts
+  // in front of you are theirs at random, so 100 gold narrows the roll to a
+  // domain rather than buying the exact boon you wanted.
+  //
+  // A god's roster lives in data.js (`gods.<key>.boons`), not here: the four with
+  // boons today are Kethara, Maelon, Ourn and the Guild, and The Label joins the
+  // altar the moment its array stops being empty.
+  let altarOpen = false;
+  let altarGods = [];        // the shortlist rolled for THIS merchant floor
+  const godBoonKeys = (g) => {
+    const def = (DATA.gods || {})[g] || {};
+    const all = DATA.boons || {};
+    return (def.boons || []).filter((k) => all[k]);
+  };
+  const godOpenBoons = (g) => godBoonKeys(g).filter((k) => !(player.boons && player.boons.has(k)));
+  const ALTAR_GODS_OFFERED = 3;
+  // Rolled once per merchant floor rather than per open, so shutting the panel and
+  // reopening it isn't a free reroll of which gods are listening.
+  function rollAltarGods() {
+    // Only gods who still have something you don't hold — an exhausted god taking
+    // up one of three slots would be a listing that shortens itself as you play.
+    const pool = Object.keys(DATA.gods || {}).filter((g) => godOpenBoons(g).length);
+    for (let i = pool.length - 1; i > 0; i--) { const j = randInt(0, i); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+    altarGods = pool.slice(0, ALTAR_GODS_OFFERED);
+  }
+  function toggleAltar(force) {
+    altarOpen = force === undefined ? !altarOpen : force;
+    if (altarOpen) { toggleMap(false); toggleChar(false); toggleInv(false); toggleExamine(false); toggleShop(false); toggleFountain(false); renderAltar(); }
+    const el = document.getElementById("altar");
+    if (el) el.hidden = !altarOpen;
+  }
+  function renderAltar() {
+    const sub = document.getElementById("altarSub");
+    const acts = document.getElementById("altarChoices");
+    acts.innerHTML = "";
+    // A god with nothing left to give is dropped from the shortlist rather than
+    // shown greyed out — you already hold everything they had.
+    const listening = altarGods.filter((g) => godOpenBoons(g).length);
+    if (!listening.length) {
+      sub.textContent = "The altar is silent. Every god who might hear you has already given all they have.";
+    } else {
+      sub.textContent = ALTAR_BOON_PRICE + " gold buys one god's attention — they choose which three to offer.";
+      for (const g of listening) {
+        const def = (DATA.gods || {})[g] || {};
+        const left = godOpenBoons(g).length;
+        const btn = document.createElement("button");
+        btn.className = "boon-choice"; btn.type = "button";
+        if (player.gold < ALTAR_BOON_PRICE) btn.disabled = true;
+        btn.innerHTML = `<span class="b-icon" style="color:#f0c14b">\u2749</span>` +
+          `<span class="b-text"><span class="b-name" style="color:#f0c14b">${def.name || g}</span>` +
+          `<span class="b-desc">${def.domain || ""} \u00b7 ${left} boon${left === 1 ? "" : "s"} still unspoken</span></span>`;
+        btn.addEventListener("click", () => buyGodBoon(g));
+        acts.appendChild(btn);
+      }
+    }
+    acts.appendChild(mkBtn("Leave", "", () => toggleAltar(false)));
+  }
+  function buyGodBoon(g) {
+    if (player.gold < ALTAR_BOON_PRICE) { log("Not enough gold."); return; }
+    // Charge only once there is something to hand over — a god with an empty
+    // roster must never take the coin.
+    if (!godOpenBoons(g).length) { renderAltar(); return; }
+    player.gold -= ALTAR_BOON_PRICE;
+    const def = (DATA.gods || {})[g] || {};
+    log((def.name || "A god") + " turns to look at you. (\u2212" + ALTAR_BOON_PRICE + " gold)", "hit");
+    toggleAltar(false);
+    updateHUD();
+    offerBoons(godBoonKeys(g), (def.name || "A god") + " offers \u2014 take one.");
+  }
   function playerAtk() {
     // Both ends move: the low end takes STR's low roll, the high end its high roll,
     // so the number on the pack header is the real spread rather than the old flat
@@ -5687,11 +5976,22 @@
     document.getElementById("invGold").textContent = player.gold + " gold";
     const df = defRange(armorDefMin(), armorDefMax());
     const cname = (DATA.classes[player.cls] || {}).name || "Adventurer";
-    const withGear = (k) => { const g = equipStat(k); return eff(k) + (g ? `<span style="color:#7ec98a">(+${g})</span>` : ""); };
-    const statLine = `STR ${withGear("STR")} · VIT ${withGear("VIT")} · DEX ${withGear("DEX")} · INT ${withGear("INT")} · RES ${withGear("RES")} · LCK ${withGear("LCK")}`;
+    // Every derived number in the game reads the *modifier*, not the raw stat, so the
+    // raw score on its own can't explain what a point of INT bought — show both. The
+    // green parenthetical stays what gear added; the dim number is the modifier.
+    const signed = (n) => (n < 0 ? "\u2212" + (-n) : "+" + n);
+    // nowrap so a stat never breaks across lines mid-token on a narrow phone.
+    const withGear = (k) => {
+      const g = equipStat(k);
+      return `<span style="white-space:nowrap">${k} ${eff(k)}` +
+        (g ? `<span style="color:#7ec98a">(+${g})</span>` : "") +
+        `<span style="opacity:.55"> ${signed(mod(k))}</span></span>`;
+    };
+    const statLine = ["STR", "VIT", "DEX", "INT", "RES", "LCK"].map(withGear).join(" · ");
     const pts = player.statPoints > 0 ? `  ·  <b style="color:#f0c14b">${player.statPoints} pts</b>` : "";
     document.getElementById("invStats").innerHTML =
-      `${cname} · Lv ${player.level} · Atk ${playerAtk()} · Def ${df}` +
+      `${cname} · Lv ${player.level} · HP ${player.hp}/${player.maxHp} · MP ${player.mp}/${player.maxMp}` +
+      ` · Atk ${playerAtk()} · Def ${df}` +
       `<br><span style="opacity:.85">${statLine}${pts}</span>`;
     // Equipped slots: each is a card with an icon, its slot label, and the item —
     // and it's tappable to see the item's details and unequip it.
@@ -5796,6 +6096,7 @@
     log("You put away the " + itemName(it) + ".");
     player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
     player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
+    updateHotbar(); renderChar();          // a granted skill leaves with its amulet
     updateHUD(); worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
@@ -5809,6 +6110,7 @@
     log("You drop the " + itemName(it) + ".");
     player.maxHp = computeMaxHp(); player.hp = Math.min(player.hp, player.maxHp);
     player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);
+    updateHotbar(); renderChar();          // a granted skill leaves with its amulet
     updateHUD(); worldTurn();
     if (dead) { toggleInv(false); return; }
     renderInv();
@@ -5838,6 +6140,7 @@
     pendingUpgrade = false;
     selectedInvIdx = -1; selectedEquip = null;
     player.maxMp = computeMaxMp(); player.mp = Math.min(player.mp, player.maxMp);   // Scribe's Intellect scales with gear quality
+    updateHotbar(); renderChar();          // +X raises a granted rank as well as a stat
     updateHUD();
     worldTurn();
     if (dead) { toggleInv(false); return; }
@@ -5861,6 +6164,7 @@
     player.hp = Math.min(player.hp, player.maxHp);
     player.maxMp = computeMaxMp();               // INT affixes/quality bonuses can change max MP
     player.mp = Math.min(player.mp, player.maxMp);
+    syncGrantedSkills(); updateHotbar(); renderChar();   // an amulet can hand you a whole skill
     updateHUD();
     worldTurn();               // equipping takes a turn
     if (dead) { toggleInv(false); return; }
@@ -5995,6 +6299,12 @@
       player.maxMp = computeMaxMp();
       player.mp += Math.max(0, player.maxMp - before);   // the freshly-gained MP is granted too
       log("Your mind sharpens. (+1 INT)", "hit");
+    } else if (fx === "dexterity") {
+      player.stats.DEX += 1;
+      log("Your hands find their quickness. (+1 DEX)", "hit");
+    } else if (fx === "resonance") {
+      player.stats.RES += 1;
+      log("The air around you hums a little louder. (+1 RES)", "hit");
     } else if (fx === "stone skin" || fx === "stone_skin" || fx === "stoneskin") {
       player.stoneSkin = { turns: 40 };
       floatText(player.x, player.y, "🛡", "#bcd3e6");
@@ -6174,9 +6484,11 @@
     }
     return nodes;
   }
-  let _skillCache = { cls: null, skills: {}, byId: {} };
+  // Keyed by class rather than holding one entry, because a trinket reads another
+  // class's tree on every render — a single-slot cache thrashed between the two.
+  const _skillCache = {};
   function treeSkills(cls) {
-    if (_skillCache.cls === cls) return _skillCache;
+    if (_skillCache[cls]) return _skillCache[cls];
     const c = DATA.classes[cls] || {};
     const skills = {}, byId = {};
     for (const n of normalizeTree(c.skillTree)) {
@@ -6196,8 +6508,8 @@
     if (!Object.keys(skills).length && c.skills) {   // legacy: a class that still lists skills directly
       for (const k of Object.keys(c.skills)) skills[k] = Object.assign({ kind: k, when: null, levels: [], req: [], tier: 1, minLevel: 0, pos: null }, c.skills[k]);
     }
-    _skillCache = { cls, skills, byId };
-    return _skillCache;
+    _skillCache[cls] = { cls, skills, byId };
+    return _skillCache[cls];
   }
   // Active abilities unlocked by a boon (not part of the class skill tree). Each
   // entry maps a skill key -> { boon: which boon unlocks it, skill: the skill def }.
@@ -6241,13 +6553,95 @@
   }
   function classSkills() {
     const base = treeSkills(player.cls).skills;
-    if (!player.boons || !player.boons.size) return base;
+    const worn = [player.necklace, player.trinket].filter((it) => it && it.grant);
+    if (!worn.length && (!player.boons || !player.boons.size)) return base;
     const out = Object.assign({}, base);
-    for (const sk of Object.keys(BOON_SKILLS)) if (player.boons.has(BOON_SKILLS[sk].boon)) out[sk] = BOON_SKILLS[sk].skill;
+    for (const sk of Object.keys(BOON_SKILLS)) if (player.boons && player.boons.has(BOON_SKILLS[sk].boon)) out[sk] = BOON_SKILLS[sk].skill;
+    // A trinket's skill belongs to another class, so its definition has to be
+    // fetched from that tree and folded in here — that is what makes the hotbar,
+    // the number keys, cooldown ticking and the character screen treat it as an
+    // ordinary skill without any of them knowing where it came from.
+    for (const it of worn) {
+      const g = it.grant;
+      if (out[g.skill]) continue;
+      const d = treeSkills(g.cls).skills[g.skill];
+      if (d) out[g.skill] = d;
+    }
     return out;
   }
   function skillDef(key) { return classSkills()[key]; }
-  function skillCur(key) { const st = player.skills[key], d = skillDef(key); return st && st.rank > 0 ? d.ranks[st.rank - 1] : null; }
+
+  // ---- Jewellery-granted skill ranks ---------------------------------------
+  //
+  // A necklace grants ranks in a skill from YOUR OWN tree; a trinket grants one
+  // from somebody else's, which is the whole point of the slot — ToneTum wearing
+  // a charm that lets him Spin. Both are rolled at drop time and live on the
+  // instance as { cls, skill, ranks }.
+  //
+  // Granted ranks are kept strictly apart from SPENT ranks, and the split matters
+  // in both directions:
+  //   · spent ranks are what skillPointsSpent() counts and what prerequisites
+  //     read, so a necklace can never buy its way down the tree;
+  //   · granted ranks are what the EFFECT reads, so the amulet does what it says.
+  // Take the necklace off and the ranks go with it, because nothing was ever
+  // written into player.skills.
+  //
+  // Which rows a piece can reach is its tier: ceil(tier / 2), so tiers 1-2 reach
+  // the first row, 3-4 the first two, 5 the first three. That interpolates the
+  // 1 / 3 / 5 rule onto the tiers between them rather than leaving even tiers
+  // rolling nothing.
+  const grantRowsForTier = (tier) => Math.max(1, Math.ceil((tier || 1) / 2));
+  // Character-level gates still bite. Prerequisites do NOT — a trinket hands an
+  // off-class skill to someone who could never satisfy its tree — but a rank the
+  // character is too junior for stays out of reach whatever they are wearing,
+  // which is what keeps a tier-5 amulet from being a level-1 shortcut.
+  function rankAllowedByLevel(d) {
+    if (!d) return 0;
+    if (d.minLevel && player.level < d.minLevel) return 0;   // the row itself is shut
+    for (let i = 0; i < d.max; i++) {
+      const r = d.ranks[i];
+      if (r && r.minLevel && player.level < r.minLevel) return i;
+    }
+    return d.max;
+  }
+  // NOT gated on identification. The house rule (see itemIdentified) is that gear
+  // works fully while unidentified and you simply cannot read its numbers, so an
+  // unknown amulet has to grant its ranks like an unknown sword swings its damage.
+  // The consequence is that an unidentified trinket's ACTIVE skill shows up on the
+  // hotbar before its card will name it — which is the same bargain as feeling a
+  // sword hit harder than it reads, and better than a slot that silently does
+  // nothing until some arbitrary number of hits have gone by.
+  const grantItems = () => [player.necklace, player.trinket].filter((it) => it && it.grant);
+  // Ranks this key gets from worn jewellery. A rolled or scrolled +X raises the
+  // grant one rank per point, the same way it raises a stat affix — which is what
+  // "upgrade scrolls can increase the skill levels" means. It clamps at the
+  // skill's max soon enough, and that clamp IS the brake.
+  function grantedRanks(key) {
+    let n = 0;
+    for (const it of grantItems()) if (it.grant.skill === key) n += (it.grant.ranks || 0) + (it.plus || 0);
+    return n;
+  }
+  // The rank an effect should read: what you bought, plus what you are wearing,
+  // capped by the skill's own max and by the level gates above. Never below the
+  // spent rank — you cannot un-learn something by taking a necklace off.
+  function skillRank(key) {
+    const st = player.skills[key], d = skillDef(key);
+    const spent = (st && st.rank) || 0;
+    const g = grantedRanks(key);
+    if (!d || !g) return spent;
+    return Math.max(spent, Math.min(spent + g, d.max, rankAllowedByLevel(d)));
+  }
+  function skillCur(key) { const d = skillDef(key), r = skillRank(key); return d && r > 0 ? d.ranks[r - 1] : null; }
+  // player.skills is the cooldown ledger as well as the rank ledger, and the
+  // hotbar walks its keys — so a skill you only have because of an amulet needs a
+  // slot in it. rank stays 0: nothing was bought, and skillRank() adds the grant
+  // on top. Called wherever jewellery can change hands.
+  function syncGrantedSkills() {
+    for (const it of grantItems()) {
+      const k = it.grant.skill;
+      if (!player.skills[k]) player.skills[k] = { rank: 0, cd: 0 };
+    }
+  }
   // req: every listed [id, minRank] must be at minRank — an AND.
   // reqAny: at least ONE listed [id, minRank] must reach minRank (default 1) —
   // an OR, used for things like "4 points in any one of the first-tier skills."
@@ -6301,7 +6695,7 @@
     let v = 0; const sk = classSkills();
     for (const key in sk) {
       const d = sk[key]; if (d.kind !== "passive") continue;
-      const st = player.skills[key]; if (!st || st.rank < 1) continue;
+      const r = skillRank(key); if (r < 1) continue;
       if (d.when === "unarmed") { if (player.weapon) continue; }
       // "softarmor": cloth (the light subtype) or medium. Heavy and bare skin get
       // nothing — Happy Feet is footwork, and you cannot dance in plate. Checked
@@ -6309,7 +6703,7 @@
       // "softarmor" as the name of a weapon class and never match.
       else if (d.when === "softarmor") { const a = armorSubName(); if (a !== "light" && a !== "medium") continue; }
       else if (d.when && d.when !== weaponSub()) continue;
-      const r = d.ranks[st.rank - 1] || {}; if (r[field] != null) v += r[field];
+      const rd = d.ranks[r - 1] || {}; if (rd[field] != null) v += rd[field];
     }
     return v;
   }
@@ -6317,9 +6711,9 @@
   // (DEX+VIT)/2, riding along the min/max bonus above.
   function unarmedStatBonus() {
     if (player.weapon) return 0;
-    const st = player.skills.unarmed_master; if (!st || st.rank < 1) return 0;
+    const r0 = skillRank("unarmed_master"); if (r0 < 1) return 0;
     const d = classSkills().unarmed_master; if (!d) return 0;
-    const r = d.ranks[st.rank - 1];
+    const r = d.ranks[r0 - 1];
     return (r && r.statScale) ? Math.max(0, mod("DEX") + mod("VIT")) * 2 : 0;
   }
 
@@ -6512,7 +6906,7 @@
   function useSkill(key) {
     if (dead || mapOpen || invOpen || charOpen || boonPending || classPending) return;
     const st = player.skills[key], d = skillDef(key);
-    if (!st || st.rank < 1 || !d) return;
+    if (!st || skillRank(key) < 1 || !d) return;
     if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
     // Meditate is the exception: its button doubles as "stand up", and standing up
     // has to work while the cooldown it already started is running.
@@ -6663,9 +7057,9 @@
   }
   // The active rank's data for a learned passive (null if unlearned).
   function passiveRank(key) {
-    const st = player.skills[key], d = skillDef(key);
-    if (!st || st.rank < 1 || !d) return null;
-    return d.ranks[st.rank - 1] || null;
+    const d = skillDef(key), r = skillRank(key);
+    if (!d || r < 1) return null;
+    return d.ranks[r - 1] || null;
   }
 
   // Magic Missile — the mage's answer to "I have no weapon worth swinging", and
@@ -7198,6 +7592,7 @@
     if (torch) { log("A wall torch — tap it to take it; fire clears thorns."); return; }
     if (shopKeeper && shopKeeper.x === x && shopKeeper.y === y) { log("A merchant — tap to buy potions or sell your gear."); return; }
     if (fountain && fountain.x === x && fountain.y === y) { log("A fountain — tap to pay for a full heal."); return; }
+    if (altar && altar.x === x && altar.y === y) { log("A god's altar — tap to buy a god's attention for " + ALTAR_BOON_PRICE + " gold."); return; }
     const t = map[y][x];
     log(t === WALL ? (sarcophagi.has(y * MAP_W + x) ? "A stone sarcophagus — sealed, and going nowhere. It blocks the way as surely as a wall." : "A wall.") : t === STAIRS ? "The way onward." :
         t === DOOR ? "A " + doorWord() + " — it opens as you pass and closes behind you, blocking sight." :
@@ -7425,7 +7820,7 @@
   };
   function restBusy() {
     return dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen ||
-      fountainOpen || examineMode || pendingThrow != null || !!pendingSkill;
+      fountainOpen || altarOpen || examineMode || pendingThrow != null || !!pendingSkill;
   }
   function startRest() {
     if (restTimer || restBusy()) return;
@@ -7484,7 +7879,7 @@
     bar.appendChild(makeSlot("⏳", "Wait", true, 0, false, () => waitTurn()));   // one tap, exactly one turn
     for (const key of Object.keys(player.skills || {})) {
       const st = player.skills[key], d = skillDef(key);
-      if (!st || st.rank < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
+      if (!st || skillRank(key) < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
       bar.appendChild(makeSlot(d.icon, d.name, st.cd <= 0, st.cd > 0 ? st.cd : 0, pendingSkill === key, () => useSkill(key)));
     }
   }
@@ -7538,6 +7933,7 @@
     if (boonPending || classPending) return;      // choose your boon/character first
     if (shopOpen) { if (e.key === "Escape") toggleShop(false); return; }
     if (fountainOpen) { if (e.key === "Escape") toggleFountain(false); return; }
+    if (altarOpen) { if (e.key === "Escape") toggleAltar(false); return; }
     const key = (e.key || "").toLowerCase();
     if (key === "c") { e.preventDefault(); toggleChar(); return; }
     if (charOpen) { if (e.key === "Escape" || key === "c") toggleChar(false); return; }
@@ -7572,7 +7968,7 @@
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
   document.getElementById("btnRest").addEventListener("click", () => toggleRest());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen) return; walkPath = []; worldTurn(); }
+  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen || altarOpen) return; walkPath = []; worldTurn(); }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -7584,6 +7980,8 @@
   { const el = document.getElementById("shop"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleShop(false); }); }
   { const el = document.getElementById("shopClose"); if (el) el.addEventListener("click", () => toggleShop(false)); }
   { const el = document.getElementById("fountain"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleFountain(false); }); }
+  { const el = document.getElementById("altar"); if (el) el.addEventListener("click", (e) => { if (e.target === el) toggleAltar(false); }); }
+  { const el = document.getElementById("shopReroll"); if (el) el.addEventListener("click", rerollShop); }
 
   // character screen: tabs, close, tap-outside
   document.getElementById("charClose").addEventListener("click", () => toggleChar(false));
@@ -7679,11 +8077,28 @@
     stoneSkinTurns: () => (player.stoneSkin ? player.stoneSkin.turns : 0),
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
     setGold: (n) => { player.gold = n; updateHUD(); },
-    setStat: (k, v) => { if (player.stats[k] != null) player.stats[k] = v; updateHUD(); },
+    // Recomputes the pools, because they are STORED rather than derived on read:
+    // a raw poke at VIT used to leave maxHp at its old value, which has quietly
+    // ruined two separate measurement runs (a "burn does 0" that was really the
+    // test character dying at an HP cap that never moved).
+    setStat: (k, v) => {
+      if (player.stats[k] == null) return;
+      player.stats[k] = v;
+      const bHp = player.maxHp, bMp = player.maxMp;
+      player.maxHp = computeMaxHp(); player.maxMp = computeMaxMp();
+      player.hp = Math.min(Math.max(1, player.hp + Math.max(0, player.maxHp - bHp)), player.maxHp);
+      player.mp = Math.min(player.mp + Math.max(0, player.maxMp - bMp), player.maxMp);
+      updateHUD();
+    },
     give: (k) => { if (GEAR[k]) invAdd(rollItem(k, depth)); else if (defOf(k)) invAdd({ key: k }); },
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
-    rollItem: (k, f) => rollItem(k, f != null ? f : depth),
+    rollItem: (k, f, rarity) => rollItem(k, f != null ? f : depth, rarity),   // rarity: force one, for measuring a tier's table
+    // The rank an effect actually reads (spent + worn, past the level gates), and
+    // the card text — the two things a jewellery grant has to get right.
+    skillRank: (k) => skillRank(k),
+    grantedRanks: (k) => grantedRanks(k),
+    itemAffix: (inst) => itemAffixText(inst),
     // The affix line exactly as the pack, the floor and the merchant print it.
     // Exposed because the card and the engine drifted apart once already: it read
     // a flat `plus` where gStatBonus is triangular in it, and a gear field
@@ -7738,7 +8153,9 @@
         biome: biome ? biome.name : null, floor: floorInBiome(depth), bossActive,
         inShop, shopKeeper: shopKeeper ? { x: shopKeeper.x, y: shopKeeper.y } : null,
         fountain: fountain ? { x: fountain.x, y: fountain.y } : null,
+        altar: altar ? { x: altar.x, y: altar.y } : null,
         shopStock: shopStock.slice(), shopHealCost, shopOpen, fountainOpen,
+        shopRerolls, shopRerollCost: shopRerollCost(), altarOpen, altarGods: altarGods.slice(),
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
@@ -7770,6 +8187,22 @@
       startHunting(m);                       // no surprise multiplier, clean numbers
       monsters.push(m); return true;
     },
+    // Drive one monster's attack straight at the player, outside its AI. The whole
+    // incoming-damage order — AC roll, evasion, RES, armour — runs exactly as it
+    // does in play, which is what makes that order measurable rather than argued.
+    monsterHit: (i) => {
+      const m = monsters[i]; if (!m || m.hp <= 0) return null;
+      const before = player.hp;
+      attack(m, player, 0);
+      return { dealt: before - player.hp, hp: player.hp };
+    },
+    resPct: () => resReduction(),
+    // Run one damage figure down the ladder from a chosen rung — 1 to-hit,
+    // 2 evade, 3 RES + armour, 4 RES only — with `acc` as the attacker's
+    // accuracy. This is the same call every boss telegraph, trap and tick makes,
+    // so a measurement of it is a measurement of them.
+    ladder: (dmg, rung, acc, noArmor) => incomingDamage(dmg, rung, { acc, noArmor: !!noArmor }),
+    DMG_RUNGS: () => ({ toHit: DMG_TOHIT, evade: DMG_EVADE, reduce: DMG_REDUCE }),
     useIdx: (i) => actItem(i),
     equip: (i) => equipItem(i),
     upgradePending: () => pendingUpgrade,
@@ -7819,6 +8252,12 @@
     },
     turns: () => turns,
     shopRoll: () => weightedShopPotionKey(),
+    rerollShop, shopRerollCost, openingShopStock,
+    openShop: () => toggleShop(true),
+    openAltar: () => toggleAltar(true),
+    altarBuy: (g) => buyGodBoon(g),
+    godBoons: (g) => godBoonKeys(g),
+    openBoonsOf: (g) => godOpenBoons(g),
     decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },

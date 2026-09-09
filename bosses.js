@@ -39,7 +39,20 @@ window.CantoriBosses = function (deps) {
     sayMonster = deps.sayMonster, shuns = deps.shuns, snapEntity = deps.snapEntity, snapPlayer = deps.snapPlayer,
     spawnBurst = deps.spawnBurst, spawnNear = deps.spawnNear, spawnProjectile = deps.spawnProjectile,
     spawnStreak = deps.spawnStreak, startHunting = deps.startHunting, stepMonsterTo = deps.stepMonsterTo, tileProp = deps.tileProp,
-    updateHUD = deps.updateHUD, normalAct = deps.normalAct;
+    updateHUD = deps.updateHUD, normalAct = deps.normalAct,
+    incomingDamage = deps.incomingDamage, DMG = deps.DMG;
+
+  // A boss's telegraphed move is still a blow: it enters the incoming-damage
+  // ladder at the top (attack roll, evasion, RES, armour) exactly like a wolf's
+  // bite, so defensive investment has a say in the fight it matters most in.
+  // Standing out of the line is the FIRST defence, not the only one — every move
+  // below already checks position, and this is what happens once position fails.
+  // A playbook that deliberately wants a move to bypass a rung says so here, at
+  // its call site, with a reason.
+  const bossHit = (m, dmg, missMsg, dodgeMsg) => incomingDamage(dmg, DMG.TOHIT, {
+    acc: m && m.toHit != null ? m.toHit : undefined,
+    missMsg, dodgeMsg,
+  });
 
   // ---- The Pied Piper (forest boss) ---------------------------------------
   const BEAM_HOLD = 2;   // turns the death line sits before the rat launches down it
@@ -137,11 +150,15 @@ window.CantoriBosses = function (deps) {
     spawnProjectile(start[0], start[1], end[0], end[1], "#e0685a");
     spawnBurst(end[0], end[1], "#ff6a4a");
     if (hitIdx >= 0) {
-      const dmg = 30;
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
-      log("The exploding rat slams into you! (-" + dmg + ")", "hurt");
-      updateHUD();
-      if (player.hp <= 0) { die(); return; }
+      const dmg = bossHit(m, 30,
+        "The rat hurtles past you and bursts on the wall.",
+        "You twist aside as the rat hurtles past.");
+      if (dmg > 0) {
+        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
+        log("The exploding rat slams into you! (-" + dmg + ")", "hurt");
+        updateHUD();
+        if (player.hp <= 0) { die(); return; }
+      } else updateHUD();
     } else {
       spawnNear("rat", end[0], end[1], 1, 2);         // bursts on the wall, two rats spill out
       log("You dodge! The rat bursts on the wall — two more scurry out.", "hit");
@@ -219,11 +236,15 @@ window.CantoriBosses = function (deps) {
       if (xx === player.x && yy === player.y) hit = true;
     }
     if (hit) {
-      const dmg = randInt(15, 30);
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-      log("The boulder slams down — you're caught in the blast! (-" + dmg + ")", "hurt");
+      const dmg = bossHit(m, randInt(15, 30),
+        "The boulder glances off the ground beside you.",
+        "You roll clear as the boulder lands.");
+      if (dmg > 0) {
+        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
+        log("The boulder slams down — you're caught in the blast! (-" + dmg + ")", "hurt");
+        if (player.hp <= 0) { updateHUD(); die(); return; }
+      }
       updateHUD();
-      if (player.hp <= 0) die();
     } else {
       log("The boulder crashes into the ground nearby.");
     }
@@ -258,11 +279,15 @@ window.CantoriBosses = function (deps) {
     m.slamCd = 10;
     const hit = w.tiles.some(([x, y]) => x === player.x && y === player.y);
     if (hit) {
-      const dmg = randInt(20, 60);
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
-      log("The ground slam catches you! (-" + dmg + ")", "hurt");
+      const dmg = bossHit(m, randInt(20, 60),
+        "The shockwave breaks around you.",
+        "You ride out the shockwave and land clear.");
+      if (dmg > 0) {
+        player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff5a5a");
+        log("The ground slam catches you! (-" + dmg + ")", "hurt");
+        if (player.hp <= 0) { updateHUD(); die(); return; }
+      }
       updateHUD();
-      if (player.hp <= 0) die();
     } else {
       log("You dodge clear of the ground slam.", "hit");
     }
@@ -313,8 +338,15 @@ window.CantoriBosses = function (deps) {
       for (let yy = b.y - 2; yy <= b.y + 2; yy++) for (let xx = b.x - 2; xx <= b.x + 2; xx++) {
         if (inBounds(xx, yy)) floatText(xx, yy, "✸", "#ffb26a");
       }
+      const golem = getMonsters().find((x) => x.type === "golem" && x.hp > 0);
       const inBlast = cheb(player.x, player.y, b.x, b.y) <= 2;
-      const dmg = inBlast ? randInt(0, 20) : 0;
+      // The blast rolls to hit like any other of the Golem's moves — the burst
+      // still has to reach you. It heals the Golem by what LANDS, so armour and
+      // RES now cut the transfusion as well as the wound.
+      const raw = inBlast ? randInt(0, 20) : 0;
+      const dmg = raw > 0
+        ? bossHit(golem, raw, "The burst washes over you and does nothing.", "You are already moving when the node goes up.")
+        : 0;
       if (dmg > 0) {
         player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
         log("The node explodes — you're caught in it! (-" + dmg + ")", "hurt");
@@ -322,7 +354,6 @@ window.CantoriBosses = function (deps) {
       } else if (inBlast) {
         log("The node bursts, but you're clear of the worst of it.");
       }
-      const golem = getMonsters().find((x) => x.type === "golem" && x.hp > 0);
       if (golem && dmg > 0) {
         const heal = Math.min(golem.maxHp - golem.hp, dmg);
         if (heal > 0) { golem.hp += heal; floatText(golem.x, golem.y, "+" + heal, "#8ed69a"); }

@@ -561,6 +561,11 @@ body{
 .inv-actions button.primary{background:var(--amber);color:#14100a;border-color:var(--amber);font-weight:700}
 .inv-actions button.danger{color:#e0685a}
 .inv-actions button:active{transform:translateY(1px)}
+/* Can't afford it — say so by going grey rather than by vanishing, so the price
+   stays readable as something to save toward. */
+.inv-actions button:disabled{opacity:.4;cursor:default}
+.inv-actions button:disabled:active{transform:none}
+.boon-choice:disabled{opacity:.45;cursor:default}
 .inv-hint{
   margin-top:12px;
   text-align:center;
@@ -636,7 +641,7 @@ body{
   letter-spacing:.16em;
   text-transform:uppercase;
 }
-#boons,#classSelect{
+#boons,#classSelect,#altar{
   position:fixed;
   inset:0;
   z-index:21;
@@ -648,7 +653,7 @@ body{
   backdrop-filter:blur(3px);
   padding:18px;
 }
-#boons[hidden],#classSelect[hidden]{display:none}
+#boons[hidden],#classSelect[hidden],#altar[hidden]{display:none}
 .boon-card{text-align:center;max-width:560px;width:100%}
 .boon-title{font-size:24px;font-weight:700;letter-spacing:.18em;color:#f0c14b}
 .boon-sub{margin-top:8px;color:var(--ink-dim);font-size:13px;letter-spacing:.05em}
