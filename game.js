@@ -1255,7 +1255,7 @@
   // with depth: (1..3)×floor, capped at (player level + floor).
   function arrowTrap(t) {
     const floor = depth;
-    const dmg = Math.max(1, Math.min(player.level + floor, randInt(1, 3) * floor));
+    let dmg = Math.max(1, Math.min(player.level + floor, randInt(1, 3) * floor));
     let tgt = { kind: "player", x: player.x, y: player.y }, td = cheb(t.x, t.y, player.x, player.y);
     for (const m of monsters) {
       if (m.hp <= 0) continue;
@@ -1265,6 +1265,10 @@
     spawnProjectile(t.x, t.y, tgt.x, tgt.y, "#e8d08a");
     spawnStreak(t.x, t.y, tgt.x, tgt.y, "#c9a24a", 240);
     if (tgt.kind === "player") {
+      // A trap enters the ladder at evasion: there is nothing to parry, but you
+      // can throw yourself clear, and armour still catches what reaches you.
+      dmg = incomingDamage(dmg, DMG_EVADE, { dodgeMsg: "You throw yourself flat — the arrow whistles past." });
+      if (dmg <= 0) { updateHUD(); return; }
       player.hp -= dmg; flash(player); floatText(player.x, player.y, "➶-" + dmg, "#ff8f84");
       log("A hidden arrow strikes you! (-" + dmg + ")", "hurt");
       if (player.hp <= 0) { updateHUD(); die(); return; }
@@ -1293,9 +1297,12 @@
       if (mm && mm.hp > 0) { mm.hp -= dmg; flash(mm); floatText(mm.x, mm.y, "-" + dmg, "#ff8f4a"); if (mm.hp <= 0) killMonster(mm, "is blown apart"); }
     }
     if (cheb(t.x, t.y, player.x, player.y) <= 1) {   // player caught in the 3×3
-      player.hp -= dmg; flash(player); floatText(player.x, player.y, "-" + dmg, "#ff8f84");
-      log("The bomb erupts — you're caught in the blast! (-" + dmg + ")", "hurt");
-      if (player.hp <= 0) { updateHUD(); die(); return; }
+      const took = incomingDamage(dmg, DMG_EVADE, { dodgeMsg: "You dive clear of the blast." });
+      if (took > 0) {
+        player.hp -= took; flash(player); floatText(player.x, player.y, "-" + took, "#ff8f84");
+        log("The bomb erupts — you're caught in the blast! (-" + took + ")", "hurt");
+        if (player.hp <= 0) { updateHUD(); die(); return; }
+      }
     } else log("The bomb erupts in a gout of fire.");
     updateHUD();
   }
@@ -2749,13 +2756,18 @@
     if (dead) return;
     if (player.burn) {
       const b = player.burn;
-      player.hp -= b.dmg; flash(player); floatText(player.x, player.y, "🔥-" + b.dmg, "#ff8f4a");
+      // A tick enters the ladder at the bottom rung: RES resists it, armour
+      // cannot — it is already inside you. The stored b.dmg keeps decaying at its
+      // own rate, so RES softens each tick without changing the burn's shape.
+      const took = mitigateDamage(b.dmg, DMG_TICK);
+      player.hp -= took; flash(player); floatText(player.x, player.y, "🔥-" + took, "#ff8f4a");
       b.dmg = Math.max(1, b.dmg - 1);
       if (--b.rounds <= 0) { player.burn = null; log("The flames on you gutter out."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
     }
     if (player.poison > 0) {
-      player.hp -= player.poison; flash(player); floatText(player.x, player.y, "☠-" + player.poison, "#9ad06a");
+      const pt = mitigateDamage(player.poison, DMG_TICK);
+      player.hp -= pt; flash(player); floatText(player.x, player.y, "☠-" + pt, "#9ad06a");
       if (--player.poison <= 0) { player.poison = 0; log("The poison works itself out of you."); }
       if (player.hp <= 0) { updateHUD(); die(); return; }
     }
@@ -2820,6 +2832,57 @@
       else startHunting(m);
     }
     bursting = false;
+  }
+
+  // ---- The incoming-damage ladder ------------------------------------------
+  //
+  // Four rungs, always resolved in this order:
+  //
+  //   1 to-hit    d20 + the attacker's accuracy against playerAC()
+  //   2 evade     a separate roll against dodgeChance() — the blow was aimed true
+  //               and you slipped it, which is a different thing from being hard
+  //               to aim at, and keeping them separate is what makes Foresight's
+  //               coin a real choice
+  //   3 reduce    RES, the only percentage cut in the game
+  //   4 mitigate  armour and every other flat soak, floored at 1
+  //
+  // What a source of damage chooses is not which rungs to use but where it
+  // ENTERS: from there it runs every remaining rung. A monster's blow enters at
+  // 1. A trap enters at 2 — nothing about a pressure plate can be parried, but
+  // you can throw yourself clear of it and a breastplate still catches the arrow.
+  // A burn or poison tick enters at 4 and is the one thing that skips armour,
+  // because it is already inside you: nothing left to dodge, and no plate between
+  // it and your blood.
+  //
+  // A boss's telegraphed move enters at 1 like anything else unless its playbook
+  // says otherwise. A line you are standing in the middle of is still a blow that
+  // has to land, and before this every one of them ignored the whole ladder — 20
+  // to 60 raw from a ground slam meant defensive investment had no say in exactly
+  // the fight the player most wanted it to.
+  const DMG_TOHIT = 1, DMG_EVADE = 2, DMG_REDUCE = 3, DMG_TICK = 4;
+  // Rungs 3 and 4 — what actually reaches your HP once the rolls are past.
+  function mitigateDamage(dmg, rung) {
+    dmg = Math.round(dmg * (1 - resReduction()));
+    if (rung < DMG_TICK) dmg -= armorBlock();
+    return Math.max(1, dmg);
+  }
+  // The whole ladder from `rung` down. `o.acc` is the attacker's to-hit, needed
+  // only at rung 1. Returns the damage that lands, or 0 for a blow turned aside —
+  // the caller narrates the hit, this narrates the misses, so an arrow trap and a
+  // wolf can miss in their own words.
+  function incomingDamage(dmg, rung, o) {
+    o = o || {};
+    if (rung <= DMG_TOHIT && !rollHit(o.acc != null ? o.acc : MON_TOHIT, playerAC())) {
+      floatText(player.x, player.y, "miss", "#cfe6b0");
+      if (o.missMsg) log(o.missMsg);
+      return 0;
+    }
+    if (rung <= DMG_EVADE && Math.random() < dodgeChance()) {
+      floatText(player.x, player.y, "dodge", "#9ad0ff");
+      if (o.dodgeMsg) log(o.dodgeMsg, "hit");
+      return 0;
+    }
+    return mitigateDamage(dmg, rung);
   }
 
   // ---- Combat: strikes, kills, and what a kill pays ------------------------
@@ -2956,24 +3019,13 @@
       }
     } else {
       bump(attacker, player.x, player.y);
-      const acc = attacker.toHit != null ? attacker.toHit : MON_TOHIT;
-      if (!rollHit(acc, playerAC())) {                 // it rolls against your AC
-        floatText(player.x, player.y, "miss", "#cfe6b0");
-        log("You evade the " + monName(attacker) + ".");
-        return;
-      }
-      // Evasion is rolled AFTER the attack roll beat your AC: the blow was aimed
-      // true and you slipped it. That is a different thing from being hard to aim
-      // at, and keeping it separate is what makes Foresight's coin a real choice.
-      if (Math.random() < dodgeChance()) {
-        floatText(player.x, player.y, "dodge", "#9ad0ff");
-        log("You slip aside from the " + monName(attacker) + "'s blow.");
-        return;
-      }
-      let dmg = randInt(attacker.atkMin, attacker.atkMax);
-      // RES applies first, as a % reduction of the raw hit; armor (and other
-      // flat mitigation) then reduces whatever's left.
-      dmg = Math.max(1, Math.round(dmg * (1 - resReduction())) - armorBlock());
+      // An ordinary blow enters the ladder at the top — see incomingDamage().
+      let dmg = incomingDamage(randInt(attacker.atkMin, attacker.atkMax), DMG_TOHIT, {
+        acc: attacker.toHit != null ? attacker.toHit : MON_TOHIT,
+        missMsg: "You evade the " + monName(attacker) + ".",
+        dodgeMsg: "You slip aside from the " + monName(attacker) + "'s blow.",
+      });
+      if (dmg <= 0) return;
       // A charge's momentum is added AFTER mitigation, so it always lands: +1 for
       // every tile crossed, guaranteed. It used to go in with the base damage and
       // was simply eaten — a bear that thundered four squares still hit for 1
@@ -5199,6 +5251,10 @@
     floatText, inBounds, lineOfSight, log, monsterAt, patrolStep, randInt, sayMonster, shuns,
     snapEntity, snapPlayer, spawnBurst, spawnNear, spawnProjectile, spawnStreak, startHunting, stepMonsterTo,
     tileProp, updateHUD, normalAct: defaultAct,
+    // The incoming-damage ladder, so a boss's telegraphed move resolves the same
+    // way a wolf's bite does. A playbook that wants a move to land regardless
+    // passes DMG.REDUCE (or REDUCE/TICK) instead of DMG.TOHIT and says why.
+    incomingDamage, DMG: { TOHIT: DMG_TOHIT, EVADE: DMG_EVADE, REDUCE: DMG_REDUCE, TICK: DMG_TICK },
   });
 
   // ---- Draw: dungeon view --------------------------------------------------
@@ -7857,7 +7913,19 @@
     stoneSkinTurns: () => (player.stoneSkin ? player.stoneSkin.turns : 0),
     hurt: (n) => { player.hp -= n; updateHUD(); if (player.hp <= 0) die(); },
     setGold: (n) => { player.gold = n; updateHUD(); },
-    setStat: (k, v) => { if (player.stats[k] != null) player.stats[k] = v; updateHUD(); },
+    // Recomputes the pools, because they are STORED rather than derived on read:
+    // a raw poke at VIT used to leave maxHp at its old value, which has quietly
+    // ruined two separate measurement runs (a "burn does 0" that was really the
+    // test character dying at an HP cap that never moved).
+    setStat: (k, v) => {
+      if (player.stats[k] == null) return;
+      player.stats[k] = v;
+      const bHp = player.maxHp, bMp = player.maxMp;
+      player.maxHp = computeMaxHp(); player.maxMp = computeMaxMp();
+      player.hp = Math.min(Math.max(1, player.hp + Math.max(0, player.maxHp - bHp)), player.maxHp);
+      player.mp = Math.min(player.mp + Math.max(0, player.maxMp - bMp), player.maxMp);
+      updateHUD();
+    },
     give: (k) => { if (GEAR[k]) invAdd(rollItem(k, depth)); else if (defOf(k)) invAdd({ key: k }); },
     // deterministic gear for tests: giveGear("sword", {rarity, plus, stats:[{stat,val}], enchants:[...]})
     giveGear: (k, o) => { if (GEAR[k]) player.inv.push(Object.assign(mkBase(k), o || {})); },
@@ -7960,6 +8028,12 @@
       return { dealt: before - player.hp, hp: player.hp };
     },
     resPct: () => resReduction(),
+    // Run one damage figure down the ladder from a chosen rung — 1 to-hit,
+    // 2 evade, 3 RES + armour, 4 RES only — with `acc` as the attacker's
+    // accuracy. This is the same call every boss telegraph, trap and tick makes,
+    // so a measurement of it is a measurement of them.
+    ladder: (dmg, rung, acc) => incomingDamage(dmg, rung, { acc }),
+    DMG_RUNGS: () => ({ toHit: DMG_TOHIT, evade: DMG_EVADE, reduce: DMG_REDUCE, tick: DMG_TICK }),
     useIdx: (i) => actItem(i),
     equip: (i) => equipItem(i),
     upgradePending: () => pendingUpgrade,

@@ -1382,6 +1382,16 @@
       ],
     },
     {
+      title: "The incoming-damage ladder",
+      rows: [
+        { name: "The four rungs, in order", formula: "1 to-hit (d20 + the attacker's toHit vs your AC) → 2 evade (a separate roll against your dodge %) → 3 reduce (RES: dmg × (1 − m/(m+10))) → 4 mitigate (armour's def roll + heavy's flat soak + worn `defense` enchants + Stone Skin), floored at 1", note: "RES is the ONLY percentage cut in the game; every other defensive source is flat and lands in rung 4. Rungs 1 and 2 are deliberately separate — being hard to aim at (AC) and slipping a blow that was aimed true (evasion) are different things, which is what makes Ourn's Future Sight coin a real choice." },
+        { name: "Where each source enters", formula: "a monster's blow (melee, ranged, charge) and every boss telegraph enter at rung 1 · a trap enters at rung 2 · a burn or poison tick enters at rung 4 and skips armour", note: "A source does not pick which rungs apply, only where it ENTERS; from there it runs all the rest. Nothing about a pressure plate can be parried, but you can throw yourself clear of it and a breastplate still catches the arrow. A tick is already inside you — nothing to dodge, no plate between it and your blood — so RES resists it and armour cannot." },
+        { name: "A boss telegraph", formula: "rolls to hit like any other blow unless that boss's playbook says otherwise, at its own call site, with a reason", note: "Standing out of the line is the FIRST defence, not the only one: every telegraphed move already checks position, and the ladder is what happens once position has failed. Before this the Piper's rat (30), the Golem's boulder (15–30), its ground slam (20–60) and its node blast (0–20) all ignored AC, evasion, RES and armour completely — the biggest numbers in the game were the ones defensive investment had no say in. The Golem's node still heals it by exactly what LANDS, so armour and RES now cut the transfusion too." },
+        { name: "Still raw", formula: "a monster's death burst, thorn terrain, and the self-inflicted costs (Dragon Kick into a wall, Retribution's 5 HP)", note: "Also the Potion of Poison's toxin, which halves a share of max HP and is deliberately outside all of it. If any of these should join the ladder, they enter it the same way: pick a rung at the call site." },
+        { name: "Charge momentum", formula: "+1 per tile crossed, added AFTER rung 4", note: "So it always lands. It used to go in with the base damage and get eaten — a bear that thundered four squares still hit for 1 against real armour, which made its signature move read as a whiff." },
+      ],
+    },
+    {
       title: "Merchant floor",
       rows: [
         { name: "When it appears", formula: "inserted right after every non-final boss kill, before the next biome's floor 1", note: "A peaceful, monster-free floor — doesn't consume a depth number." },

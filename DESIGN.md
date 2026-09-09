@@ -2100,3 +2100,95 @@ The defensible reading is that a telegraphed AoE is answered by moving, not by
 armour. The problem is the size: 20–60 unmitigated from a ground slam is most of a
 mid-game health bar whatever you are wearing, so defensive investment has no say in
 the fight the player most wants it to.
+
+---
+
+## The ladder is now one function, and everything climbs onto it
+
+The order was already right for a monster's blow, but it was written *inside*
+`attack()`, and every other source of damage simply didn't have it. That is how the
+Golem came to hit for 20–60 with armour and RES watching from the sidelines: nothing
+was wrong with the code, there just wasn't any shared code to be wrong.
+
+`incomingDamage(dmg, rung, opts)` now holds all four rungs, and `attack()` is one of
+its callers rather than the place it lives. A source picks where it **enters**; from
+there it runs every remaining rung.
+
+| Source | Enters at | Gets |
+|---|---|---|
+| Melee, ranged, charge | 1 to-hit | AC roll, evasion, RES, armour |
+| **Boss telegraphs** | 1 to-hit | AC roll, evasion, RES, armour |
+| **Traps** (arrow, bomb) | 2 evade | evasion, RES, armour |
+| **Burn and poison ticks** | 4 tick | RES only — armour is skipped |
+
+### Boss telegraphs roll to hit
+
+The Piper's exploding rat, the Golem's boulder, its ground slam and its node blast all
+call `bossHit()`, which enters at rung 1 with that boss's own `toHit` (Piper 3,
+Golem 6). Standing out of the line is still the first defence — every one of those
+moves checks position before it ever reaches the ladder — but it is no longer the
+*only* one.
+
+A playbook that wants a move to bypass a rung says so at its own call site with a
+reason. That is the "unless stated in the boss move set" escape hatch, and it is a
+deliberate one-liner rather than a data field, because a move that ignores armour
+should have to be argued for in a comment next to the code that does it.
+
+The Golem's node still heals it by exactly what **lands**, so armour and RES now cut
+the transfusion as well as the wound.
+
+### Traps enter at evasion
+
+Nothing about a pressure plate can be parried, so there is no attack roll — but you
+can throw yourself clear of it, and a breastplate still catches the arrow. Measured on
+depth 8 with no armour: an arrow trap's mean landed damage falls from **8.68 at RES 0
+to 4.70 at RES 50%**, and evasion turns a share of them aside entirely, which it never
+did before.
+
+### Ticks get RES and nothing else
+
+A burn or a poison is already inside you: nothing left to dodge, and no plate between
+it and your blood. Measured with regeneration switched off (the floor's spark out, so
+an HP delta *is* the damage):
+
+| RES cut | burn of 20 | poison of 12 | with rusted mail |
+|---|---|---|---|
+| 0% | 20 | 12 | identical |
+| 33.3% | 13 | 8 | identical |
+| 50% | 10 | 6 | identical |
+
+The stored tick keeps decaying at its own rate, so RES softens each tick without
+changing the burn's shape.
+
+### The ladder itself, measured
+
+`window.cantori.ladder(dmg, rung, acc)` runs one figure down it — the same call every
+telegraph, trap and tick makes. 4,000 samples per case:
+
+| Case | hit rate | mean when it lands |
+|---|---|---|
+| Piper's rat (30, toHit 3) vs AC 11, no armour, RES 0 | 65.5% | 30.00 |
+| …with rusted mail (1–5) | 70.3% | 26.98 |
+| …mail + RES 50% | 69.9% | 12.01 |
+| Golem slam (40, toHit 6) vs AC 11, no armour, RES 0 | 80.6% | 40.00 |
+| …mail + RES 50% | 85.1% | 17.01 |
+
+Every mean is exactly `round(raw × (1 − cut)) − 3`, the 3 being rusted mail's average
+block. End to end, a real Piper fight on depth 5 produced the "turned aside" branch —
+a rat line that resolved without doing 30 damage, which was not a thing that could
+happen before.
+
+### Left raw, on purpose for now
+
+A monster's death burst, thorn terrain, and the self-inflicted costs (Dragon Kick into
+a wall, Retribution's 5 HP). The toxin's %-max-HP halving stays outside everything by
+design. Any of them joins the ladder the same way: pick a rung at the call site.
+
+### A dev-surface fix that had already cost two measurements
+
+`setStat` poked a stat without recomputing `maxHp`/`maxMp`. The pools are **stored,
+not derived on read**, so raising VIT to 120 left the test character on 20 HP — and a
+"burn does 0 damage" reading that was really the character dying. It now recomputes
+both and grants the difference, like every other path that moves a stat. Also new:
+`monsterHit(i)` drives one monster's attack outside its AI, and `ladder(dmg, rung,
+acc)` runs the ladder directly.
