@@ -10,7 +10,7 @@ window.CANTORI_DATA = {
       "color": "#c9b48f",
       "speed": 1,
       "ac": 13,
-      "atkMin": 1,
+      "atkMin": 0,
       "atkMax": 4,
       "toHit": 1
     },
@@ -22,10 +22,10 @@ window.CANTORI_DATA = {
       "color": "#b491d6",
       "hp": 5,
       "speed": 1,
-      "atkMin": 1,
+      "atkMin": 0,
       "atkMax": 4,
       "toHit": 1,
-      "ac": 21
+      "ac": 22
     },
     "snake": {
       "name": "Snake",
@@ -34,10 +34,11 @@ window.CANTORI_DATA = {
       "color": "#7ec98a",
       "minFloor": 3,
       "speed": 1,
-      "atkMin": 1,
       "atkMax": 6,
-      "ac": 22,
-      "toHit": 4
+      "ac": 24,
+      "toHit": 4,
+      "atkMin": 0,
+      "burstPoison": 25
     },
     "spider": {
       "walkSpeed": 0.8,
@@ -63,15 +64,14 @@ window.CANTORI_DATA = {
       "atkMax": 6,
       "speed": 1,
       "minFloor": 2,
-      "atkMin": 2,
       "ac": 14,
-      "toHit": 1
+      "toHit": 1,
+      "atkMin": 1
     },
     "bee": {
       "name": "Bee",
       "flying": true,
       "hp": 10,
-      "atkMin": 2,
       "atkMax": 6,
       "toHit": 2,
       "glyph": "e",
@@ -79,16 +79,18 @@ window.CANTORI_DATA = {
       "ranged": true,
       "range": 2,
       "speed": 1,
-      "ac": 16,
-      "minFloor": 2
+      "ac": 18,
+      "minFloor": 2,
+      "atkMin": 1,
+      "burstRadius": -3
     },
     "bear": {
       "attackSpeed": 1,
       "name": "Bear",
-      "hp": 35,
-      "atkMin": 2,
+      "hp": 30,
+      "atkMin": 1,
       "toHit": 4,
-      "ac": 13,
+      "ac": 12,
       "charge": true,
       "glyph": "B",
       "color": "#8a6a44",
@@ -102,7 +104,7 @@ window.CANTORI_DATA = {
     "harpy": {
       "name": "Harpy",
       "flying": true,
-      "atkMax": 12,
+      "atkMax": 10,
       "toHit": 3,
       "ac": 14,
       "ranged": true,
@@ -110,7 +112,7 @@ window.CANTORI_DATA = {
       "glyph": "H",
       "color": "#6b6f7a",
       "minFloor": 6,
-      "hp": 35,
+      "hp": 25,
       "speed": 1,
       "atkMin": 2
     },
@@ -323,7 +325,7 @@ window.CANTORI_DATA = {
       "dmgMin": 1,
       "dmgMax": 4,
       "toHit": 3,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 1,
       "req": {
         "STR": 8
@@ -339,7 +341,7 @@ window.CANTORI_DATA = {
       "dmgMin": 2,
       "dmgMax": 6,
       "toHit": 3,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 2,
       "req": {
         "STR": 9
@@ -355,7 +357,7 @@ window.CANTORI_DATA = {
       "dmgMin": 3,
       "dmgMax": 9,
       "toHit": 4,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 3,
       "req": {
         "STR": 10
@@ -371,7 +373,7 @@ window.CANTORI_DATA = {
       "dmgMin": 4,
       "dmgMax": 13,
       "toHit": 4,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 4,
       "req": {
         "STR": 11
@@ -387,7 +389,7 @@ window.CANTORI_DATA = {
       "dmgMin": 6,
       "dmgMax": 20,
       "toHit": 5,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 5,
       "req": {
         "STR": 12
@@ -403,7 +405,7 @@ window.CANTORI_DATA = {
       "dmgMin": 2,
       "dmgMax": 6,
       "toHit": 2,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 1,
       "req": {
         "STR": 10
@@ -419,7 +421,7 @@ window.CANTORI_DATA = {
       "dmgMin": 3,
       "dmgMax": 9,
       "toHit": 2,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 2,
       "req": {
         "STR": 12
@@ -435,7 +437,7 @@ window.CANTORI_DATA = {
       "dmgMin": 5,
       "dmgMax": 13,
       "toHit": 2,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 3,
       "req": {
         "STR": 13
@@ -451,7 +453,7 @@ window.CANTORI_DATA = {
       "dmgMin": 7,
       "dmgMax": 18,
       "toHit": 3,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 4,
       "req": {
         "STR": 15
@@ -467,7 +469,7 @@ window.CANTORI_DATA = {
       "dmgMin": 10,
       "dmgMax": 25,
       "toHit": 3,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 5,
       "req": {
         "STR": 16
@@ -547,7 +549,7 @@ window.CANTORI_DATA = {
       "dmgMin": 12,
       "dmgMax": 32,
       "toHit": -2,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 5,
       "req": {
         "STR": 20
@@ -563,7 +565,7 @@ window.CANTORI_DATA = {
       "dmgMin": 2,
       "dmgMax": 5,
       "toHit": -1,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 1,
       "req": {
         "STR": 10
@@ -580,7 +582,7 @@ window.CANTORI_DATA = {
       "dmgMin": 3,
       "dmgMax": 8,
       "toHit": -1,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 2,
       "req": {
         "STR": 11
@@ -597,7 +599,7 @@ window.CANTORI_DATA = {
       "dmgMin": 4,
       "dmgMax": 11,
       "toHit": 0,
-      "speed": 1.0,
+      "speed": 1,
       "tier": 3,
       "req": {
         "STR": 12
@@ -1401,7 +1403,7 @@ window.CANTORI_DATA = {
     "grace": {
       "name": "Maelon's Grace",
       "desc": "Regain 2 + (character level / 5) HP on every kill. It only ever tops you up to full — nothing is wasted on an already-whole body.",
-      "icon": "\u2619",
+      "icon": "☙",
       "color": "#8ed69a"
     },
     "dread": {
@@ -1449,7 +1451,7 @@ window.CANTORI_DATA = {
     "rhythm": {
       "name": "Rhythm of the Universe",
       "desc": "Every skill already on cooldown makes all of them tick faster: cooldowns fall by 1 a turn, plus 1 more for each skill waiting. Two on cooldown is 3 a turn, five is 6 — the more you have spent, the faster it all comes back.",
-      "icon": "\u266b",
+      "icon": "♫",
       "color": "#8fd6e0"
     },
     "timed_blow": {
@@ -1938,7 +1940,7 @@ window.CANTORI_DATA = {
           "x": 3,
           "y": 0,
           "name": "Retribution",
-          "icon": "\u2735",
+          "icon": "✵",
           "kind": "retribution",
           "when": null,
           "desc": "Brace, at the cost of 5 health, and let them break themselves on you. Every blow that lands is reflected back at whatever threw it, for 50 turns. Cooldown 100 turns.",
@@ -1949,10 +1951,35 @@ window.CANTORI_DATA = {
             "Reflects three times the blow, and regeneration at five times. (requires character level 10)"
           ],
           "ranks": [
-            { "cd": 100, "hp": 5, "turns": 50, "thorns": 0.5, "regenMult": 1 },
-            { "cd": 100, "hp": 5, "turns": 50, "thorns": 1, "regenMult": 1 },
-            { "cd": 100, "hp": 5, "turns": 50, "thorns": 2, "regenMult": 2 },
-            { "cd": 100, "hp": 5, "turns": 50, "thorns": 3, "regenMult": 5, "minLevel": 10 }
+            {
+              "cd": 100,
+              "hp": 5,
+              "turns": 50,
+              "thorns": 0.5,
+              "regenMult": 1
+            },
+            {
+              "cd": 100,
+              "hp": 5,
+              "turns": 50,
+              "thorns": 1,
+              "regenMult": 1
+            },
+            {
+              "cd": 100,
+              "hp": 5,
+              "turns": 50,
+              "thorns": 2,
+              "regenMult": 2
+            },
+            {
+              "cd": 100,
+              "hp": 5,
+              "turns": 50,
+              "thorns": 3,
+              "regenMult": 5,
+              "minLevel": 10
+            }
           ],
           "req": []
         },
@@ -2317,7 +2344,7 @@ window.CANTORI_DATA = {
             }
           ],
           "req": []
-        }        ,
+        },
         {
           "id": "dragon_kick",
           "x": 0,
@@ -2334,10 +2361,28 @@ window.CANTORI_DATA = {
             "No reduction: every square is worth a full attack rather than attack - 1."
           ],
           "ranks": [
-            { "cd": 50, "mp": 5 },
-            { "cd": 50, "mp": 5, "encore": true },
-            { "cd": 50, "mp": 5, "encore": true, "freeAction": true },
-            { "cd": 50, "mp": 5, "encore": true, "freeAction": true, "full": true }
+            {
+              "cd": 50,
+              "mp": 5
+            },
+            {
+              "cd": 50,
+              "mp": 5,
+              "encore": true
+            },
+            {
+              "cd": 50,
+              "mp": 5,
+              "encore": true,
+              "freeAction": true
+            },
+            {
+              "cd": 50,
+              "mp": 5,
+              "encore": true,
+              "freeAction": true,
+              "full": true
+            }
           ],
           "req": []
         },
@@ -2346,7 +2391,7 @@ window.CANTORI_DATA = {
           "x": 1,
           "y": 1,
           "name": "Meditate",
-          "icon": "\u262f",
+          "icon": "☯",
           "kind": "meditate",
           "when": null,
           "desc": "Sit still and mend fast. Moving, striking or being struck ends it at once — and so does pressing the button again. Cooldown 300 turns. Note that a floor whose spark has gone out (300 turns) regenerates nothing at all, meditation included.",
@@ -2357,10 +2402,29 @@ window.CANTORI_DATA = {
             "Rising from the trance leaves you sharpened: +3 damage, to-hit and AC for twice your character level in turns."
           ],
           "ranks": [
-            { "cd": 300, "mp": 0, "regenMult": 5 },
-            { "cd": 300, "mp": 0, "regenMult": 10 },
-            { "cd": 300, "mp": 0, "regenMult": 10, "cdRefund": 2 },
-            { "cd": 300, "mp": 0, "regenMult": 10, "cdRefund": 2, "endBuff": 3 }
+            {
+              "cd": 300,
+              "mp": 0,
+              "regenMult": 5
+            },
+            {
+              "cd": 300,
+              "mp": 0,
+              "regenMult": 10
+            },
+            {
+              "cd": 300,
+              "mp": 0,
+              "regenMult": 10,
+              "cdRefund": 2
+            },
+            {
+              "cd": 300,
+              "mp": 0,
+              "regenMult": 10,
+              "cdRefund": 2,
+              "endBuff": 3
+            }
           ],
           "req": []
         },
@@ -2369,7 +2433,7 @@ window.CANTORI_DATA = {
           "x": 0,
           "y": 2,
           "name": "Happy Feet",
-          "icon": "\ud83d\udc63",
+          "icon": "👣",
           "kind": "passive",
           "when": "softarmor",
           "desc": "Footwork you cannot do in plate — active only while wearing cloth or medium armour.",
@@ -2380,10 +2444,20 @@ window.CANTORI_DATA = {
             "+4 AC and +10% to dodge a blow that already connected."
           ],
           "ranks": [
-            { "ac": 2 },
-            { "ac": 4 },
-            { "ac": 4, "evaPct": 5 },
-            { "ac": 4, "evaPct": 10 }
+            {
+              "ac": 2
+            },
+            {
+              "ac": 4
+            },
+            {
+              "ac": 4,
+              "evaPct": 5
+            },
+            {
+              "ac": 4,
+              "evaPct": 10
+            }
           ],
           "req": []
         },
@@ -2392,7 +2466,7 @@ window.CANTORI_DATA = {
           "x": 1,
           "y": 2,
           "name": "Now You See Me",
-          "icon": "\u25cc",
+          "icon": "◌",
           "kind": "vanish",
           "when": null,
           "desc": "Step out of sight. Everything hunting you loses the trail; striking ends it early. Cooldown 100 turns, 5 MP.",
@@ -2403,10 +2477,28 @@ window.CANTORI_DATA = {
             "Same, and coming back into view leaves you swinging: +5 damage for 5 turns."
           ],
           "ranks": [
-            { "cd": 100, "mp": 5, "turns": 5 },
-            { "cd": 100, "mp": 5, "turns": 10 },
-            { "cd": 100, "mp": 5, "turns": 20 },
-            { "cd": 100, "mp": 5, "turns": 20, "exitDmg": 5, "exitTurns": 5 }
+            {
+              "cd": 100,
+              "mp": 5,
+              "turns": 5
+            },
+            {
+              "cd": 100,
+              "mp": 5,
+              "turns": 10
+            },
+            {
+              "cd": 100,
+              "mp": 5,
+              "turns": 20
+            },
+            {
+              "cd": 100,
+              "mp": 5,
+              "turns": 20,
+              "exitDmg": 5,
+              "exitTurns": 5
+            }
           ],
           "req": []
         }
@@ -2432,7 +2524,7 @@ window.CANTORI_DATA = {
       },
       "levelUp": {
         "hp": 3,
-        "mp": 4
+        "mp": 5
       },
       "skillTree": [
         {
@@ -2440,7 +2532,7 @@ window.CANTORI_DATA = {
           "x": 3,
           "y": 0,
           "name": "Keen Intellect",
-          "icon": "\ud83e\udde0",
+          "icon": "🧠",
           "kind": "passive",
           "when": null,
           "desc": "A deeper well, cut by the same mind that draws from it. Adds mana equal to a multiple of your INT modifier, on top of the mana every character already gets from INT.",
@@ -2451,11 +2543,31 @@ window.CANTORI_DATA = {
             "+MP equal to five times your INT modifier, and a robe of the third tier or better arrives at once. (requires character level 10)"
           ],
           "ranks": [
-            { "mpPerInt": 1 },
-            { "mpPerInt": 2 },
-            { "mpPerInt": 4, "minLevel": 6 },
-            { "mpPerInt": 5, "minLevel": 10,
-              "grantGear": { "cat": "armor", "sub": "light", "tierMin": 3, "tierMax": 5, "rarity": ["green", "blue", "purple"] } }
+            {
+              "mpPerInt": 1
+            },
+            {
+              "mpPerInt": 2
+            },
+            {
+              "mpPerInt": 4,
+              "minLevel": 6
+            },
+            {
+              "mpPerInt": 5,
+              "minLevel": 10,
+              "grantGear": {
+                "cat": "armor",
+                "sub": "light",
+                "tierMin": 3,
+                "tierMax": 5,
+                "rarity": [
+                  "green",
+                  "blue",
+                  "purple"
+                ]
+              }
+            }
           ],
           "req": []
         },
@@ -2716,12 +2828,12 @@ window.CANTORI_DATA = {
         }
       ],
       "icon": "✨",
-      "baseHp": 15,
+      "baseHp": 20,
       "baseMp": 20,
       "regenTurns": 350,
       "vitRegen": 2,
-      "mpRegenTurns": 450,
-      "intRegen": 3
+      "mpRegenTurns": 300,
+      "intRegen": 4
     }
   },
   "gods": {
