@@ -4164,7 +4164,7 @@
     // A Horror always knows. Breaking line of sight buys distance and a chance to
     // reach the stairs — it does not buy escape, which is the whole point of it.
     if (canSee(m) || m.horror) { m.target = { x: player.x, y: player.y }; m.huntBlind = 0; }
-    else if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; }
+    else if (!m.target) { stopHunting(m); return; }
     // A decoy beside it is more interesting than you are. Only adjacency is checked:
     // an image that pulled monsters across the room would be a wall, not a feint.
     const near = nearestDecoy(m.x, m.y, 1);
@@ -4189,12 +4189,31 @@
       return;
     }
     if (canSee(m)) { if (m.charge) chargeApproach(m); else stepMonsterTo(m, player.x, player.y); return; }
-    if (!m.target) { stopHunting(m); return; }
 
-    // Out of sight: walk the trail. Arriving to an empty tile is not proof you
-    // vanished — hand off to WANDERING, which pokes around here before drifting.
-    if (m.x === m.target.x && m.y === m.target.y) { stopHunting(m); return; }
-    stepMonsterTo(m, m.target.x, m.target.y);
+    // Out of sight: walk the trail to where you were last seen.
+    //
+    // The patience clock used to start the moment sight broke, which read as a
+    // monster refusing to follow you. In a forest every room mouth holds a bush,
+    // bushes block sight and close behind whoever walked through — so simply
+    // walking from one room to the next broke the chase, and a bat four tiles back
+    // dropped to WANDERING before it ever reached the bush you went through.
+    // Ordinary movement was springing the ambush rule by accident.
+    //
+    // It now only burns while the chase is going NOWHERE: the monster has reached
+    // the end of the trail and still cannot see you, or it could not move at all
+    // this turn (jammed against something it will not cross — the case the old
+    // early give-up existed to catch). While it still has ground to cover toward
+    // where it last saw you, it is chasing, and chasing is not giving up.
+    //
+    // The ambush is intact, because it never depended on the monster losing you
+    // instantly: it depends on the monster walking to where you WERE while you are
+    // somewhere else. It just has to get there first now.
+    const wasX = m.x, wasY = m.y;
+    if (m.x !== m.target.x || m.y !== m.target.y) stepMonsterTo(m, m.target.x, m.target.y);
+    const arrived = m.x === m.target.x && m.y === m.target.y;
+    const stalled = m.x === wasX && m.y === wasY;
+    if (arrived || stalled) { if (++m.huntBlind > HUNT_PATIENCE) { stopHunting(m); return; } }
+    else m.huntBlind = 0;
   }
   // Kept for the boss playbooks (bosses.js), which describe their turns in these
   // terms: "chase the trail" and "mill about". Both are the shared states.

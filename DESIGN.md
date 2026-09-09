@@ -2598,3 +2598,49 @@ The unidentified branch is untouched and mutually exclusive with the affix one, 
 unknown hatchet still reads `dmg 3–8 · spd 0.8 · to hit −2 · unidentified (0%)` — the
 base row's numbers belong to the item type rather than to the roll, which is why they
 show before you have identified anything.
+
+## The patience clock only runs when the chase is going nowhere
+
+A bat kept not following the player into a bush. It turned out not to be about
+bushes being unwalkable — monsters enter them fine, and when the bat was directly
+behind the player it followed straight through and attacked. The failure needed
+distance to show up:
+
+```
+step1  player enters the bush     bat 4 tiles back, hunting
+step2  player exits; bush closes behind
+step4  bat -> WANDERING, aware false      <- gave up mid-chase
+wait1  bat reaches the bush -> hunting again
+```
+
+It never refused the bush. It **gave up before reaching it**. `HUNT_PATIENCE` — cut
+from 10 to 2 earlier to make breaking line of sight a real ambush tactic — started
+burning the instant sight broke. In a forest every room mouth holds a bush, bushes
+block sight, and they close behind whoever walked through. So walking from one room to
+the next broke the chase, and ordinary movement was springing the ambush by accident.
+
+The clock now runs only while the chase is going **nowhere**: the monster has reached
+the end of the trail and still cannot see you, or it could not move at all this turn
+(jammed against something it will not cross — the case the old early give-up existed to
+catch). While it still has ground to cover toward where it last saw you, it is chasing,
+and chasing is not giving up.
+
+The ambush never depended on the monster losing you *instantly*. It depends on the
+monster walking to where you **were** while you are somewhere else — it just has to get
+there first now.
+
+| | before | after |
+|---|---|---|
+| chases surviving a bush | 1 / 5 | **5 / 5** |
+| monsters forgetting a vanished player | — | **8 / 8, in 1–2 turns** |
+
+### Two measurement traps, both mine
+
+The first probe teleported the player with `place()` instead of walking, so the bat
+looked frozen on the bush when it had actually closed to melee and was attacking. The
+second put the player *adjacent* to the monster while "fleeing", so it took the
+`d === 1 -> attack` branch every turn and never reached the trail logic under test at
+all — reading as "the ambush is broken" when nothing was. Both times the instrument was
+wrong, not the game. Stepping deliberately **away** from the monster, and reading its
+trail target and blind counter rather than only its position, is what finally measured
+the thing itself.
