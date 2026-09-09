@@ -2795,7 +2795,16 @@
     if (bursting) return;
     bursting = true;
     const r = Math.max(1, src.burstRadius || 1);
+    // burstDmg is a SENTINEL, not a literal: 0 or blank means "scale with the floor",
+    // so the Acolyte's authored 0 rolls 1–11 on depth 11 and 1–15 on depth 15. It is
+    // the only field in this block that isn't what it says, which is why the editor
+    // labels it "burst dmg (0 = depth)" — a plain 0 in a damage box reads as "none"
+    // and means the opposite. The cost of the shorthand is that a burst which deals
+    // NO direct damage and only applies the statuses cannot currently be authored.
     const top = Number(src.burstDmg) > 0 ? Number(src.burstDmg) : depth;
+    // Every other field IS a literal: a percentage of the damage this victim just
+    // took. burstMp 100 tears off mana equal to the damage dealt — it does not empty
+    // the pool, it just means a caster pays twice for standing too close.
     const share = (dmg, pct) => Math.max(0, Math.round(dmg * (Number(pct) || 0) / 100));
     spawnBurst(src.x, src.y, src.color || "#c58fd6");
     flashScreen("#e0685a", 180);

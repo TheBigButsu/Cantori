@@ -2192,3 +2192,49 @@ not derived on read**, so raising VIT to 120 left the test character on 20 HP �
 both and grants the difference, like every other path that moves a stat. Also new:
 `monsterHit(i)` drives one monster's attack outside its AI, and `ladder(dmg, rung,
 acc)` runs the ladder directly.
+
+---
+
+## The one field in the burst block that lies
+
+`burstDmg` is a **sentinel, not a literal**:
+
+```js
+const top = Number(src.burstDmg) > 0 ? Number(src.burstDmg) : depth;
+```
+
+0 or blank means *"scale with the floor"*. The Hollow Acolyte is authored at
+`burstDmg: 0`, so its blast rolls **1–11 on depth 11 and 1–15 on depth 15** — not
+nothing. Confirmed in play: killing one on depth 11 produced blasts of 1 to 7, where a
+literal reading of the 0 would have given a flat 1 every time.
+
+Every other field in the block *is* a literal: a percentage of the damage that victim
+just took. `burstMp: 100` tears off mana **equal to the damage dealt**; it does not
+empty the pool. Measured on a level-30 warrior with a 62-point pool: blasts of 10, 6
+and 5 took exactly 10, 6 and 5 MP. The tear is capped by the mana you actually have,
+which is why a warrior shrugs it off and a caster pays twice for standing too close.
+
+So a plain `0` sitting in a box labelled "burst dmg" reads as "no damage" and means the
+opposite. Rather than change the behaviour — a literal 0 meaning "none" would silently
+alter any future row — the shorthand is now stated everywhere it can be read:
+
+- the editor's column header is **"burst dmg (0 = depth)"**, and `burstRadius` says
+  **"(blank = no burst)"** because that is the switch that turns bursting on at all;
+- the burn/poison/MP columns say **"% of dmg"** rather than bare "%";
+- the reference tab's one dense "Death burst" row is now five, one per trap;
+- `deathBurst()` carries the warning at the line that does it.
+
+The cost of the shorthand, stated plainly so it can be reversed later: **a burst that
+deals no direct damage and only applies the statuses cannot be authored today.** If
+that turns out to be wanted, the fix is to move the sentinel to blank and let a literal
+0 mean zero.
+
+### Two measurement traps this turned up
+
+Both are the same shape as the `setStat` one — the instrument, not the mechanic:
+
+- **The floor's spark gates HP regeneration only.** MP regeneration has no
+  `sparkGone` guard, so a high-INT mage refilling 4+ MP a turn swallowed the entire MP
+  tear and made `burstMp` read as zero. Measure mana on a slow-regen character.
+- **A kill grants XP**, and a level-up raises `maxMp` mid-action. Any before/after read
+  across a kill has to discard samples where `level` or `maxMp` moved.
