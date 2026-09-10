@@ -2727,3 +2727,68 @@ its last few lines, so every read after the first came back empty and scored as 
 trap fired". Reading the trap's own `sprung` flag gave the numbers above immediately.
 That is three separate times this session that log-scraping or a stale copy has produced
 a confident wrong answer — prefer engine state to rendered text.
+
+---
+
+## A passage that exists goes somewhere
+
+Walking a spoke to a three-tile grass nook and finding nothing is the worst thing a
+floor can ask of you: it costs real turns against the Horror clock, pays nothing, and
+there is no way to tell it from a passage that leads somewhere until you have already
+walked it.
+
+Every empty pocket now leaves generation in exactly one of two states:
+
+- **up to two per floor** get a hidden room dug behind their far wall, stocked with a
+  guaranteed gear drop, a consumable and a coin flip for gold;
+- **every other one is filled in**, so the walk is never offered.
+
+Leaving one as it was is not an option — that was the bug.
+
+### The measurement was wrong twice before it was right
+
+First I counted dead ends as *tiles with one orthogonal neighbour* and got **7.18 per
+floor**. Then I sealed them and the number barely moved, because the sealer used the
+same test and `GRASS` is passable but is not `FLOOR` — so every grassy dead end, which
+in a forest is most of them, was invisible to both passes.
+
+Fixing that still left the number stuck, and the reason was more interesting:
+**movement is 8-way**. A tile with one orthogonal neighbour and two diagonal ones is not
+a dead end at all. Counted properly, a floor had **0.1** of them. My 7.18 was an
+artifact, and the thing the player actually walked into was never a one-tile stub.
+
+It is a **pocket**: a patch of ground with a single way in and nothing inside. Found by
+cutting — block one tile, see what strands — over chokepoints only, so a few dozen
+floods a floor rather than one per tile.
+
+| per floor | before | after |
+|---|---|---|
+| empty pockets surviving | 2.65 | **0.45** |
+| floors with none at all | — | **41 of 60** |
+| hidden rooms | 0 | **1.58** |
+
+One sweep was not enough: filling a pocket turns whatever led to it into a nook of its
+own, so the pass repeats until the floor stops producing them.
+
+### An undiscovered door is just a wall
+
+No new terrain type. The door stays an ordinary `WALL` until found, which satisfies
+CLAUDE.md rule 5 for free — every predicate in the game already knows what a wall is,
+and the chamber behind is simply unreachable. It is not in `rooms` either, so the exit,
+the monster spawner and the item scatter all pass it by. Verified across 60 floors:
+**no secret room was ever reachable before being found**, and across 14 descents
+including boss and merchant floors, all 19 doors were valid walls on the current map.
+
+That last check found a real bug: `secretDoors` was cleared inside the generation pass,
+which boss floors and the merchant den never run — so a door found on floor 4 stayed in
+the list on floor 5, pointing at whatever now occupied that tile. It is cleared in the
+per-floor reset now, beside `items` and `traps`.
+
+### Waiting is searching
+
+Rather than a sixth button on a phone screen, the verb the player already has for
+"spend a turn doing nothing" is the one that finds a door — which is what waiting at a
+dead end means anyway. Standing beside an unfound door prints *"The wall here sounds
+hollow"* once, so a secret nobody can tell is there never happens, and **adjacency is
+enough**: a door you must guess the exact tile of is a pixel hunt, and the point of all
+this is that arriving at a dead end stops being a punishment.

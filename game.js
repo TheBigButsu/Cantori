@@ -1928,6 +1928,10 @@
     decoys = [];
     turns = 0;
     sarcophagi = new Set();
+    // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
+    // run that pass, so a door found on the last floor would otherwise stay in the
+    // list pointing at a tile that is now something else entirely.
+    secretDoors = []; secretsHinted = new Set();
     auraSig = "";                              // whatever field you stood in is a floor behind you
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
 
@@ -2063,6 +2067,9 @@
         if (cut()) carveCorridor({ x: player.x, y: player.y }, { x: st.x, y: st.y });
       }
     }
+    // Dead ends, last: every pass above can create one, and nothing after this
+    // reshapes the map, so this is the only place the answer is final.
+    if (!bossFloor) resolveDeadEnds(rooms);
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -2098,6 +2105,10 @@
     decoys = [];
     turns = 0;
     sarcophagi = new Set();
+    // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
+    // run that pass, so a door found on the last floor would otherwise stay in the
+    // list pointing at a tile that is now something else entirely.
+    secretDoors = []; secretsHinted = new Set();
     auraSig = "";
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
     bossActive = false;
@@ -2194,6 +2205,232 @@
     if (placed === 0) { const b = makeBoss(key, cx, cy); monsters.push(b); _boss.onSpawn(b); }
   }
 
+  // ---- Dead ends: seal them, or make them worth walking ---------------------
+  //
+  // A spoke that leads nowhere is the worst thing a floor can ask of you: it costs
+  // real turns against the Horror clock and pays nothing, and there is no way to
+  // tell it from a spoke that leads somewhere until you have walked it. Measured
+  // before this, a forest floor carried 7.2 of them.
+  //
+  // So every dead end now resolves one of two ways, and both are honest:
+  //   · a few become SECRET DOORS onto a hidden room, stocked with loot;
+  //   · the rest are walled back to the junction they branched from, so the walk
+  //     is never offered in the first place.
+  //
+  // The result is a promise the floor can keep: if a passage exists, it goes
+  // somewhere. An undiscovered secret door is left as an ordinary WALL tile rather
+  // than a new terrain type — which is what keeps CLAUDE.md rule 5 satisfied for
+  // free, since every predicate in the game already knows what a wall is, and the
+  // room behind it is simply unreachable until it opens. It is not in `rooms`
+  // either, so the exit, the monster spawner and the item scatter all pass it by.
+  let secretDoors = [];        // { x, y, room } — walls that open on a search
+  let secretsHinted = new Set();
+  const SECRET_MAX = 2;        // hidden rooms per floor
+  const SECRET_ROOM = 3;       // side of the chamber behind the door
+  // Sealable ground: anything you can walk that is not doing a job. GRASS matters
+  // most — the forest is largely made of it, and testing for FLOOR alone made every
+  // grassy dead end invisible to both passes below, which is exactly the kind the
+  // player walked into. Stairs and doorways are never touched.
+  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR;
+  function deadEndTiles(rooms) {
+    const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+    const out = [];
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+      if (!sealableTile(x, y) || inRoom(x, y)) continue;
+      // EIGHT-way, because that is how everything moves. A tile with one orthogonal
+      // neighbour and two diagonal ones is not a dead end at all — counting it as
+      // one is what made a floor look like it had 7 of them when it had 2.
+      let open = 0, back = null;
+      for (const [dx, dy] of DIRS8) if (passable(x + dx, y + dy)) { open++; back = [dx, dy]; }
+      if (open !== 1) continue;
+      // Dig straight on from the way back, and only along an axis — a chamber
+      // hanging off a diagonal reads as a mistake rather than a hidden room.
+      if (back[0] !== 0 && back[1] !== 0) continue;
+      out.push({ x, y, dir: [-back[0], -back[1]] });
+    }
+    return out;
+  }
+  // Try to hollow a chamber beyond `end`, leaving exactly one wall tile between —
+  // that tile is the door. Returns the room rect, or null if there isn't the space.
+  function carveSecretRoom(end) {
+    // Biggest chamber that fits, and if the straight-on placement is blocked, slide
+    // it one tile either way along the wall before giving up. A single strict
+    // attempt found somewhere to dig on barely a third of floors.
+    for (const size of [SECRET_ROOM, 2]) {
+      for (const shift of [0, -1, 1]) {
+        const rect = trySecretRect(end, size, shift);
+        if (rect) return rect;
+      }
+    }
+    return null;
+  }
+  function trySecretRect(end, size, shift) {
+    const [dx, dy] = end.dir;
+    const doorX = end.x + dx, doorY = end.y + dy;
+    if (!inBounds(doorX, doorY) || map[doorY][doorX] !== WALL) return null;
+    const half = Math.floor(size / 2);
+    // The chamber sits one tile past the door, on the corridor's line (or nudged).
+    const cx = doorX + dx + (dx !== 0 ? 0 : shift), cy = doorY + dy + (dy !== 0 ? 0 : shift);
+    const rx = (dx !== 0 ? cx - (dx < 0 ? size - 1 : 0) : cx - half);
+    const ry = (dy !== 0 ? cy - (dy < 0 ? size - 1 : 0) : cy - half);
+    const rect = { x: rx + (dx !== 0 ? 0 : 0), y: ry + (dy !== 0 ? shift : 0), w: size, h: size };
+    // Everything the chamber will occupy, plus a one-tile skin around it, has to be
+    // solid rock right now — otherwise it would open onto the floor somewhere else
+    // and stop being secret.
+    for (let y = rect.y - 1; y <= rect.y + rect.h; y++) {
+      for (let x = rect.x - 1; x <= rect.x + rect.w; x++) {
+        if (!inBounds(x, y) || x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) return null;
+        if (x === doorX && y === doorY) continue;       // the door is allowed to be the way in
+        if (map[y][x] !== WALL) return null;
+      }
+    }
+    for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) map[y][x] = FLOOR;
+    return rect;
+  }
+  // Wall a dead end back to the junction it branched from, so the pointless walk is
+  // never offered. Reverts any step that would cut the floor — the same
+  // tentative-apply/revert pattern sealDeadEndStubs and thinCorridors use.
+  function sealBackFrom(end, rooms, anchor) {
+    let x = end.x, y = end.y;
+    for (let step = 0; step < 40; step++) {
+      const inRoom = rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+      if (!sealableTile(x, y) || inRoom) break;
+      let open = [];
+      for (const [dx, dy] of DIRS8) if (passable(x + dx, y + dy)) open.push([x + dx, y + dy]);
+      if (open.length !== 1) break;                     // reached a junction — stop
+      const was = map[y][x];
+      map[y][x] = WALL;
+      if (!allRoomsReachable(rooms, anchor.x, anchor.y)) { map[y][x] = was; break; }   // load-bearing
+      x = open[0][0]; y = open[0][1];
+    }
+  }
+  // A cul-de-sac is what the player actually walks into: not a one-tile stub but a
+  // POCKET — a patch of ground with a single way in and nothing inside it. The
+  // one-neighbour test misses these entirely (a 3-tile grass nook has plenty of
+  // neighbours), which is why a floor that felt full of pointless spokes measured
+  // as having almost none.
+  //
+  // Found by cutting: any tile whose removal strands ground is a chokepoint, and
+  // the stranded side is a pocket. Only chokepoints are tried, so this is a few
+  // dozen floods per floor rather than one per tile.
+  function findPockets(rooms) {
+    const start = { x: player.x, y: player.y };
+    const key = (x, y) => y * MAP_W + x;
+    const full = floodReach(start.x, start.y, false);
+    const stairs = findStairs();
+    const pockets = [];
+    const claimed = new Set();
+    const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+    // Candidate chokepoints: passable, outside rooms, not the start tile.
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+      if (!passable(x, y) || inRoom(x, y)) continue;
+      if (x === start.x && y === start.y) continue;
+      if (claimed.has(key(x, y))) continue;
+      const was = map[y][x];
+      map[y][x] = WALL;                                  // pretend it is blocked
+      const cut = floodReach(start.x, start.y, false);
+      map[y][x] = was;
+      if (cut.size === full.size - 1) continue;          // nothing stranded — not a chokepoint
+      // Everything the block stranded, minus the blocker itself.
+      const pocket = [];
+      let hasStairs = false, hasItem = false;
+      for (const k of full) {
+        if (cut.has(k) || k === key(x, y)) continue;
+        const px = k % MAP_W, py = (k - px) / MAP_W;
+        pocket.push({ x: px, y: py });
+        if (stairs && stairs.x === px && stairs.y === py) hasStairs = true;
+        if (itemAt(px, py)) hasItem = true;
+      }
+      if (!pocket.length || pocket.length > POCKET_MAX) continue;   // a whole wing is not a nook
+      if (hasStairs || hasItem) continue;                // it already leads somewhere
+      for (const t of pocket) claimed.add(key(t.x, t.y));
+      claimed.add(key(x, y));
+      pockets.push({ mouth: { x, y }, tiles: pocket });
+    }
+    // Smallest first: the tightest nook is the most pointless walk, and the one
+    // most likely to have rock behind it to dig into.
+    pockets.sort((a, b) => a.tiles.length - b.tiles.length);
+    return pockets;
+  }
+  const POCKET_MAX = 14;       // bigger than this is a wing of the floor, not a nook
+  // The far wall of a pocket: the tile deepest from its mouth that still has room to
+  // dig behind it, tried in every axial direction.
+  function secretFromPocket(pk) {
+    const far = pk.tiles.slice().sort((a, b) =>
+      cheb(b.x, b.y, pk.mouth.x, pk.mouth.y) - cheb(a.x, a.y, pk.mouth.x, pk.mouth.y));
+    for (const t of far) {
+      for (const dir of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const rect = carveSecretRoom({ x: t.x, y: t.y, dir });
+        if (rect) return { door: { x: t.x + dir[0], y: t.y + dir[1] }, room: rect };
+      }
+    }
+    return null;
+  }
+  // Wall a pocket out of existence. By construction it strands nothing else — it
+  // was found by being the stranded side — but the reachability check stays, both
+  // as a guard and because it is the pattern every other map edit here follows.
+  // The mouth is left alone: it becomes a one-tile stub, and the stub pass below
+  // tidies it away on the same sweep.
+  function fillPocket(pk, rooms, anchor) {
+    const was = pk.tiles.map((t) => map[t.y][t.x]);
+    for (const t of pk.tiles) map[t.y][t.x] = WALL;
+    if (!allRoomsReachable(rooms, anchor.x, anchor.y)) {
+      pk.tiles.forEach((t, i) => { map[t.y][t.x] = was[i]; });
+    }
+  }
+  function resolveDeadEnds(rooms) {
+    secretDoors = []; secretsHinted = new Set();
+    if (!rooms.length) return;
+    const anchor = { x: player.x, y: player.y };
+    // Pockets first — these are the ones that actually read as a wasted walk. Each
+    // one leaves in exactly one of two states, and that is the whole promise: a
+    // passage that exists goes somewhere.
+    //   · up to SECRET_MAX of them get a hidden room dug off their far wall;
+    //   · every other one is filled in, so the walk is never offered.
+    // Leaving them as they were is not an option — that is the bug.
+    // Sweep until the floor stops producing them: filling a pocket turns whatever
+    // led to it into a nook of its own, and one pass leaves that behind.
+    for (let round = 0; round < 4; round++) {
+    const found0 = findPockets(rooms);
+    if (!found0.length) break;
+    for (const pk of found0) {
+      if (secretDoors.length < SECRET_MAX) {
+        const found = secretFromPocket(pk);
+        if (found) {
+          secretDoors.push({ x: found.door.x, y: found.door.y, room: found.room });
+          stockSecretRoom(found.room);
+          continue;
+        }
+      }
+      fillPocket(pk, rooms, anchor);
+    }
+    }
+    // Then the one-tile stubs, which are rare but pure noise: wall them back.
+    const ends = deadEndTiles(rooms);
+    for (let i = ends.length - 1; i > 0; i--) { const j = randInt(0, i); const t = ends[i]; ends[i] = ends[j]; ends[j] = t; }
+    for (const end of ends) {
+      if (secretDoors.length < SECRET_MAX) {
+        const rect = carveSecretRoom(end);
+        if (rect) {
+          secretDoors.push({ x: end.x + end.dir[0], y: end.y + end.dir[1], room: rect });
+          stockSecretRoom(rect);
+          continue;                                     // this one earns its walk
+        }
+      }
+      sealBackFrom(end, rooms, anchor);
+    }
+  }
+  // The payoff. A hidden room is only worth finding if it holds something you would
+  // not otherwise have had, so it gets a guaranteed gear drop and a consumable
+  // rather than a share of the floor's ordinary scatter.
+  function stockSecretRoom(rect) {
+    const spots = [];
+    for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) spots.push({ x, y });
+    for (let i = spots.length - 1; i > 0; i--) { const j = randInt(0, i); const t = spots[i]; spots[i] = spots[j]; spots[j] = t; }
+    if (spots[0]) items.push(Object.assign({ x: spots[0].x, y: spots[0].y }, rollGearDrop(depth)));
+    if (spots[1]) items.push({ x: spots[1].x, y: spots[1].y, key: weightedConsumKey() });
+    if (spots[2] && Math.random() < 0.5) items.push({ x: spots[2].x, y: spots[2].y, key: "gold", amount: randInt(10, 25) + depth * 3 });
+  }
   function freeFloorSpot(rooms) {
     for (let t = 0; t < 60; t++) {
       const room = rooms[randInt(0, rooms.length - 1)];
@@ -4690,6 +4927,7 @@
     dragonEncoreTick();
     rageTick();
     tickHexes();
+    hintSecrets();                       // walked up to a hidden door? say so, once
     playerDotTick(); if (dead) return;   // what is burning or poisoning YOU, before the monsters move
     if (pullZone) { pullZone.turns--; if (pullZone.turns <= 0) pullZone = null; }      // Faith's Pull: expires after 5 turns
     if (activeWalls.length) {                                                          // Wall of Faith: reverts after its life
@@ -8225,7 +8463,48 @@
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
   document.getElementById("btnRest").addEventListener("click", () => toggleRest());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen || altarOpen) return; walkPath = []; worldTurn(); }
+  // Waiting IS searching. Rather than add a sixth button to the stack, the verb the
+  // player already has for "spend a turn doing nothing" is the one that finds a
+  // secret door — which is what waiting at a dead end means anyway. Shattered Pixel
+  // has a dedicated search; on a phone, one fewer control beats one more.
+  function waitTurn() {
+    if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen || altarOpen) return;
+    walkPath = [];
+    if (searchHere()) return;                    // a find costs the turn all by itself
+    worldTurn();
+  }
+  // ---- Secret doors: the hint, and the search -------------------------------
+  const secretAdjacent = () => secretDoors.filter((d) => cheb(d.x, d.y, player.x, player.y) === 1);
+  // Adjacency is enough. A hidden door you have to guess the exact tile of is a
+  // pixel hunt, and the whole point of this is that a dead end stops being a
+  // punishment — so standing anywhere beside it and waiting finds it.
+  function searchHere() {
+    const near = secretAdjacent();
+    if (!near.length) return false;
+    for (const d of near) {
+      map[d.y][d.x] = FLOOR;
+      explored[d.y][d.x] = true;
+      floatText(d.x, d.y, "✦", "#f0c14b");
+      secretDoors = secretDoors.filter((o) => o !== d);
+    }
+    flashScreen("#3a3320", 220);
+    log(near.length > 1 ? "The way opens — hidden rooms lie beyond." : "You feel along the wall and it gives way — a hidden room!", "hit");
+    computeFOV();
+    worldTurn();
+    return true;
+  }
+  // Standing next to one, you are told there is something to find. A secret nobody
+  // can tell is there is not a secret, it is a floor you walked past — and the
+  // dead end already told you to expect one, since nothing else survives generation.
+  function hintSecrets() {
+    for (const d of secretAdjacent()) {
+      const k = d.y * MAP_W + d.x;
+      if (secretsHinted.has(k)) continue;
+      secretsHinted.add(k);
+      log("The wall here sounds hollow. Wait to search it.", "hit");
+      floatText(d.x, d.y, "?", "#f0c14b");
+    }
+  }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -8593,6 +8872,11 @@
     // The tree is level-gated, so testing anything above tier 1 needs a way up.
     // Runs the real gainXP path rather than assigning player.level, so the stat,
     // HP/MP and skill-point gains a level carries all happen as they would in play.
+    secrets: () => secretDoors.map((d) => ({ x: d.x, y: d.y, room: Object.assign({}, d.room) })),
+    // Empty pockets still on the floor AFTER generation — a walk that goes nowhere
+    // and hides nothing. This is the number the whole pass exists to drive down.
+    pockets: () => findPockets(lastRooms || []).map((p) => ({ mouth: p.mouth, size: p.tiles.length })),
+    search: () => searchHere(),
     setLevel: (n) => { let guard = 0; while (player.level < n && guard++ < 400) gainXP(xpToNext() - player.xp); return player.level; },
     // ---- Brynn tier 2/3 test hooks ----
     kick: (dx, dy) => { const k = Object.keys(player.skills).find((x) => (skillDef(x) || {}).kind === "dragonkick"); if (k) executeDragonKick(k, [dx, dy]); return k || null; },
