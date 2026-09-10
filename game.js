@@ -2085,9 +2085,25 @@
         if (cut()) carveCorridor({ x: player.x, y: player.y }, { x: st.x, y: st.y });
       }
     }
-    // Dead ends, last: every pass above can create one, and nothing after this
-    // reshapes the map, so this is the only place the answer is final.
-    if (!bossFloor) resolveDeadEnds(rooms);
+    // Loops, then dead ends, last: every pass above can sever the floor or leave a
+    // spur, and nothing after this reshapes the map, so this is the only place the
+    // answer is final. Order matters — addLoops digs new passages and resolveDeadEnds
+    // is what guarantees those passages go somewhere.
+    //
+    // Both run on the BOSS floor too now. They used to be skipped there, which is
+    // why the ring arena was the worst offender in play: a chamber hanging off the
+    // ring by one doorway, and the whole lap to walk back. Nothing in either pass
+    // can wall in the boss — findPockets refuses a pocket with a monster in it, and
+    // addLoops only ever digs.
+    // Nooks first, loops second, nooks again. The order is not arbitrary: a secret
+    // room needs a 3x3 of untouched rock behind the nook's far wall, and a tunnel
+    // dug through that rock takes the space away — running loops first cost half
+    // the floor's hidden rooms (1.26/floor down to 0.71). Nooks claim their rock,
+    // then the loop pass digs around what is left, then the second sweep resolves
+    // whatever the digging itself stranded or spurred.
+    resolveDeadEnds(rooms);
+    addLoops(rooms);
+    resolveDeadEnds(rooms);
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -2223,6 +2239,201 @@
     if (placed === 0) { const b = makeBoss(key, cx, cy); monsters.push(b); _boss.onSpawn(b); }
   }
 
+  // ---- Loops: nothing large behind a single tile ---------------------------
+  //
+  // `loopPct` already adds extra corridors — but it adds them to the ROOM GRAPH,
+  // before terrain, doorways, narrowRoomBreaches and fixOpenCorners have had their
+  // say, and every one of those passes puts walls back. Measured on the FINISHED
+  // map, a forest floor still carried 2.5 wings hanging off a single tile apiece,
+  // half of them over 30 tiles: walk the whole wing, then walk the whole wing back.
+  // The boss ring was worse, because it never ran the dead-end pass at all.
+  //
+  // That is the "this room doesn't connect to the ring" complaint, and no value of
+  // loopPct can fix it, because the severing happens afterwards. So this pass runs
+  // last, on the map as it will actually be played, and only ever DIGS: it turns
+  // rock into floor and walls nothing, so it cannot strand a tile and needs no
+  // reachability undo (rule 5's hazard is one-directional).
+  // 15 = POCKET_MAX + 1, deliberately: anything smaller is a nook, and the pass
+  // below already has a better answer for those (a secret room, or sealed). Set it
+  // lower and the two fight — loops dissolve the pockets before they can become
+  // hidden rooms, and the floor loses its secrets.
+  const LOBE_MIN = 15;         // a wing worth a second way out; below this it's a nook
+  const LOBE_TUNNEL_MAX = 12;  // how far we will dig through rock to close the loop
+  const LOBE_GAIN_MIN = 2;     // ...and only if the short cut actually saves steps
+  const LOBE_BRIDGES = 5;      // per floor — past this the floor reads as swiss cheese
+  const tkey = (x, y) => y * MAP_W + x;
+  // Articulation points of the walkable 8-graph — the tiles you can be shut in by.
+  // Tarjan, iterative because a floor's spanning tree is ~1,000 deep and recursion
+  // at that depth is a stack overflow on a phone. One pass, so this is cheap; the
+  // expensive per-tile flood below then only runs on the handful it names.
+  function articulationTiles(sx, sy) {
+    if (!passable(sx, sy)) return [];
+    const disc = new Map(), low = new Map(), arts = new Set();
+    let timer = 0;
+    const root = tkey(sx, sy);
+    disc.set(root, ++timer); low.set(root, timer);
+    const stack = [{ k: root, parent: -1, i: 0, kids: 0 }];
+    while (stack.length) {
+      const fr = stack[stack.length - 1];
+      if (fr.i < DIRS8.length) {
+        const [dx, dy] = DIRS8[fr.i++];
+        const x = fr.k % MAP_W, y = (fr.k - (fr.k % MAP_W)) / MAP_W;
+        const nx = x + dx, ny = y + dy;
+        if (!inBounds(nx, ny) || !passable(nx, ny)) continue;
+        const nk = tkey(nx, ny);
+        if (nk === fr.parent) continue;
+        if (disc.has(nk)) { low.set(fr.k, Math.min(low.get(fr.k), disc.get(nk))); continue; }
+        fr.kids++;
+        disc.set(nk, ++timer); low.set(nk, timer);
+        stack.push({ k: nk, parent: fr.k, i: 0, kids: 0 });
+      } else {
+        stack.pop();
+        const up = stack[stack.length - 1];
+        if (up) {
+          low.set(up.k, Math.min(low.get(up.k), low.get(fr.k)));
+          // The root is special: it only cuts the floor if it has two subtrees.
+          if (up.parent !== -1 && low.get(fr.k) >= disc.get(up.k)) arts.add(up.k);
+        }
+        if (fr.parent === -1 && fr.kids > 1) arts.add(fr.k);
+      }
+    }
+    return Array.from(arts);
+  }
+  // Every walkable tile grouped by which side of `blockK` it falls on.
+  function sidesWithout(full, blockK) {
+    const seen = new Set([blockK]), out = [];
+    for (const k0 of full) {
+      if (seen.has(k0)) continue;
+      const comp = [], st = [k0];
+      seen.add(k0);
+      while (st.length) {
+        const k = st.pop(); comp.push(k);
+        const x = k % MAP_W, y = (k - (k % MAP_W)) / MAP_W;
+        for (const [dx, dy] of DIRS8) {
+          const nk = tkey(x + dx, y + dy);
+          if (seen.has(nk) || !full.has(nk)) continue;
+          seen.add(nk); st.push(nk);
+        }
+      }
+      out.push(comp);
+    }
+    return out;
+  }
+  // The wings, biggest first. A "lobe" is the SMALLER side of a cut: anchoring on
+  // the player instead made the rest of the level read as a wing whenever the
+  // player happened to be standing in the nook.
+  function findLobes() {
+    const full = floodReach(player.x, player.y, false);
+    const out = [], claimed = new Set();
+    for (const k of articulationTiles(player.x, player.y)) {
+      const parts = sidesWithout(full, k);
+      if (parts.length < 2) continue;
+      parts.sort((a, b) => a.length - b.length);
+      const small = parts[0];
+      if (small.length < LOBE_MIN) continue;
+      if (small.some((q) => claimed.has(q))) continue;
+      for (const q of small) claimed.add(q);
+      out.push({ mouth: { x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W }, tiles: small });
+    }
+    out.sort((a, b) => b.tiles.length - a.tiles.length);
+    return out;
+  }
+  // Walking distance from one tile to everywhere, 8-way, in steps.
+  function walkDistances(sx, sy) {
+    const d = new Map();
+    if (!passable(sx, sy)) return d;
+    d.set(tkey(sx, sy), 0);
+    let frontier = [tkey(sx, sy)];
+    while (frontier.length) {
+      const next = [];
+      for (const k of frontier) {
+        const x = k % MAP_W, y = (k - (k % MAP_W)) / MAP_W, nd = d.get(k) + 1;
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx, ny = y + dy;
+          if (!inBounds(nx, ny) || !passable(nx, ny)) continue;
+          const nk = tkey(nx, ny);
+          if (d.has(nk)) continue;
+          d.set(nk, nd); next.push(nk);
+        }
+      }
+      frontier = next;
+    }
+    return d;
+  }
+  // The tiles a straight-then-turn tunnel from a to b would have to dig, or null if
+  // it would pass through anything that is not plain rock. Deliberately NOT
+  // orthPath: that one jogs at random, so what we validated is not what we'd carve.
+  function tunnelRock(ax, ay, bx, by, horizFirst) {
+    const rock = [];
+    let x = ax, y = ay, guard = 0;
+    while ((x !== bx || y !== by) && guard++ < 64) {
+      if (horizFirst ? x !== bx : y === by) x += Math.sign(bx - x);
+      else y += Math.sign(by - y);
+      if (x === bx && y === by) return rock;
+      if (!inBounds(x, y) || x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) return null;
+      if (map[y][x] !== WALL) return null;         // never dig through a door, the stairs, or terrain
+      if (secretDoors.some((s) => s.x === x && s.y === y)) return null;
+      rock.push({ x, y });
+    }
+    return (x === bx && y === by) ? rock : null;
+  }
+  // Dig the loop. The pair is chosen to MAXIMISE what it saves — the two tiles
+  // currently furthest apart on foot that are nearest apart through the rock — so
+  // the tunnel is a genuine short cut rather than a hole beside the mouth you'd
+  // never bother using.
+  function bridgeLobe(lobe) {
+    const inLobe = new Set(lobe.tiles);
+    const dist = walkDistances(lobe.mouth.x, lobe.mouth.y);
+    let best = null;
+    for (const ak of lobe.tiles) {
+      const ax = ak % MAP_W, ay = (ak - (ak % MAP_W)) / MAP_W;
+      const da = dist.get(ak);
+      if (da == null) continue;
+      for (let dy = -LOBE_TUNNEL_MAX - 1; dy <= LOBE_TUNNEL_MAX + 1; dy++) {
+        for (let dx = -LOBE_TUNNEL_MAX - 1; dx <= LOBE_TUNNEL_MAX + 1; dx++) {
+          const bx = ax + dx, by = ay + dy;
+          if (!inBounds(bx, by) || !passable(bx, by)) continue;
+          const bk = tkey(bx, by);
+          if (inLobe.has(bk) || (bx === lobe.mouth.x && by === lobe.mouth.y)) continue;
+          const db = dist.get(bk);
+          if (db == null) continue;
+          for (const horizFirst of [true, false]) {
+            const rock = tunnelRock(ax, ay, bx, by, horizFirst);
+            if (!rock || !rock.length || rock.length > LOBE_TUNNEL_MAX) continue;
+            const gain = da + db - (rock.length + 1);
+            if (gain < LOBE_GAIN_MIN) continue;
+            // Best saving wins; a shorter dig breaks the tie, so the floor keeps
+            // its shape and gains a doorway rather than a boulevard.
+            if (!best || gain > best.gain || (gain === best.gain && rock.length < best.rock.length)) {
+              best = { rock, gain };
+            }
+          }
+        }
+      }
+    }
+    if (!best) return false;
+    for (const t of best.rock) map[t.y][t.x] = FLOOR;
+    lastLoops.push({ mouth: lobe.mouth, wing: lobe.tiles.length, dug: best.rock.length, saved: best.gain });
+    return true;
+  }
+  let lastLoops = [];          // what the last floor's loop pass actually bought (dev)
+  // One wing at a time, re-reading the map between digs: closing one loop can
+  // resolve the next, and can also reveal a wing that was hidden behind it.
+  function addLoops(rooms) {
+    lastLoops = [];
+    for (let i = 0; i < LOBE_BRIDGES; i++) {
+      const lobes = findLobes();
+      if (!lobes.length) break;
+      let dug = false;
+      for (const lobe of lobes) if (bridgeLobe(lobe)) { dug = true; break; }
+      if (!dug) break;
+      // fixOpenCorners can wall a tile, so it gets its say BEFORE the next scan
+      // reads the map — otherwise we would be bridging a floor plan that is about
+      // to change under us.
+      fixOpenCorners(rooms);
+    }
+  }
+
   // ---- Dead ends: seal them, or make them worth walking ---------------------
   //
   // A spoke that leads nowhere is the worst thing a floor can ask of you: it costs
@@ -2313,6 +2524,7 @@
     for (let step = 0; step < 40; step++) {
       const inRoom = rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
       if (!sealableTile(x, y) || inRoom) break;
+      if (monsterAt(x, y) || itemAt(x, y) || (x === player.x && y === player.y)) break;   // never bury an occupant
       let open = [];
       for (const [dx, dy] of DIRS8) if (passable(x + dx, y + dy)) open.push([x + dx, y + dy]);
       if (open.length !== 1) break;                     // reached a junction — stop
@@ -2331,39 +2543,43 @@
   // Found by cutting: any tile whose removal strands ground is a chokepoint, and
   // the stranded side is a pocket. Only chokepoints are tried, so this is a few
   // dozen floods per floor rather than one per tile.
-  function findPockets(rooms) {
+  // Now that articulationTiles() exists, this is the same scan the loop pass does,
+  // stopped at the other end of the size range: a wing of POCKET_MAX or less is a
+  // nook, and a nook gets a secret room or gets sealed rather than a second exit.
+  //
+  // It used to walk every passable tile and flood from each, which cost ~220 floods
+  // a round and still MISSED the ones the player actually walks into: candidates
+  // had to be outside a room, so a grass spur hanging off the side of a forest
+  // clearing — the exact shape reported — was invisible to it. Tarjan names the
+  // three dozen tiles that can cut the floor in one pass, so dropping that filter
+  // is now free rather than five times the work.
+  function findPockets() {
     const start = { x: player.x, y: player.y };
-    const key = (x, y) => y * MAP_W + x;
-    const full = floodReach(start.x, start.y, false);
     const stairs = findStairs();
-    const pockets = [];
-    const claimed = new Set();
-    const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
-    // Candidate chokepoints: passable, outside rooms, not the start tile.
-    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      if (!passable(x, y) || inRoom(x, y)) continue;
-      if (x === start.x && y === start.y) continue;
-      if (claimed.has(key(x, y))) continue;
-      const was = map[y][x];
-      map[y][x] = WALL;                                  // pretend it is blocked
-      const cut = floodReach(start.x, start.y, false);
-      map[y][x] = was;
-      if (cut.size === full.size - 1) continue;          // nothing stranded — not a chokepoint
-      // Everything the block stranded, minus the blocker itself.
-      const pocket = [];
-      let hasStairs = false, hasItem = false;
-      for (const k of full) {
-        if (cut.has(k) || k === key(x, y)) continue;
-        const px = k % MAP_W, py = (k - px) / MAP_W;
-        pocket.push({ x: px, y: py });
-        if (stairs && stairs.x === px && stairs.y === py) hasStairs = true;
-        if (itemAt(px, py)) hasItem = true;
+    const full = floodReach(start.x, start.y, false);
+    const pockets = [], claimed = new Set();
+    for (const k of articulationTiles(start.x, start.y)) {
+      const parts = sidesWithout(full, k);
+      if (parts.length < 2) continue;
+      parts.sort((a, b) => a.length - b.length);
+      const small = parts[0];
+      if (!small.length || small.length > POCKET_MAX) continue;   // a whole wing is not a nook
+      if (small.some((q) => claimed.has(q))) continue;
+      let skip = false;
+      const tiles = [];
+      for (const q of small) {
+        const px = q % MAP_W, py = (q - (q % MAP_W)) / MAP_W;
+        tiles.push({ x: px, y: py });
+        // Already leads somewhere, or has something in it that must not be buried.
+        // The player's own side counts: taking the SMALLER side rather than the far
+        // side means the nook can be the one you are standing in.
+        if (stairs && stairs.x === px && stairs.y === py) skip = true;
+        else if (px === start.x && py === start.y) skip = true;
+        else if (itemAt(px, py) || monsterAt(px, py)) skip = true;
       }
-      if (!pocket.length || pocket.length > POCKET_MAX) continue;   // a whole wing is not a nook
-      if (hasStairs || hasItem) continue;                // it already leads somewhere
-      for (const t of pocket) claimed.add(key(t.x, t.y));
-      claimed.add(key(x, y));
-      pockets.push({ mouth: { x, y }, tiles: pocket });
+      if (skip) continue;
+      for (const q of small) claimed.add(q);
+      pockets.push({ mouth: { x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W }, tiles });
     }
     // Smallest first: the tightest nook is the most pointless walk, and the one
     // most likely to have rock behind it to dig into.
@@ -2394,10 +2610,13 @@
     for (const t of pk.tiles) map[t.y][t.x] = WALL;
     if (!allRoomsReachable(rooms, anchor.x, anchor.y)) {
       pk.tiles.forEach((t, i) => { map[t.y][t.x] = was[i]; });
+      return false;
     }
+    return true;
   }
+  // Not reset here: generateLevel clears secretDoors for every floor, including the
+  // boss floor and the merchant den, and this runs TWICE per floor (see below).
   function resolveDeadEnds(rooms) {
-    secretDoors = []; secretsHinted = new Set();
     if (!rooms.length) return;
     const anchor = { x: player.x, y: player.y };
     // Pockets first — these are the ones that actually read as a wasted walk. Each
@@ -2409,7 +2628,7 @@
     // Sweep until the floor stops producing them: filling a pocket turns whatever
     // led to it into a nook of its own, and one pass leaves that behind.
     for (let round = 0; round < 4; round++) {
-    const found0 = findPockets(rooms);
+    const found0 = findPockets();
     if (!found0.length) break;
     for (const pk of found0) {
       if (secretDoors.length < SECRET_MAX) {
@@ -2420,7 +2639,11 @@
           continue;
         }
       }
-      fillPocket(pk, rooms, anchor);
+      // Sealing is refused when the nook is load-bearing — almost always a small
+      // ROOM that happens to be a dead end, and deleting a room is not on the
+      // table. Give it a second door instead: that is the same answer the loop
+      // pass gives a big wing, and it is a better one than leaving the walk.
+      if (!fillPocket(pk, rooms, anchor)) bridgeLobe({ mouth: pk.mouth, tiles: pk.tiles.map((t) => t.y * MAP_W + t.x) });
     }
     }
     // Then the one-tile stubs, which are rare but pure noise: wall them back.
@@ -8908,9 +9131,11 @@
     // Runs the real gainXP path rather than assigning player.level, so the stat,
     // HP/MP and skill-point gains a level carries all happen as they would in play.
     secrets: () => secretDoors.map((d) => ({ x: d.x, y: d.y, room: Object.assign({}, d.room) })),
+    loops: () => lastLoops.map((l) => Object.assign({}, l)),
+    lobes: () => findLobes().map((l) => ({ mouth: l.mouth, size: l.tiles.length })),
     // Empty pockets still on the floor AFTER generation — a walk that goes nowhere
     // and hides nothing. This is the number the whole pass exists to drive down.
-    pockets: () => findPockets(lastRooms || []).map((p) => ({ mouth: p.mouth, size: p.tiles.length })),
+    pockets: () => findPockets().map((p) => ({ mouth: p.mouth, size: p.tiles.length })),
     search: () => searchHere(),
     setLevel: (n) => { let guard = 0; while (player.level < n && guard++ < 400) gainXP(xpToNext() - player.xp); return player.level; },
     // ---- Brynn tier 2/3 test hooks ----
