@@ -1908,6 +1908,9 @@ window.CANTORI_DATA = {
   },
   "classes": {
     "warrior": {
+      "progression": {
+        "toHitPerLevel": 1
+      },
       "name": "Chadwick",
       "icon": "⚔",
       "main": "STR",
@@ -2316,6 +2319,10 @@ window.CANTORI_DATA = {
       ]
     },
     "monk": {
+      "progression": {
+        "toHitOddLevels": 1,
+        "evaPctEvenLevels": 1
+      },
       "name": "Brynn",
       "icon": "👊",
       "main": "DEX",
@@ -2581,6 +2588,9 @@ window.CANTORI_DATA = {
       ]
     },
     "mage": {
+      "progression": {
+        "mpRegenIntPerLevel": 0.1
+      },
       "name": "ToneTum",
       "main": "INT",
       "secondary": "RES",

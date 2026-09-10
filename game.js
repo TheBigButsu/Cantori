@@ -144,11 +144,14 @@
   // worth five, which is the whole reason the modifiers are small in the first place.
   const AC_BASE = 10;
   const MON_TOHIT = 3, MON_AC = 11;       // monster defaults when unspecified
-  // 5e's proficiency bonus: +2, rising by one every four levels. This is what makes
-  // a character better at hitting things as they level; there is deliberately no
-  // per-level accuracy in the class levelUp sets any more, because +2 to-hit a level
-  // on a d20 is +10 percentage points a level and would cap out almost immediately.
-  const proficiency = () => 2 + Math.floor((player.level - 1) / 4);
+  // What every character starts with, before anything they earn. This was 5e's
+  // proficiency bonus rising a point every four levels, shared by all three classes
+  // — a number the level-up line reported as "proficiency +3" and nothing explained.
+  // Growth is now the class's own business, authored in data under `progression`,
+  // so what a level buys reads differently for each of them and can be SAID in
+  // plain words when it lands.
+  const BASE_TO_HIT = 2;
+  const classProg = () => ((DATA.classes[player.cls] || {}).progression || {});
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
   // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
@@ -200,7 +203,7 @@
     if (player.unseen && player.unseen.turns > 0) v += player.unseen[field] || 0;
     return v;
   };
-  const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
+  const playerToHit = () => BASE_TO_HIT + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
   // AC = 10 + as much of your DEX modifier as what you are wearing allows: all of
   // it bare-skinned, tier + plus in medium, none in light or heavy. See ARMOR_SUB.
   // Happy Feet is the first thing that adds AC from a passive, and the Meditate
@@ -227,7 +230,8 @@
   const EVA_PCT_PER_LCK_MOD = 1;
   const luckDodge = () => Math.max(0, mod("LCK")) * EVA_PCT_PER_LCK_MOD / 100;
   const dodgeChance = () => Math.min(EVA_CAP,
-    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100 + luckDodge());
+    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100 + luckDodge() +
+    Math.max(0, player.lvlEvaPct || 0) / 100);
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -282,6 +286,7 @@
     cls: "warrior", stats: { STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
+    lvlEvaPct: 0, lvlRegenInt: 0,                      // per-level class progression (dodge %, mana-regen INT)
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
     killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
@@ -307,6 +312,7 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
+    player.lvlEvaPct = 0; player.lvlRegenInt = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -3806,6 +3812,17 @@
       if (player.level % 3 === 0) player.stats[cls.secondary] += 1;
       // No free skill point here — skill points now come only from Potions of
       // Insight (1 guaranteed per floor, 3 more on a boss kill).
+      // The class's own growth. Each rule says what the level BOUGHT, so the banner
+      // can name it instead of printing a term of art nobody defined.
+      const pr = cls.progression || {};
+      const grew = [];
+      if (pr.toHitPerLevel) { player.lvlAcc += pr.toHitPerLevel; grew.push("+" + pr.toHitPerLevel + " to hit"); }
+      if (pr.toHitOddLevels && player.level % 2 === 1) { player.lvlAcc += pr.toHitOddLevels; grew.push("+" + pr.toHitOddLevels + " to hit"); }
+      if (pr.evaPctEvenLevels && player.level % 2 === 0) { player.lvlEvaPct += pr.evaPctEvenLevels; grew.push("+" + pr.evaPctEvenLevels + "% evade"); }
+      if (pr.mpRegenIntPerLevel) {
+        player.lvlRegenInt = +((player.lvlRegenInt || 0) + pr.mpRegenIntPerLevel).toFixed(2);
+        grew.push("mana regen INT " + (mod("INT") + player.lvlRegenInt).toFixed(1));
+      }
       const lu = cls.levelUp || {};            // flat per-level set (hp/mp/accuracy/evasion)
       player.lvlHp += lu.hp || 0;
       player.lvlAcc += lu.accuracy || 0;
@@ -3823,8 +3840,7 @@
       const statGain = [];
       if (player.level % 2 === 0) statGain.push("+1 " + cls.main);
       if (player.level % 3 === 0) statGain.push("+1 " + cls.secondary);
-      if (proficiency() > 2 + Math.floor((player.level - 2) / 4)) statGain.push("proficiency " + sgnNum(proficiency()));
-      const gains = statGain.concat(extra);
+      const gains = statGain.concat(grew, extra);
       log("Level " + player.level + (gains.length ? "!  " + gains.join(", ") : "!"), "hit");
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
@@ -4169,7 +4185,10 @@
     } else player.regenAcc = 0;
     // MP: heals to full over mpRegenTurns, sped by Intelligence.
     if (player.maxMp > 0 && player.mp < player.maxMp) {
-      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - mod("INT") * (cls.intRegen != null ? cls.intRegen : 2) * 5);
+      // ToneTum's levels buy fractions of an INT modifier here rather than to-hit:
+      // the same dial the stat already turns, moved a tenth at a time.
+      const regenInt = mod("INT") + (player.lvlRegenInt || 0);
+      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - regenInt * (cls.intRegen != null ? cls.intRegen : 2) * 5);
       // Deep Well: a flat multiplier on MP regen. Ranks replace each other rather
       // than stacking, which falls out of passiveMod reading only the active rank.
       player.mpRegenAcc = (player.mpRegenAcc || 0) + (player.maxMp / effMp) * (1 + passiveMod("mpRegen"));
@@ -8147,7 +8166,7 @@
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">every stat acts through its modifier, ⌊(score − 10) ÷ 2⌋ · crit% = 5 + DEX mod + LCK mod×2 + skills · crit dmg% = 125 + LCK mod×5</div>` +
       `<div class="cline">To hit <b>${sgnNum(playerToHit())}</b> (~${accPct}% against an average foe) · Armour Class <b>${playerAC()}</b> (~${evaPct}% to be missed)</div>` +
-      `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = proficiency (${sgnNum(proficiency())} at your level) + DEX mod + weapon</div>` +
+      `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = ${BASE_TO_HIT} base + what your levels bought (${sgnNum(player.lvlAcc || 0)}) + DEX mod + weapon</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
       `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted</div>` +
@@ -8672,7 +8691,8 @@
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
       return {
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
-        acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(), prof: proficiency(),
+        acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(),
+        lvlAcc: player.lvlAcc || 0, lvlEvaPct: player.lvlEvaPct || 0, lvlRegenInt: player.lvlRegenInt || 0,
         lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),

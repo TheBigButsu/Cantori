@@ -2792,3 +2792,46 @@ dead end means anyway. Standing beside an unfound door prints *"The wall here so
 hollow"* once, so a secret nobody can tell is there never happens, and **adjacency is
 enough**: a door you must guess the exact tile of is a pixel hunt, and the point of all
 this is that arriving at a dead end stops being a punishment.
+
+---
+
+## "Proficiency +3" was jargon nobody defined, and it was the same for everyone
+
+Levelling printed `proficiency +3` on a line otherwise full of plain statements —
+`+1 STR`, `+5 HP` — and never said what it did. It was 5e's proficiency bonus (+2,
+rising a point every four levels) feeding to-hit, shared identically by all three
+classes, so a level also felt the same whoever you were playing.
+
+Everyone still starts at **+2**. Growth past that is now the class's own, authored in
+`data.js` under a `progression` block, and every rule states what the level *bought*:
+
+| | rule | at level 10 |
+|---|---|---|
+| **Chadwick** | `toHitPerLevel: 1` | +9 to hit |
+| **Brynn** | `toHitOddLevels: 1`, `evaPctEvenLevels: 1` | +4 to hit, +5% dodge |
+| **ToneTum** | `mpRegenIntPerLevel: 0.1` | +0.9 to the INT that drives mana regen |
+
+ToneTum's is the odd one on purpose: it moves the dial the stat already turns, a tenth
+at a time, so his levels are felt between fights rather than in them. It touches mana
+regeneration only — not his MP pool, not his spell damage.
+
+The banner now reads `Level 11!  +1 to hit, +5 HP, +2 MP` for Chadwick and
+`Level 11!  mana regen INT 6.0, +3 HP, +5 MP` for ToneTum. Nothing on that line is a
+term of art any more.
+
+### Chadwick's curve is much steeper than what it replaced
+
+Worth stating plainly, because the comment this change deleted warned about exactly
+this: on a d20, **+1 to hit is +5 percentage points**, so +1 a level compounds fast.
+
+| level | to-hit was | now | vs a bat (AC 21) | vs a rat (AC 13) |
+|---|---|---|---|---|
+| 1 | +5 | +5 | 25% → 25% | 65% → 65% |
+| 5 | +6 | +9 | 30% → 45% | 70% → 85% |
+| 10 | +7 | +14 | 35% → **70%** | 75% → 95% |
+| 15 | +8 | +19 | 40% → **95%** | 80% → 95% |
+
+By 15 he hits everything on anything but a natural 1. That may well be the point — the
+warrior has felt weak — but it is a doubling against the high-evasion monsters by level
+10, and it is worth knowing before the crypt gets balanced around it. Brynn's half-rate
+version lands at +4 by level 10, which is close to the old shared curve.
