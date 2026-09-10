@@ -2727,3 +2727,248 @@ its last few lines, so every read after the first came back empty and scored as 
 trap fired". Reading the trap's own `sprung` flag gave the numbers above immediately.
 That is three separate times this session that log-scraping or a stale copy has produced
 a confident wrong answer — prefer engine state to rendered text.
+
+---
+
+## A passage that exists goes somewhere
+
+Walking a spoke to a three-tile grass nook and finding nothing is the worst thing a
+floor can ask of you: it costs real turns against the Horror clock, pays nothing, and
+there is no way to tell it from a passage that leads somewhere until you have already
+walked it.
+
+Every empty pocket now leaves generation in exactly one of two states:
+
+- **up to two per floor** get a hidden room dug behind their far wall, stocked with a
+  guaranteed gear drop, a consumable and a coin flip for gold;
+- **every other one is filled in**, so the walk is never offered.
+
+Leaving one as it was is not an option — that was the bug.
+
+### The measurement was wrong twice before it was right
+
+First I counted dead ends as *tiles with one orthogonal neighbour* and got **7.18 per
+floor**. Then I sealed them and the number barely moved, because the sealer used the
+same test and `GRASS` is passable but is not `FLOOR` — so every grassy dead end, which
+in a forest is most of them, was invisible to both passes.
+
+Fixing that still left the number stuck, and the reason was more interesting:
+**movement is 8-way**. A tile with one orthogonal neighbour and two diagonal ones is not
+a dead end at all. Counted properly, a floor had **0.1** of them. My 7.18 was an
+artifact, and the thing the player actually walked into was never a one-tile stub.
+
+It is a **pocket**: a patch of ground with a single way in and nothing inside. Found by
+cutting — block one tile, see what strands — over chokepoints only, so a few dozen
+floods a floor rather than one per tile.
+
+| per floor | before | after |
+|---|---|---|
+| empty pockets surviving | 2.65 | **0.45** |
+| floors with none at all | — | **41 of 60** |
+| hidden rooms | 0 | **1.58** |
+
+One sweep was not enough: filling a pocket turns whatever led to it into a nook of its
+own, so the pass repeats until the floor stops producing them.
+
+### An undiscovered door is just a wall
+
+No new terrain type. The door stays an ordinary `WALL` until found, which satisfies
+CLAUDE.md rule 5 for free — every predicate in the game already knows what a wall is,
+and the chamber behind is simply unreachable. It is not in `rooms` either, so the exit,
+the monster spawner and the item scatter all pass it by. Verified across 60 floors:
+**no secret room was ever reachable before being found**, and across 14 descents
+including boss and merchant floors, all 19 doors were valid walls on the current map.
+
+That last check found a real bug: `secretDoors` was cleared inside the generation pass,
+which boss floors and the merchant den never run — so a door found on floor 4 stayed in
+the list on floor 5, pointing at whatever now occupied that tile. It is cleared in the
+per-floor reset now, beside `items` and `traps`.
+
+### Waiting is searching
+
+Rather than a sixth button on a phone screen, the verb the player already has for
+"spend a turn doing nothing" is the one that finds a door — which is what waiting at a
+dead end means anyway. Standing beside an unfound door prints *"The wall here sounds
+hollow"* once, so a secret nobody can tell is there never happens, and **adjacency is
+enough**: a door you must guess the exact tile of is a pixel hunt, and the point of all
+this is that arriving at a dead end stops being a punishment.
+
+---
+
+## "Proficiency +3" was jargon nobody defined, and it was the same for everyone
+
+Levelling printed `proficiency +3` on a line otherwise full of plain statements —
+`+1 STR`, `+5 HP` — and never said what it did. It was 5e's proficiency bonus (+2,
+rising a point every four levels) feeding to-hit, shared identically by all three
+classes, so a level also felt the same whoever you were playing.
+
+Everyone still starts at **+2**. Growth past that is now the class's own, authored in
+`data.js` under a `progression` block, and every rule states what the level *bought*:
+
+| | rule | at level 10 |
+|---|---|---|
+| **Chadwick** | `toHitEvenLevels: 1`, `mitMaxOddLevels: 1` | +5 to hit, +4 max block |
+| **Brynn** | `toHitOddLevels: 1`, `evaPctEvenLevels: 1` | +4 to hit, +5% dodge |
+| **ToneTum** | `mpRegenIntPerLevel: 0.1` | +0.9 to the INT that drives mana regen |
+
+ToneTum's is the odd one on purpose: it moves the dial the stat already turns, a tenth
+at a time, so his levels are felt between fights rather than in them. It touches mana
+regeneration only — not his MP pool, not his spell damage.
+
+The banner names it either way: Chadwick reads `Level 16!  +1 STR, +1 to hit, +5 HP,
++2 MP` on an even level and `Level 17!  +1 max block, +5 HP, +2 MP` on an odd one, and
+`Level 11!  mana regen INT 6.0, +3 HP, +5 MP` for ToneTum. Nothing on that line is a
+term of art any more.
+
+### Why Chadwick doesn't take to-hit every level
+
+He did, for one build. On a d20 **+1 to hit is +5 percentage points**, so +1 a level
+compounds fast — the comment the change deleted had warned about exactly this:
+
+| level | to-hit was | +1/level | vs a bat (AC 21) | vs a rat (AC 13) |
+|---|---|---|---|---|
+| 1 | +5 | +5 | 25% → 25% | 65% → 65% |
+| 5 | +6 | +9 | 30% → 45% | 70% → 85% |
+| 10 | +7 | +14 | 35% → **70%** | 75% → 95% |
+| 15 | +8 | +19 | 40% → **95%** | 80% → 95% |
+
+By 15 he hit everything on anything but a natural 1. That is why he no longer takes it
+every level: **+1 to hit on even levels, +1 max block on odd ones.** Half the curve, and
+the other half spent on the thing a melee tank actually wants.
+
+| level | to-hit | vs a bat (AC 21) | vs an average foe | block roll | mean block |
+|---|---|---|---|---|---|
+| 1 | +5 | 25% | 70% | 1–5 | 3.0 |
+| 5 | +7 | 35% | 80% | 1–7 | 4.0 |
+| 10 | +10 | 50% | 95% | 1–9 | 5.0 |
+| 15 | +12 | 60% | 95% | 1–12 | 6.5 |
+
+(Block range shown for the starting armour, a 1–5 roll; the level bonus rides on top of
+whatever is worn.)
+
+### Why the ceiling and not a flat block
+
+`mitMaxOddLevels` lifts the **top** of the armour roll and leaves the floor at 1. A
+level therefore never *guarantees* more mitigation, it makes the good rolls better.
+Flat mitigation every hit is the version that breaks: subtract 4 from every incoming
+number and the small, frequent hits the early floors are built out of stop landing at
+all — `mitigateDamage` clamps to 1, so they become a rounding error and the floor
+stops being a threat rather than becoming an easier one. Widening the range keeps the
+bad roll bad.
+
+It is one roll across the widened range, not the armour's roll plus a separate d(level).
+Two rolls would centre the result and never reach the new ceiling, which is the part
+being bought.
+
+Brynn's half-rate to-hit lands at +4 by level 10, which is close to the old shared
+proficiency curve; Chadwick's is now +5, a hair above it, with survivability alongside.
+
+---
+
+## A wing behind one tile: the loop pass
+
+Two screenshots, one complaint each, same root cause.
+
+The first was a grass spur on FOREST 3/5 that ended in trees — "no secret passage,
+just a dead end that is boring and lame." The second was the boss ring on FOREST 5/5
+with a whole chamber hanging off it by a single doorway: "the room does not connect
+to the ring, it creates a need to backtrack the whole level."
+
+`loopPct` was supposed to have prevented both. It doesn't, and couldn't: it adds its
+extra corridors to the **room graph**, and then `paintTerrain`, `narrowRoomBreaches`,
+the doorway pass and `fixOpenCorners` all run afterwards and put walls back. Measured
+on the map as it is actually played, across 100 floors:
+
+| | before | after |
+|---|---|---|
+| walkable ground sitting behind a single tile | **61.6%** | **6.9%** |
+| wings over 30 tiles, per floor | 1.70 | 0.15 |
+| unresolved nooks per floor | 0.87 | 0.01 |
+| hidden rooms per floor | 1.26 | 1.39 |
+| floor tiles dug | 244 | 262 |
+
+61.6% is the number that explains the screenshots. On a typical floor, most of the
+ground was on the far side of one tile from the player — walk in, walk all the way
+back out, and no route round anything.
+
+### How it works
+
+`addLoops` runs **last**, on the finished map, so nothing downstream can re-sever what
+it joins. It finds the tiles that cut the floor with one iterative Tarjan pass (the
+spanning tree of a floor is ~1,000 deep; recursion at that depth is a stack overflow
+on a phone), takes the **smaller** side of each cut as the wing, and for wings of 15
+tiles or more digs a tunnel back to the rest of the floor.
+
+Two things make it safe rather than another way to break a level:
+
+- **It only digs.** Rock becomes floor and nothing is ever walled. Rule 5's hazard is
+  one-directional — a tile that blocks movement can sever a floor, a tile that opens
+  cannot — so this needs no reachability undo at all.
+- **It refuses to dig anything but plain rock.** Not a door, not the stairs, not
+  terrain, and not a secret door. That last one matters: a hidden room's interior is
+  already carved but unreachable, so it isn't in the flood and its floor tiles stop a
+  tunnel dead.
+
+The tunnel is chosen to **maximise what it saves**: of every pair of tiles that a
+straight-then-turn dig could join, take the one where `walk(a→mouth) + walk(mouth→b)`
+minus the tunnel is largest, breaking ties on the shortest dig. Without that the pass
+punches a hole beside the wing's mouth — which removes the chokepoint on paper and
+shortens nobody's walk. Measured: 2.38 tunnels a floor, about 5 tiles of rock each,
+**14.7 steps saved apiece**.
+
+The path is deliberately not `orthPath`: that one jogs at random, so what was
+validated would not be what got carved.
+
+### Boss floors ran neither pass
+
+The ring arena was the worst floor in the game for this, and the reason is one line:
+`if (!bossFloor) resolveDeadEnds(rooms)`. It now measures **0% behind a single tile**,
+and the typical boss-floor tunnel digs two to six tiles to save **sixty-odd steps** —
+the single biggest quality-of-life number in this change.
+
+Nothing in either pass can wall in the boss. `findPockets` now refuses a pocket with a
+creature in it (which was a latent bug on ordinary floors too — it would entomb a
+sleeper the player could then never find while the Horror clock ran), `sealBackFrom`
+refuses to bury an occupant, and the loop pass only digs.
+
+### Nooks are resolved before loops, and again after
+
+`resolveDeadEnds` → `addLoops` → `resolveDeadEnds`.
+
+A hidden room needs a 3×3 of untouched rock behind the nook's far wall. Running the
+loops first takes that rock away, and hidden rooms fell from 1.26 a floor to **0.71**
+— the pass was quietly eating the feature the same complaint had asked for. So nooks
+claim their rock first, the loop pass digs around what is left, and a second sweep
+resolves whatever the digging itself stranded or spurred. Back to **1.39** a floor,
+slightly better than before either pass existed.
+
+`secretDoors` is no longer cleared inside `resolveDeadEnds` — `generateLevel` already
+clears it for every floor, including the two that never call this — because clearing
+it there would throw away the first sweep's work.
+
+### The dead end that shouldn't have survived
+
+The spur in the first screenshot was a pocket small enough for the old pass to seal,
+and it survived anyway, because `findPockets` only ever considered chokepoints
+**outside a room**. A grass spur hanging off the side of a forest clearing has its
+mouth inside the clearing's rectangle, so it was invisible.
+
+That filter existed for cost: the old scan flooded from every passable tile, ~220
+floods a round, and dropping the filter would have made it five times that. Tarjan
+names the three dozen tiles that can actually cut the floor in one pass, so the filter
+is now free to remove. `findPockets` and `findLobes` are the same scan read at
+opposite ends of the size range: 14 tiles or fewer is a nook (hide a room in it or
+seal it), 15 or more is a wing (give it a second exit).
+
+Two smaller bugs fell out of the rewrite. The old scan defined the pocket as *the side
+the player is not on*, so a nook the player happened to be standing in was scored as
+"everything else" — it now takes the smaller side and skips one containing the player.
+And a nook that can't be sealed because it is load-bearing is almost always a small
+**room** that happens to be a dead end; deleting a room is not on the table, so that
+one now gets a second door, the same answer a wing gets.
+
+### Cost
+
+Level generation goes from roughly 20ms to roughly 28ms median on desktop, and the
+boss floor from 4ms to 29ms because it now does the work at all. It happens once per
+floor, behind the descent.

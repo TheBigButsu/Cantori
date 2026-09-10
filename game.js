@@ -144,11 +144,14 @@
   // worth five, which is the whole reason the modifiers are small in the first place.
   const AC_BASE = 10;
   const MON_TOHIT = 3, MON_AC = 11;       // monster defaults when unspecified
-  // 5e's proficiency bonus: +2, rising by one every four levels. This is what makes
-  // a character better at hitting things as they level; there is deliberately no
-  // per-level accuracy in the class levelUp sets any more, because +2 to-hit a level
-  // on a d20 is +10 percentage points a level and would cap out almost immediately.
-  const proficiency = () => 2 + Math.floor((player.level - 1) / 4);
+  // What every character starts with, before anything they earn. This was 5e's
+  // proficiency bonus rising a point every four levels, shared by all three classes
+  // — a number the level-up line reported as "proficiency +3" and nothing explained.
+  // Growth is now the class's own business, authored in data under `progression`,
+  // so what a level buys reads differently for each of them and can be SAID in
+  // plain words when it lands.
+  const BASE_TO_HIT = 2;
+  const classProg = () => ((DATA.classes[player.cls] || {}).progression || {});
   const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
   // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
@@ -200,7 +203,7 @@
     if (player.unseen && player.unseen.turns > 0) v += player.unseen[field] || 0;
     return v;
   };
-  const playerToHit = () => proficiency() + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
+  const playerToHit = () => BASE_TO_HIT + mod("DEX") + weaponToHit() + (player.lvlAcc || 0) + (player.boonAcc || 0) + passiveMod("acc") + timedBonus("acc");
   // AC = 10 + as much of your DEX modifier as what you are wearing allows: all of
   // it bare-skinned, tier + plus in medium, none in light or heavy. See ARMOR_SUB.
   // Happy Feet is the first thing that adds AC from a passive, and the Meditate
@@ -227,7 +230,8 @@
   const EVA_PCT_PER_LCK_MOD = 1;
   const luckDodge = () => Math.max(0, mod("LCK")) * EVA_PCT_PER_LCK_MOD / 100;
   const dodgeChance = () => Math.min(EVA_CAP,
-    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100 + luckDodge());
+    Math.max(0, evasionPoints()) * EVA_PER_POINT + Math.max(0, passiveMod("evaPct")) / 100 + luckDodge() +
+    Math.max(0, player.lvlEvaPct || 0) / 100);
   // Critical hits: 5% chance to deal 125% damage by default, grown by Ourn's
   // Perfectly Timed Blow (+1% per character level), DEX (+1% chance per point)
   // and LCK (+0.5% chance per point, +2% crit damage per point).
@@ -282,6 +286,7 @@
     cls: "warrior", stats: { STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
+    lvlEvaPct: 0, lvlRegenInt: 0, lvlMitMax: 0,        // per-level class progression (dodge %, mana-regen INT, block ceiling)
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
     killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
@@ -307,6 +312,7 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
+    player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -610,11 +616,23 @@
   const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + mod("VIT") * 3) / 2) : 0);
   const stoneSkinRoll = () => (stoneSkinActive() ? randInt(Math.min(stoneSkinLo(), stoneSkinHi()), Math.max(stoneSkinLo(), stoneSkinHi())) : 0);
   const armorFlat = () => armorSubMit() + wornDefense();          // flat, always-on mitigation
-  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi();          // top-end block (display/peek)
+  // A class can buy block CEILING with its levels (progression.mitMaxOddLevels).
+  // It lifts the top of the roll and leaves the floor alone on purpose: a level
+  // never guarantees more mitigation, it makes the good rolls better. Flat
+  // mitigation every hit would stack into immunity against the small, frequent
+  // damage the early floors are built out of.
+  const lvlMitMax = () => Math.max(0, player.lvlMitMax || 0);
+  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi() + lvlMitMax();          // top-end block (display/peek)
   const armorDefMin = () => (player.armor ? gDefMin(player.armor) : 0) + armorFlat() + stoneSkinLo();
-  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorFlat() + stoneSkinHi();
+  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorFlat() + stoneSkinHi() + lvlMitMax();
   // The actual mitigation applied on a hit: roll a fresh block within the range.
-  const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorFlat() + stoneSkinRoll();
+  // One roll across the widened range, not armour plus a separate d(level) — two
+  // rolls would centre the result instead of reaching the new ceiling.
+  const armorBlock = () => {
+    const lo = player.armor ? Math.min(gDefMin(player.armor), gDefMax(player.armor)) : 0;
+    const hi = (player.armor ? Math.max(gDefMin(player.armor), gDefMax(player.armor)) : 0) + lvlMitMax();
+    return randInt(lo, hi) + armorFlat() + stoneSkinRoll();
+  };
   // Weapon combat numbers (unarmed falls back to the base 2–3 fists, boosted by
   // Brynn's Unarmed Master passive when no weapon is equipped).
   // passiveMod's own `when` gate decides which passives apply, so adding it to the
@@ -1928,6 +1946,10 @@
     decoys = [];
     turns = 0;
     sarcophagi = new Set();
+    // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
+    // run that pass, so a door found on the last floor would otherwise stay in the
+    // list pointing at a tile that is now something else entirely.
+    secretDoors = []; secretsHinted = new Set();
     auraSig = "";                              // whatever field you stood in is a floor behind you
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
 
@@ -2063,6 +2085,25 @@
         if (cut()) carveCorridor({ x: player.x, y: player.y }, { x: st.x, y: st.y });
       }
     }
+    // Loops, then dead ends, last: every pass above can sever the floor or leave a
+    // spur, and nothing after this reshapes the map, so this is the only place the
+    // answer is final. Order matters — addLoops digs new passages and resolveDeadEnds
+    // is what guarantees those passages go somewhere.
+    //
+    // Both run on the BOSS floor too now. They used to be skipped there, which is
+    // why the ring arena was the worst offender in play: a chamber hanging off the
+    // ring by one doorway, and the whole lap to walk back. Nothing in either pass
+    // can wall in the boss — findPockets refuses a pocket with a monster in it, and
+    // addLoops only ever digs.
+    // Nooks first, loops second, nooks again. The order is not arbitrary: a secret
+    // room needs a 3x3 of untouched rock behind the nook's far wall, and a tunnel
+    // dug through that rock takes the space away — running loops first cost half
+    // the floor's hidden rooms (1.26/floor down to 0.71). Nooks claim their rock,
+    // then the loop pass digs around what is left, then the second sweep resolves
+    // whatever the digging itself stranded or spurred.
+    resolveDeadEnds(rooms);
+    addLoops(rooms);
+    resolveDeadEnds(rooms);
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -2098,6 +2139,10 @@
     decoys = [];
     turns = 0;
     sarcophagi = new Set();
+    // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
+    // run that pass, so a door found on the last floor would otherwise stay in the
+    // list pointing at a tile that is now something else entirely.
+    secretDoors = []; secretsHinted = new Set();
     auraSig = "";
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
     bossActive = false;
@@ -2194,6 +2239,439 @@
     if (placed === 0) { const b = makeBoss(key, cx, cy); monsters.push(b); _boss.onSpawn(b); }
   }
 
+  // ---- Loops: nothing large behind a single tile ---------------------------
+  //
+  // `loopPct` already adds extra corridors — but it adds them to the ROOM GRAPH,
+  // before terrain, doorways, narrowRoomBreaches and fixOpenCorners have had their
+  // say, and every one of those passes puts walls back. Measured on the FINISHED
+  // map, a forest floor still carried 2.5 wings hanging off a single tile apiece,
+  // half of them over 30 tiles: walk the whole wing, then walk the whole wing back.
+  // The boss ring was worse, because it never ran the dead-end pass at all.
+  //
+  // That is the "this room doesn't connect to the ring" complaint, and no value of
+  // loopPct can fix it, because the severing happens afterwards. So this pass runs
+  // last, on the map as it will actually be played, and only ever DIGS: it turns
+  // rock into floor and walls nothing, so it cannot strand a tile and needs no
+  // reachability undo (rule 5's hazard is one-directional).
+  // 15 = POCKET_MAX + 1, deliberately: anything smaller is a nook, and the pass
+  // below already has a better answer for those (a secret room, or sealed). Set it
+  // lower and the two fight — loops dissolve the pockets before they can become
+  // hidden rooms, and the floor loses its secrets.
+  const LOBE_MIN = 15;         // a wing worth a second way out; below this it's a nook
+  const LOBE_TUNNEL_MAX = 12;  // how far we will dig through rock to close the loop
+  const LOBE_GAIN_MIN = 2;     // ...and only if the short cut actually saves steps
+  const LOBE_BRIDGES = 5;      // per floor — past this the floor reads as swiss cheese
+  const tkey = (x, y) => y * MAP_W + x;
+  // Articulation points of the walkable 8-graph — the tiles you can be shut in by.
+  // Tarjan, iterative because a floor's spanning tree is ~1,000 deep and recursion
+  // at that depth is a stack overflow on a phone. One pass, so this is cheap; the
+  // expensive per-tile flood below then only runs on the handful it names.
+  function articulationTiles(sx, sy) {
+    if (!passable(sx, sy)) return [];
+    const disc = new Map(), low = new Map(), arts = new Set();
+    let timer = 0;
+    const root = tkey(sx, sy);
+    disc.set(root, ++timer); low.set(root, timer);
+    const stack = [{ k: root, parent: -1, i: 0, kids: 0 }];
+    while (stack.length) {
+      const fr = stack[stack.length - 1];
+      if (fr.i < DIRS8.length) {
+        const [dx, dy] = DIRS8[fr.i++];
+        const x = fr.k % MAP_W, y = (fr.k - (fr.k % MAP_W)) / MAP_W;
+        const nx = x + dx, ny = y + dy;
+        if (!inBounds(nx, ny) || !passable(nx, ny)) continue;
+        const nk = tkey(nx, ny);
+        if (nk === fr.parent) continue;
+        if (disc.has(nk)) { low.set(fr.k, Math.min(low.get(fr.k), disc.get(nk))); continue; }
+        fr.kids++;
+        disc.set(nk, ++timer); low.set(nk, timer);
+        stack.push({ k: nk, parent: fr.k, i: 0, kids: 0 });
+      } else {
+        stack.pop();
+        const up = stack[stack.length - 1];
+        if (up) {
+          low.set(up.k, Math.min(low.get(up.k), low.get(fr.k)));
+          // The root is special: it only cuts the floor if it has two subtrees.
+          if (up.parent !== -1 && low.get(fr.k) >= disc.get(up.k)) arts.add(up.k);
+        }
+        if (fr.parent === -1 && fr.kids > 1) arts.add(fr.k);
+      }
+    }
+    return Array.from(arts);
+  }
+  // Every walkable tile grouped by which side of `blockK` it falls on.
+  function sidesWithout(full, blockK) {
+    const seen = new Set([blockK]), out = [];
+    for (const k0 of full) {
+      if (seen.has(k0)) continue;
+      const comp = [], st = [k0];
+      seen.add(k0);
+      while (st.length) {
+        const k = st.pop(); comp.push(k);
+        const x = k % MAP_W, y = (k - (k % MAP_W)) / MAP_W;
+        for (const [dx, dy] of DIRS8) {
+          const nk = tkey(x + dx, y + dy);
+          if (seen.has(nk) || !full.has(nk)) continue;
+          seen.add(nk); st.push(nk);
+        }
+      }
+      out.push(comp);
+    }
+    return out;
+  }
+  // The wings, biggest first. A "lobe" is the SMALLER side of a cut: anchoring on
+  // the player instead made the rest of the level read as a wing whenever the
+  // player happened to be standing in the nook.
+  function findLobes() {
+    const full = floodReach(player.x, player.y, false);
+    const out = [], claimed = new Set();
+    for (const k of articulationTiles(player.x, player.y)) {
+      const parts = sidesWithout(full, k);
+      if (parts.length < 2) continue;
+      parts.sort((a, b) => a.length - b.length);
+      const small = parts[0];
+      if (small.length < LOBE_MIN) continue;
+      if (small.some((q) => claimed.has(q))) continue;
+      for (const q of small) claimed.add(q);
+      out.push({ mouth: { x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W }, tiles: small });
+    }
+    out.sort((a, b) => b.tiles.length - a.tiles.length);
+    return out;
+  }
+  // Walking distance from one tile to everywhere, 8-way, in steps.
+  function walkDistances(sx, sy) {
+    const d = new Map();
+    if (!passable(sx, sy)) return d;
+    d.set(tkey(sx, sy), 0);
+    let frontier = [tkey(sx, sy)];
+    while (frontier.length) {
+      const next = [];
+      for (const k of frontier) {
+        const x = k % MAP_W, y = (k - (k % MAP_W)) / MAP_W, nd = d.get(k) + 1;
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx, ny = y + dy;
+          if (!inBounds(nx, ny) || !passable(nx, ny)) continue;
+          const nk = tkey(nx, ny);
+          if (d.has(nk)) continue;
+          d.set(nk, nd); next.push(nk);
+        }
+      }
+      frontier = next;
+    }
+    return d;
+  }
+  // The tiles a straight-then-turn tunnel from a to b would have to dig, or null if
+  // it would pass through anything that is not plain rock. Deliberately NOT
+  // orthPath: that one jogs at random, so what we validated is not what we'd carve.
+  function tunnelRock(ax, ay, bx, by, horizFirst) {
+    const rock = [];
+    let x = ax, y = ay, guard = 0;
+    while ((x !== bx || y !== by) && guard++ < 64) {
+      if (horizFirst ? x !== bx : y === by) x += Math.sign(bx - x);
+      else y += Math.sign(by - y);
+      if (x === bx && y === by) return rock;
+      if (!inBounds(x, y) || x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) return null;
+      if (map[y][x] !== WALL) return null;         // never dig through a door, the stairs, or terrain
+      if (secretDoors.some((s) => s.x === x && s.y === y)) return null;
+      rock.push({ x, y });
+    }
+    return (x === bx && y === by) ? rock : null;
+  }
+  // Dig the loop. The pair is chosen to MAXIMISE what it saves — the two tiles
+  // currently furthest apart on foot that are nearest apart through the rock — so
+  // the tunnel is a genuine short cut rather than a hole beside the mouth you'd
+  // never bother using.
+  function bridgeLobe(lobe) {
+    const inLobe = new Set(lobe.tiles);
+    const dist = walkDistances(lobe.mouth.x, lobe.mouth.y);
+    let best = null;
+    for (const ak of lobe.tiles) {
+      const ax = ak % MAP_W, ay = (ak - (ak % MAP_W)) / MAP_W;
+      const da = dist.get(ak);
+      if (da == null) continue;
+      for (let dy = -LOBE_TUNNEL_MAX - 1; dy <= LOBE_TUNNEL_MAX + 1; dy++) {
+        for (let dx = -LOBE_TUNNEL_MAX - 1; dx <= LOBE_TUNNEL_MAX + 1; dx++) {
+          const bx = ax + dx, by = ay + dy;
+          if (!inBounds(bx, by) || !passable(bx, by)) continue;
+          const bk = tkey(bx, by);
+          if (inLobe.has(bk) || (bx === lobe.mouth.x && by === lobe.mouth.y)) continue;
+          const db = dist.get(bk);
+          if (db == null) continue;
+          for (const horizFirst of [true, false]) {
+            const rock = tunnelRock(ax, ay, bx, by, horizFirst);
+            if (!rock || !rock.length || rock.length > LOBE_TUNNEL_MAX) continue;
+            const gain = da + db - (rock.length + 1);
+            if (gain < LOBE_GAIN_MIN) continue;
+            // Best saving wins; a shorter dig breaks the tie, so the floor keeps
+            // its shape and gains a doorway rather than a boulevard.
+            if (!best || gain > best.gain || (gain === best.gain && rock.length < best.rock.length)) {
+              best = { rock, gain };
+            }
+          }
+        }
+      }
+    }
+    if (!best) return false;
+    for (const t of best.rock) map[t.y][t.x] = FLOOR;
+    lastLoops.push({ mouth: lobe.mouth, wing: lobe.tiles.length, dug: best.rock.length, saved: best.gain });
+    return true;
+  }
+  let lastLoops = [];          // what the last floor's loop pass actually bought (dev)
+  // One wing at a time, re-reading the map between digs: closing one loop can
+  // resolve the next, and can also reveal a wing that was hidden behind it.
+  function addLoops(rooms) {
+    lastLoops = [];
+    for (let i = 0; i < LOBE_BRIDGES; i++) {
+      const lobes = findLobes();
+      if (!lobes.length) break;
+      let dug = false;
+      for (const lobe of lobes) if (bridgeLobe(lobe)) { dug = true; break; }
+      if (!dug) break;
+      // fixOpenCorners can wall a tile, so it gets its say BEFORE the next scan
+      // reads the map — otherwise we would be bridging a floor plan that is about
+      // to change under us.
+      fixOpenCorners(rooms);
+    }
+  }
+
+  // ---- Dead ends: seal them, or make them worth walking ---------------------
+  //
+  // A spoke that leads nowhere is the worst thing a floor can ask of you: it costs
+  // real turns against the Horror clock and pays nothing, and there is no way to
+  // tell it from a spoke that leads somewhere until you have walked it. Measured
+  // before this, a forest floor carried 7.2 of them.
+  //
+  // So every dead end now resolves one of two ways, and both are honest:
+  //   · a few become SECRET DOORS onto a hidden room, stocked with loot;
+  //   · the rest are walled back to the junction they branched from, so the walk
+  //     is never offered in the first place.
+  //
+  // The result is a promise the floor can keep: if a passage exists, it goes
+  // somewhere. An undiscovered secret door is left as an ordinary WALL tile rather
+  // than a new terrain type — which is what keeps CLAUDE.md rule 5 satisfied for
+  // free, since every predicate in the game already knows what a wall is, and the
+  // room behind it is simply unreachable until it opens. It is not in `rooms`
+  // either, so the exit, the monster spawner and the item scatter all pass it by.
+  let secretDoors = [];        // { x, y, room } — walls that open on a search
+  let secretsHinted = new Set();
+  const SECRET_MAX = 2;        // hidden rooms per floor
+  const SECRET_ROOM = 3;       // side of the chamber behind the door
+  // Sealable ground: anything you can walk that is not doing a job. GRASS matters
+  // most — the forest is largely made of it, and testing for FLOOR alone made every
+  // grassy dead end invisible to both passes below, which is exactly the kind the
+  // player walked into. Stairs and doorways are never touched.
+  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR;
+  function deadEndTiles(rooms) {
+    const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+    const out = [];
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+      if (!sealableTile(x, y) || inRoom(x, y)) continue;
+      // EIGHT-way, because that is how everything moves. A tile with one orthogonal
+      // neighbour and two diagonal ones is not a dead end at all — counting it as
+      // one is what made a floor look like it had 7 of them when it had 2.
+      let open = 0, back = null;
+      for (const [dx, dy] of DIRS8) if (passable(x + dx, y + dy)) { open++; back = [dx, dy]; }
+      if (open !== 1) continue;
+      // Dig straight on from the way back, and only along an axis — a chamber
+      // hanging off a diagonal reads as a mistake rather than a hidden room.
+      if (back[0] !== 0 && back[1] !== 0) continue;
+      out.push({ x, y, dir: [-back[0], -back[1]] });
+    }
+    return out;
+  }
+  // Try to hollow a chamber beyond `end`, leaving exactly one wall tile between —
+  // that tile is the door. Returns the room rect, or null if there isn't the space.
+  function carveSecretRoom(end) {
+    // Biggest chamber that fits, and if the straight-on placement is blocked, slide
+    // it one tile either way along the wall before giving up. A single strict
+    // attempt found somewhere to dig on barely a third of floors.
+    for (const size of [SECRET_ROOM, 2]) {
+      for (const shift of [0, -1, 1]) {
+        const rect = trySecretRect(end, size, shift);
+        if (rect) return rect;
+      }
+    }
+    return null;
+  }
+  function trySecretRect(end, size, shift) {
+    const [dx, dy] = end.dir;
+    const doorX = end.x + dx, doorY = end.y + dy;
+    if (!inBounds(doorX, doorY) || map[doorY][doorX] !== WALL) return null;
+    const half = Math.floor(size / 2);
+    // The chamber sits one tile past the door, on the corridor's line (or nudged).
+    const cx = doorX + dx + (dx !== 0 ? 0 : shift), cy = doorY + dy + (dy !== 0 ? 0 : shift);
+    const rx = (dx !== 0 ? cx - (dx < 0 ? size - 1 : 0) : cx - half);
+    const ry = (dy !== 0 ? cy - (dy < 0 ? size - 1 : 0) : cy - half);
+    const rect = { x: rx + (dx !== 0 ? 0 : 0), y: ry + (dy !== 0 ? shift : 0), w: size, h: size };
+    // Everything the chamber will occupy, plus a one-tile skin around it, has to be
+    // solid rock right now — otherwise it would open onto the floor somewhere else
+    // and stop being secret.
+    for (let y = rect.y - 1; y <= rect.y + rect.h; y++) {
+      for (let x = rect.x - 1; x <= rect.x + rect.w; x++) {
+        if (!inBounds(x, y) || x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) return null;
+        if (x === doorX && y === doorY) continue;       // the door is allowed to be the way in
+        if (map[y][x] !== WALL) return null;
+      }
+    }
+    for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) map[y][x] = FLOOR;
+    return rect;
+  }
+  // Wall a dead end back to the junction it branched from, so the pointless walk is
+  // never offered. Reverts any step that would cut the floor — the same
+  // tentative-apply/revert pattern sealDeadEndStubs and thinCorridors use.
+  function sealBackFrom(end, rooms, anchor) {
+    let x = end.x, y = end.y;
+    for (let step = 0; step < 40; step++) {
+      const inRoom = rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+      if (!sealableTile(x, y) || inRoom) break;
+      if (monsterAt(x, y) || itemAt(x, y) || (x === player.x && y === player.y)) break;   // never bury an occupant
+      let open = [];
+      for (const [dx, dy] of DIRS8) if (passable(x + dx, y + dy)) open.push([x + dx, y + dy]);
+      if (open.length !== 1) break;                     // reached a junction — stop
+      const was = map[y][x];
+      map[y][x] = WALL;
+      if (!allRoomsReachable(rooms, anchor.x, anchor.y)) { map[y][x] = was; break; }   // load-bearing
+      x = open[0][0]; y = open[0][1];
+    }
+  }
+  // A cul-de-sac is what the player actually walks into: not a one-tile stub but a
+  // POCKET — a patch of ground with a single way in and nothing inside it. The
+  // one-neighbour test misses these entirely (a 3-tile grass nook has plenty of
+  // neighbours), which is why a floor that felt full of pointless spokes measured
+  // as having almost none.
+  //
+  // Found by cutting: any tile whose removal strands ground is a chokepoint, and
+  // the stranded side is a pocket. Only chokepoints are tried, so this is a few
+  // dozen floods per floor rather than one per tile.
+  // Now that articulationTiles() exists, this is the same scan the loop pass does,
+  // stopped at the other end of the size range: a wing of POCKET_MAX or less is a
+  // nook, and a nook gets a secret room or gets sealed rather than a second exit.
+  //
+  // It used to walk every passable tile and flood from each, which cost ~220 floods
+  // a round and still MISSED the ones the player actually walks into: candidates
+  // had to be outside a room, so a grass spur hanging off the side of a forest
+  // clearing — the exact shape reported — was invisible to it. Tarjan names the
+  // three dozen tiles that can cut the floor in one pass, so dropping that filter
+  // is now free rather than five times the work.
+  function findPockets() {
+    const start = { x: player.x, y: player.y };
+    const stairs = findStairs();
+    const full = floodReach(start.x, start.y, false);
+    const pockets = [], claimed = new Set();
+    for (const k of articulationTiles(start.x, start.y)) {
+      const parts = sidesWithout(full, k);
+      if (parts.length < 2) continue;
+      parts.sort((a, b) => a.length - b.length);
+      const small = parts[0];
+      if (!small.length || small.length > POCKET_MAX) continue;   // a whole wing is not a nook
+      if (small.some((q) => claimed.has(q))) continue;
+      let skip = false;
+      const tiles = [];
+      for (const q of small) {
+        const px = q % MAP_W, py = (q - (q % MAP_W)) / MAP_W;
+        tiles.push({ x: px, y: py });
+        // Already leads somewhere, or has something in it that must not be buried.
+        // The player's own side counts: taking the SMALLER side rather than the far
+        // side means the nook can be the one you are standing in.
+        if (stairs && stairs.x === px && stairs.y === py) skip = true;
+        else if (px === start.x && py === start.y) skip = true;
+        else if (itemAt(px, py) || monsterAt(px, py)) skip = true;
+      }
+      if (skip) continue;
+      for (const q of small) claimed.add(q);
+      pockets.push({ mouth: { x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W }, tiles });
+    }
+    // Smallest first: the tightest nook is the most pointless walk, and the one
+    // most likely to have rock behind it to dig into.
+    pockets.sort((a, b) => a.tiles.length - b.tiles.length);
+    return pockets;
+  }
+  const POCKET_MAX = 14;       // bigger than this is a wing of the floor, not a nook
+  // The far wall of a pocket: the tile deepest from its mouth that still has room to
+  // dig behind it, tried in every axial direction.
+  function secretFromPocket(pk) {
+    const far = pk.tiles.slice().sort((a, b) =>
+      cheb(b.x, b.y, pk.mouth.x, pk.mouth.y) - cheb(a.x, a.y, pk.mouth.x, pk.mouth.y));
+    for (const t of far) {
+      for (const dir of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const rect = carveSecretRoom({ x: t.x, y: t.y, dir });
+        if (rect) return { door: { x: t.x + dir[0], y: t.y + dir[1] }, room: rect };
+      }
+    }
+    return null;
+  }
+  // Wall a pocket out of existence. By construction it strands nothing else — it
+  // was found by being the stranded side — but the reachability check stays, both
+  // as a guard and because it is the pattern every other map edit here follows.
+  // The mouth is left alone: it becomes a one-tile stub, and the stub pass below
+  // tidies it away on the same sweep.
+  function fillPocket(pk, rooms, anchor) {
+    const was = pk.tiles.map((t) => map[t.y][t.x]);
+    for (const t of pk.tiles) map[t.y][t.x] = WALL;
+    if (!allRoomsReachable(rooms, anchor.x, anchor.y)) {
+      pk.tiles.forEach((t, i) => { map[t.y][t.x] = was[i]; });
+      return false;
+    }
+    return true;
+  }
+  // Not reset here: generateLevel clears secretDoors for every floor, including the
+  // boss floor and the merchant den, and this runs TWICE per floor (see below).
+  function resolveDeadEnds(rooms) {
+    if (!rooms.length) return;
+    const anchor = { x: player.x, y: player.y };
+    // Pockets first — these are the ones that actually read as a wasted walk. Each
+    // one leaves in exactly one of two states, and that is the whole promise: a
+    // passage that exists goes somewhere.
+    //   · up to SECRET_MAX of them get a hidden room dug off their far wall;
+    //   · every other one is filled in, so the walk is never offered.
+    // Leaving them as they were is not an option — that is the bug.
+    // Sweep until the floor stops producing them: filling a pocket turns whatever
+    // led to it into a nook of its own, and one pass leaves that behind.
+    for (let round = 0; round < 4; round++) {
+    const found0 = findPockets();
+    if (!found0.length) break;
+    for (const pk of found0) {
+      if (secretDoors.length < SECRET_MAX) {
+        const found = secretFromPocket(pk);
+        if (found) {
+          secretDoors.push({ x: found.door.x, y: found.door.y, room: found.room });
+          stockSecretRoom(found.room);
+          continue;
+        }
+      }
+      // Sealing is refused when the nook is load-bearing — almost always a small
+      // ROOM that happens to be a dead end, and deleting a room is not on the
+      // table. Give it a second door instead: that is the same answer the loop
+      // pass gives a big wing, and it is a better one than leaving the walk.
+      if (!fillPocket(pk, rooms, anchor)) bridgeLobe({ mouth: pk.mouth, tiles: pk.tiles.map((t) => t.y * MAP_W + t.x) });
+    }
+    }
+    // Then the one-tile stubs, which are rare but pure noise: wall them back.
+    const ends = deadEndTiles(rooms);
+    for (let i = ends.length - 1; i > 0; i--) { const j = randInt(0, i); const t = ends[i]; ends[i] = ends[j]; ends[j] = t; }
+    for (const end of ends) {
+      if (secretDoors.length < SECRET_MAX) {
+        const rect = carveSecretRoom(end);
+        if (rect) {
+          secretDoors.push({ x: end.x + end.dir[0], y: end.y + end.dir[1], room: rect });
+          stockSecretRoom(rect);
+          continue;                                     // this one earns its walk
+        }
+      }
+      sealBackFrom(end, rooms, anchor);
+    }
+  }
+  // The payoff. A hidden room is only worth finding if it holds something you would
+  // not otherwise have had, so it gets a guaranteed gear drop and a consumable
+  // rather than a share of the floor's ordinary scatter.
+  function stockSecretRoom(rect) {
+    const spots = [];
+    for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) spots.push({ x, y });
+    for (let i = spots.length - 1; i > 0; i--) { const j = randInt(0, i); const t = spots[i]; spots[i] = spots[j]; spots[j] = t; }
+    if (spots[0]) items.push(Object.assign({ x: spots[0].x, y: spots[0].y }, rollGearDrop(depth)));
+    if (spots[1]) items.push({ x: spots[1].x, y: spots[1].y, key: weightedConsumKey() });
+    if (spots[2] && Math.random() < 0.5) items.push({ x: spots[2].x, y: spots[2].y, key: "gold", amount: randInt(10, 25) + depth * 3 });
+  }
   function freeFloorSpot(rooms) {
     for (let t = 0; t < 60; t++) {
       const room = rooms[randInt(0, rooms.length - 1)];
@@ -3569,6 +4047,19 @@
       if (player.level % 3 === 0) player.stats[cls.secondary] += 1;
       // No free skill point here — skill points now come only from Potions of
       // Insight (1 guaranteed per floor, 3 more on a boss kill).
+      // The class's own growth. Each rule says what the level BOUGHT, so the banner
+      // can name it instead of printing a term of art nobody defined.
+      const pr = cls.progression || {};
+      const grew = [];
+      if (pr.toHitPerLevel) { player.lvlAcc += pr.toHitPerLevel; grew.push("+" + pr.toHitPerLevel + " to hit"); }
+      if (pr.toHitOddLevels && player.level % 2 === 1) { player.lvlAcc += pr.toHitOddLevels; grew.push("+" + pr.toHitOddLevels + " to hit"); }
+      if (pr.toHitEvenLevels && player.level % 2 === 0) { player.lvlAcc += pr.toHitEvenLevels; grew.push("+" + pr.toHitEvenLevels + " to hit"); }
+      if (pr.evaPctEvenLevels && player.level % 2 === 0) { player.lvlEvaPct += pr.evaPctEvenLevels; grew.push("+" + pr.evaPctEvenLevels + "% evade"); }
+      if (pr.mitMaxOddLevels && player.level % 2 === 1) { player.lvlMitMax = (player.lvlMitMax || 0) + pr.mitMaxOddLevels; grew.push("+" + pr.mitMaxOddLevels + " max block"); }
+      if (pr.mpRegenIntPerLevel) {
+        player.lvlRegenInt = +((player.lvlRegenInt || 0) + pr.mpRegenIntPerLevel).toFixed(2);
+        grew.push("mana regen INT " + (mod("INT") + player.lvlRegenInt).toFixed(1));
+      }
       const lu = cls.levelUp || {};            // flat per-level set (hp/mp/accuracy/evasion)
       player.lvlHp += lu.hp || 0;
       player.lvlAcc += lu.accuracy || 0;
@@ -3586,8 +4077,7 @@
       const statGain = [];
       if (player.level % 2 === 0) statGain.push("+1 " + cls.main);
       if (player.level % 3 === 0) statGain.push("+1 " + cls.secondary);
-      if (proficiency() > 2 + Math.floor((player.level - 2) / 4)) statGain.push("proficiency " + sgnNum(proficiency()));
-      const gains = statGain.concat(extra);
+      const gains = statGain.concat(grew, extra);
       log("Level " + player.level + (gains.length ? "!  " + gains.join(", ") : "!"), "hit");
       showBanner("LEVEL " + player.level, gains.join("  ·  "));
       flash(player); floatText(player.x, player.y, "LEVEL UP", "#f6d060");
@@ -3932,7 +4422,10 @@
     } else player.regenAcc = 0;
     // MP: heals to full over mpRegenTurns, sped by Intelligence.
     if (player.maxMp > 0 && player.mp < player.maxMp) {
-      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - mod("INT") * (cls.intRegen != null ? cls.intRegen : 2) * 5);
+      // ToneTum's levels buy fractions of an INT modifier here rather than to-hit:
+      // the same dial the stat already turns, moved a tenth at a time.
+      const regenInt = mod("INT") + (player.lvlRegenInt || 0);
+      const effMp = Math.max(1, (cls.mpRegenTurns != null ? cls.mpRegenTurns : 600) - regenInt * (cls.intRegen != null ? cls.intRegen : 2) * 5);
       // Deep Well: a flat multiplier on MP regen. Ranks replace each other rather
       // than stacking, which falls out of passiveMod reading only the active rank.
       player.mpRegenAcc = (player.mpRegenAcc || 0) + (player.maxMp / effMp) * (1 + passiveMod("mpRegen"));
@@ -4690,6 +5183,7 @@
     dragonEncoreTick();
     rageTick();
     tickHexes();
+    hintSecrets();                       // walked up to a hidden door? say so, once
     playerDotTick(); if (dead) return;   // what is burning or poisoning YOU, before the monsters move
     if (pullZone) { pullZone.turns--; if (pullZone.turns <= 0) pullZone = null; }      // Faith's Pull: expires after 5 turns
     if (activeWalls.length) {                                                          // Wall of Faith: reverts after its life
@@ -7909,10 +8403,10 @@
       `<div class="cline">Crit <b>${Math.round(critChance() * 100)}%</b> for <b>${Math.round(critMult() * 100)}%</b> damage</div>` +
       `<div class="cline cformula">every stat acts through its modifier, ⌊(score − 10) ÷ 2⌋ · crit% = 5 + DEX mod + LCK mod×2 + skills · crit dmg% = 125 + LCK mod×5</div>` +
       `<div class="cline">To hit <b>${sgnNum(playerToHit())}</b> (~${accPct}% against an average foe) · Armour Class <b>${playerAC()}</b> (~${evaPct}% to be missed)</div>` +
-      `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = proficiency (${sgnNum(proficiency())} at your level) + DEX mod + weapon</div>` +
+      `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = ${BASE_TO_HIT} base + what your levels bought (${sgnNum(player.lvlAcc || 0)}) + DEX mod + weapon</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
-      `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted</div>` +
+      `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted — block rolls between the two Defense numbers${lvlMitMax() ? ", whose ceiling your levels raised by " + lvlMitMax() : ""}</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
@@ -8225,7 +8719,48 @@
   document.getElementById("btnChar").addEventListener("click", () => toggleChar());
   document.getElementById("btnExamine").addEventListener("click", () => toggleExamine());
   document.getElementById("btnRest").addEventListener("click", () => toggleRest());
-  function waitTurn() { if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen || altarOpen) return; walkPath = []; worldTurn(); }
+  // Waiting IS searching. Rather than add a sixth button to the stack, the verb the
+  // player already has for "spend a turn doing nothing" is the one that finds a
+  // secret door — which is what waiting at a dead end means anyway. Shattered Pixel
+  // has a dedicated search; on a phone, one fewer control beats one more.
+  function waitTurn() {
+    if (dead || mapOpen || invOpen || charOpen || boonPending || classPending || shopOpen || fountainOpen || altarOpen) return;
+    walkPath = [];
+    if (searchHere()) return;                    // a find costs the turn all by itself
+    worldTurn();
+  }
+  // ---- Secret doors: the hint, and the search -------------------------------
+  const secretAdjacent = () => secretDoors.filter((d) => cheb(d.x, d.y, player.x, player.y) === 1);
+  // Adjacency is enough. A hidden door you have to guess the exact tile of is a
+  // pixel hunt, and the whole point of this is that a dead end stops being a
+  // punishment — so standing anywhere beside it and waiting finds it.
+  function searchHere() {
+    const near = secretAdjacent();
+    if (!near.length) return false;
+    for (const d of near) {
+      map[d.y][d.x] = FLOOR;
+      explored[d.y][d.x] = true;
+      floatText(d.x, d.y, "✦", "#f0c14b");
+      secretDoors = secretDoors.filter((o) => o !== d);
+    }
+    flashScreen("#3a3320", 220);
+    log(near.length > 1 ? "The way opens — hidden rooms lie beyond." : "You feel along the wall and it gives way — a hidden room!", "hit");
+    computeFOV();
+    worldTurn();
+    return true;
+  }
+  // Standing next to one, you are told there is something to find. A secret nobody
+  // can tell is there is not a secret, it is a floor you walked past — and the
+  // dead end already told you to expect one, since nothing else survives generation.
+  function hintSecrets() {
+    for (const d of secretAdjacent()) {
+      const k = d.y * MAP_W + d.x;
+      if (secretsHinted.has(k)) continue;
+      secretsHinted.add(k);
+      log("The wall here sounds hollow. Wait to search it.", "hit");
+      floatText(d.x, d.y, "?", "#f0c14b");
+    }
+  }
   mapCanvas.addEventListener("click", () => toggleMap(false));
 
   // tap outside the pack card closes it
@@ -8393,7 +8928,9 @@
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (explored[y][x]) ex++;
       return {
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
-        acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(), prof: proficiency(),
+        acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(),
+        lvlAcc: player.lvlAcc || 0, lvlEvaPct: player.lvlEvaPct || 0, lvlRegenInt: player.lvlRegenInt || 0,
+        lvlMitMax: player.lvlMitMax || 0,
         lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
@@ -8593,6 +9130,13 @@
     // The tree is level-gated, so testing anything above tier 1 needs a way up.
     // Runs the real gainXP path rather than assigning player.level, so the stat,
     // HP/MP and skill-point gains a level carries all happen as they would in play.
+    secrets: () => secretDoors.map((d) => ({ x: d.x, y: d.y, room: Object.assign({}, d.room) })),
+    loops: () => lastLoops.map((l) => Object.assign({}, l)),
+    lobes: () => findLobes().map((l) => ({ mouth: l.mouth, size: l.tiles.length })),
+    // Empty pockets still on the floor AFTER generation — a walk that goes nowhere
+    // and hides nothing. This is the number the whole pass exists to drive down.
+    pockets: () => findPockets().map((p) => ({ mouth: p.mouth, size: p.tiles.length })),
+    search: () => searchHere(),
     setLevel: (n) => { let guard = 0; while (player.level < n && guard++ < 400) gainXP(xpToNext() - player.xp); return player.level; },
     // ---- Brynn tier 2/3 test hooks ----
     kick: (dx, dy) => { const k = Object.keys(player.skills).find((x) => (skillDef(x) || {}).kind === "dragonkick"); if (k) executeDragonKick(k, [dx, dy]); return k || null; },
