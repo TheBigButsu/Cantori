@@ -2807,7 +2807,7 @@ Everyone still starts at **+2**. Growth past that is now the class's own, author
 
 | | rule | at level 10 |
 |---|---|---|
-| **Chadwick** | `toHitPerLevel: 1` | +9 to hit |
+| **Chadwick** | `toHitEvenLevels: 1`, `mitMaxOddLevels: 1` | +5 to hit, +4 max block |
 | **Brynn** | `toHitOddLevels: 1`, `evaPctEvenLevels: 1` | +4 to hit, +5% dodge |
 | **ToneTum** | `mpRegenIntPerLevel: 0.1` | +0.9 to the INT that drives mana regen |
 
@@ -2815,23 +2815,50 @@ ToneTum's is the odd one on purpose: it moves the dial the stat already turns, a
 at a time, so his levels are felt between fights rather than in them. It touches mana
 regeneration only — not his MP pool, not his spell damage.
 
-The banner now reads `Level 11!  +1 to hit, +5 HP, +2 MP` for Chadwick and
+The banner names it either way: Chadwick reads `Level 16!  +1 STR, +1 to hit, +5 HP,
++2 MP` on an even level and `Level 17!  +1 max block, +5 HP, +2 MP` on an odd one, and
 `Level 11!  mana regen INT 6.0, +3 HP, +5 MP` for ToneTum. Nothing on that line is a
 term of art any more.
 
-### Chadwick's curve is much steeper than what it replaced
+### Why Chadwick doesn't take to-hit every level
 
-Worth stating plainly, because the comment this change deleted warned about exactly
-this: on a d20, **+1 to hit is +5 percentage points**, so +1 a level compounds fast.
+He did, for one build. On a d20 **+1 to hit is +5 percentage points**, so +1 a level
+compounds fast — the comment the change deleted had warned about exactly this:
 
-| level | to-hit was | now | vs a bat (AC 21) | vs a rat (AC 13) |
+| level | to-hit was | +1/level | vs a bat (AC 21) | vs a rat (AC 13) |
 |---|---|---|---|---|
 | 1 | +5 | +5 | 25% → 25% | 65% → 65% |
 | 5 | +6 | +9 | 30% → 45% | 70% → 85% |
 | 10 | +7 | +14 | 35% → **70%** | 75% → 95% |
 | 15 | +8 | +19 | 40% → **95%** | 80% → 95% |
 
-By 15 he hits everything on anything but a natural 1. That may well be the point — the
-warrior has felt weak — but it is a doubling against the high-evasion monsters by level
-10, and it is worth knowing before the crypt gets balanced around it. Brynn's half-rate
-version lands at +4 by level 10, which is close to the old shared curve.
+By 15 he hit everything on anything but a natural 1. That is why he no longer takes it
+every level: **+1 to hit on even levels, +1 max block on odd ones.** Half the curve, and
+the other half spent on the thing a melee tank actually wants.
+
+| level | to-hit | vs a bat (AC 21) | vs an average foe | block roll | mean block |
+|---|---|---|---|---|---|
+| 1 | +5 | 25% | 70% | 1–5 | 3.0 |
+| 5 | +7 | 35% | 80% | 1–7 | 4.0 |
+| 10 | +10 | 50% | 95% | 1–9 | 5.0 |
+| 15 | +12 | 60% | 95% | 1–12 | 6.5 |
+
+(Block range shown for the starting armour, a 1–5 roll; the level bonus rides on top of
+whatever is worn.)
+
+### Why the ceiling and not a flat block
+
+`mitMaxOddLevels` lifts the **top** of the armour roll and leaves the floor at 1. A
+level therefore never *guarantees* more mitigation, it makes the good rolls better.
+Flat mitigation every hit is the version that breaks: subtract 4 from every incoming
+number and the small, frequent hits the early floors are built out of stop landing at
+all — `mitigateDamage` clamps to 1, so they become a rounding error and the floor
+stops being a threat rather than becoming an easier one. Widening the range keeps the
+bad roll bad.
+
+It is one roll across the widened range, not the armour's roll plus a separate d(level).
+Two rolls would centre the result and never reach the new ceiling, which is the part
+being bought.
+
+Brynn's half-rate to-hit lands at +4 by level 10, which is close to the old shared
+proficiency curve; Chadwick's is now +5, a hair above it, with survivability alongside.

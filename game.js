@@ -286,7 +286,7 @@
     cls: "warrior", stats: { STR: 10, INT: 10, VIT: 10, DEX: 10, RES: 10, LCK: 10 },
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
-    lvlEvaPct: 0, lvlRegenInt: 0,                      // per-level class progression (dodge %, mana-regen INT)
+    lvlEvaPct: 0, lvlRegenInt: 0, lvlMitMax: 0,        // per-level class progression (dodge %, mana-regen INT, block ceiling)
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
     killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
@@ -312,7 +312,7 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
-    player.lvlEvaPct = 0; player.lvlRegenInt = 0;
+    player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -616,11 +616,23 @@
   const stoneSkinHi = () => (stoneSkinActive() ? Math.floor((player.level + depth + mod("VIT") * 3) / 2) : 0);
   const stoneSkinRoll = () => (stoneSkinActive() ? randInt(Math.min(stoneSkinLo(), stoneSkinHi()), Math.max(stoneSkinLo(), stoneSkinHi())) : 0);
   const armorFlat = () => armorSubMit() + wornDefense();          // flat, always-on mitigation
-  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi();          // top-end block (display/peek)
+  // A class can buy block CEILING with its levels (progression.mitMaxOddLevels).
+  // It lifts the top of the roll and leaves the floor alone on purpose: a level
+  // never guarantees more mitigation, it makes the good rolls better. Flat
+  // mitigation every hit would stack into immunity against the small, frequent
+  // damage the early floors are built out of.
+  const lvlMitMax = () => Math.max(0, player.lvlMitMax || 0);
+  const armorDef = () => (player.armor ? gDef(player.armor) : 0) + armorFlat() + stoneSkinHi() + lvlMitMax();          // top-end block (display/peek)
   const armorDefMin = () => (player.armor ? gDefMin(player.armor) : 0) + armorFlat() + stoneSkinLo();
-  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorFlat() + stoneSkinHi();
+  const armorDefMax = () => (player.armor ? gDefMax(player.armor) : 0) + armorFlat() + stoneSkinHi() + lvlMitMax();
   // The actual mitigation applied on a hit: roll a fresh block within the range.
-  const armorBlock = () => (player.armor ? randInt(Math.min(gDefMin(player.armor), gDefMax(player.armor)), Math.max(gDefMin(player.armor), gDefMax(player.armor))) : 0) + armorFlat() + stoneSkinRoll();
+  // One roll across the widened range, not armour plus a separate d(level) — two
+  // rolls would centre the result instead of reaching the new ceiling.
+  const armorBlock = () => {
+    const lo = player.armor ? Math.min(gDefMin(player.armor), gDefMax(player.armor)) : 0;
+    const hi = (player.armor ? Math.max(gDefMin(player.armor), gDefMax(player.armor)) : 0) + lvlMitMax();
+    return randInt(lo, hi) + armorFlat() + stoneSkinRoll();
+  };
   // Weapon combat numbers (unarmed falls back to the base 2–3 fists, boosted by
   // Brynn's Unarmed Master passive when no weapon is equipped).
   // passiveMod's own `when` gate decides which passives apply, so adding it to the
@@ -3818,7 +3830,9 @@
       const grew = [];
       if (pr.toHitPerLevel) { player.lvlAcc += pr.toHitPerLevel; grew.push("+" + pr.toHitPerLevel + " to hit"); }
       if (pr.toHitOddLevels && player.level % 2 === 1) { player.lvlAcc += pr.toHitOddLevels; grew.push("+" + pr.toHitOddLevels + " to hit"); }
+      if (pr.toHitEvenLevels && player.level % 2 === 0) { player.lvlAcc += pr.toHitEvenLevels; grew.push("+" + pr.toHitEvenLevels + " to hit"); }
       if (pr.evaPctEvenLevels && player.level % 2 === 0) { player.lvlEvaPct += pr.evaPctEvenLevels; grew.push("+" + pr.evaPctEvenLevels + "% evade"); }
+      if (pr.mitMaxOddLevels && player.level % 2 === 1) { player.lvlMitMax = (player.lvlMitMax || 0) + pr.mitMaxOddLevels; grew.push("+" + pr.mitMaxOddLevels + " max block"); }
       if (pr.mpRegenIntPerLevel) {
         player.lvlRegenInt = +((player.lvlRegenInt || 0) + pr.mpRegenIntPerLevel).toFixed(2);
         grew.push("mana regen INT " + (mod("INT") + player.lvlRegenInt).toFixed(1));
@@ -8169,7 +8183,7 @@
       `<div class="cline cformula">a hit is d20 + to-hit ≥ the target's AC · natural 1 always misses, natural 20 always hits · to-hit = ${BASE_TO_HIT} base + what your levels bought (${sgnNum(player.lvlAcc || 0)}) + DEX mod + weapon</div>` +
       `<div class="cline">Walk haste <b>${walkHasteTxt}</b> — a step costs <b>${walkCost().toFixed(2)}</b> turns · Attack haste <b>${atkHasteTxt}</b> — a swing costs <b>${attackCost().toFixed(2)}</b></div>` +
       `<div class="cline cformula">step = 1 ÷ (1 + walk haste + Metrognome-walk) · swing = 1 ÷ (weapon speed × (1 + attack haste) + Metrognome-attack) · Ourn's blessings count toward both · under 1.00 you act more often than your foes</div>` +
-      `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted</div>` +
+      `<div class="cline cformula">incoming dmg ×(1 − RESmod ÷ (RESmod + 10)), then armor block subtracted — block rolls between the two Defense numbers${lvlMitMax() ? ", whose ceiling your levels raised by " + lvlMitMax() : ""}</div>` +
       `<div class="cstat-grid">${cells}</div>` +
       `<div class="cline">${pts}</div>`;
   }
@@ -8693,6 +8707,7 @@
         depth, hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp,
         acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(),
         lvlAcc: player.lvlAcc || 0, lvlEvaPct: player.lvlEvaPct || 0, lvlRegenInt: player.lvlRegenInt || 0,
+        lvlMitMax: player.lvlMitMax || 0,
         lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),

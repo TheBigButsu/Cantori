@@ -1909,7 +1909,8 @@ window.CANTORI_DATA = {
   "classes": {
     "warrior": {
       "progression": {
-        "toHitPerLevel": 1
+        "toHitEvenLevels": 1,
+        "mitMaxOddLevels": 1
       },
       "name": "Chadwick",
       "icon": "⚔",
