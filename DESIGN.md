@@ -2972,3 +2972,91 @@ one now gets a second door, the same answer a wing gets.
 Level generation goes from roughly 20ms to roughly 28ms median on desktop, and the
 boss floor from 4ms to 29ms because it now does the work at all. It happens once per
 floor, behind the descent.
+
+---
+
+## The loop pass unsealed the thorn vaults
+
+Reported from play: two torches spent burning through brambles, and an open path
+needing no torches a few tiles away. That is not a balance complaint, it is the
+vault contract being broken, and the loop pass broke it.
+
+`makeThornVaults` seals a room's every opening with THORN and then checks two
+things before committing: every *other* room must still be reachable torch-free,
+so a vault can never wall you in, and **the vault interior must be UNREACHABLE
+torch-free**, so brambles are the only way in. That second invariant is what makes
+a torch worth carrying.
+
+`addLoops` floods with thorns treated as walkable — they are walkable, they just
+hurt — so to it a sealed vault is simply "a wing behind one tile", exactly the
+shape it exists to open up. It dug a tunnel straight in.
+
+| thorn tiles that gate nothing | |
+|---|---|
+| before the loop pass | **0%** (0 of 90, 200 floors) |
+| with the loop pass | **39%** (17 of 44), and on **15 of 29** thorny floors *every* thorn was pointless |
+| after this fix | **0%** (0 of 73, 200 floors) |
+
+### The fix, and the one that was worse than the bug
+
+Both passes now take `torchFreeSet()` — everything reachable without crossing
+brambles — and hold to one side of that line:
+
+- `bridgeLobe` refuses any tunnel whose two ends fall on opposite sides.
+- `findLobes` skips a wing that is *entirely* thorn-gated: that wing is the vault.
+- `findPockets` skips a pocket with any gated tile, so a vault is never sealed or
+  hollowed into a hidden room either.
+- `sealableTile` excludes THORN. Brambles are a placed gate with a torch counted
+  against them one for one, so walling one over strands a torch *and* leaves the
+  vault with no way in.
+
+That got it to 91% of the way. The last 9% was `fixOpenCorners`: it resolves a
+diagonal-only touch by solidifying a floor cell, or — when neither cell is safe —
+by **opening a wall cell**, and next to a vault that punches the seal open
+sideways.
+
+The first attempt at that undid the whole round and banned the lobe. It worked, and
+it was a bad trade: it threw away a perfectly good tunnel somewhere else on the
+floor, and **walkable ground behind a single tile went from 7% back up to 20%** —
+most of the original fix, given away to catch a rare edge.
+
+The undo is now surgical. Snapshot after the dig, run `fixOpenCorners`, and if a
+gated tile became reachable, put back only the tiles it turned from WALL to FLOOR.
+The tunnel stays, because `bridgeLobe` already refuses to cross the line and is
+therefore never the culprit. What survives is a cosmetic diagonal-only touch on
+about one floor in twenty, which is a far smaller price than a vault you can walk
+into. Loop-pass quality is unchanged by the whole affair: 7.1% behind one tile,
+2.37 tunnels a floor, 1.41 hidden rooms.
+
+### On the metric
+
+`behind%` counts walkable ground sitting behind a single cut tile — and a correctly
+sealed thorn vault *is* ground behind one gate, deliberately. Fixing the vault bug
+therefore made the metric look worse, which cost a long detour before it was
+spotted. The probe now excludes thorn-gated wings from that count. A metric that
+punishes the game for working is worse than no metric.
+
+---
+
+## A secret you were told about once is not a clue
+
+The hollow-wall hint printed one log line and floated a "?" for a second. Four more
+messages and the line is gone, with nothing on screen to say a secret is there —
+and if you were auto-travelling, all of that happened while you were still crossing
+the room.
+
+Two changes:
+
+- **The mark stays.** A hinted door keeps a pulsing gold ring with a four-point
+  sparkle on its tile, and an inset gold mark on the floor map. Both vanish the
+  moment the door opens, because `searchHere` drops it from `secretDoors` and the
+  mark is drawn from that list.
+- **The hint stops you**, the way a trap does: `hintSecrets` clears `walkPath`.
+
+The tile mark is drawn *over* the biome's wall sprite rather than recolouring the
+tile, because it has to read on tree bark as well as on stone. The map mark is
+inset rather than a filled cell: filled, it read as a second player pip when the
+two were adjacent and as the stairs when they were not.
+
+Auto-travel already routes around brambles — THORN carries `noTravel` — so the
+thorn damage in the same report was a manual step, and pathing was left alone.

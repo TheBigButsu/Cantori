@@ -2262,6 +2262,17 @@
   const LOBE_GAIN_MIN = 2;     // ...and only if the short cut actually saves steps
   const LOBE_BRIDGES = 5;      // per floor — past this the floor reads as swiss cheese
   const tkey = (x, y) => y * MAP_W + x;
+  // Everything you can reach WITHOUT walking through brambles. Both passes below
+  // must leave the other side of that line alone.
+  //
+  // makeThornVaults guarantees a vault interior is unreachable torch-free — that
+  // invariant is the whole point of a vault, and both passes here flood with
+  // thorns treated as walkable, so to them a sealed vault is just "a wing behind
+  // one tile". The loop pass duly dug a tunnel straight into it. Measured over 80
+  // floors: 39% of all thorn tiles gated nothing at all afterwards, and on 15 of
+  // 29 thorny floors EVERY thorn was pointless — you spend a torch, or take 5-10
+  // damage, to enter a room you could have walked into. It was 0% before.
+  const torchFreeSet = () => floodReach(player.x, player.y, true);
   // Articulation points of the walkable 8-graph — the tiles you can be shut in by.
   // Tarjan, iterative because a floor's spanning tree is ~1,000 deep and recursion
   // at that depth is a stack overflow on a phone. One pass, so this is cheap; the
@@ -2324,6 +2335,7 @@
   // player happened to be standing in the nook.
   function findLobes() {
     const full = floodReach(player.x, player.y, false);
+    const tf = torchFreeSet();
     const out = [], claimed = new Set();
     for (const k of articulationTiles(player.x, player.y)) {
       const parts = sidesWithout(full, k);
@@ -2331,6 +2343,11 @@
       parts.sort((a, b) => a.length - b.length);
       const small = parts[0];
       if (small.length < LOBE_MIN) continue;
+      // EVERY tile, not some: a wing that merely contains a vault is still a wing
+      // worth looping, and skipping those cost more than it bought (walkable ground
+      // behind one tile went 6% back up to 19%). What must not happen is a tunnel
+      // ACROSS the bramble line, and bridgeLobe refuses that pair by pair.
+      if (small.every((q) => !tf.has(q))) continue;     // the vault itself: not ours to open
       if (small.some((q) => claimed.has(q))) continue;
       for (const q of small) claimed.add(q);
       out.push({ mouth: { x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W }, tiles: small });
@@ -2384,6 +2401,7 @@
   function bridgeLobe(lobe) {
     const inLobe = new Set(lobe.tiles);
     const dist = walkDistances(lobe.mouth.x, lobe.mouth.y);
+    const tf = torchFreeSet();
     let best = null;
     for (const ak of lobe.tiles) {
       const ax = ak % MAP_W, ay = (ak - (ak % MAP_W)) / MAP_W;
@@ -2397,6 +2415,9 @@
           if (inLobe.has(bk) || (bx === lobe.mouth.x && by === lobe.mouth.y)) continue;
           const db = dist.get(bk);
           if (db == null) continue;
+          // A tunnel that crosses the bramble line unseals a vault. Belt and braces
+          // with the findLobes check above, because resolveDeadEnds also calls this.
+          if (tf.has(ak) !== tf.has(bk)) continue;
           for (const horizFirst of [true, false]) {
             const rock = tunnelRock(ax, ay, bx, by, horizFirst);
             if (!rock || !rock.length || rock.length > LOBE_TUNNEL_MAX) continue;
@@ -2424,15 +2445,41 @@
     for (let i = 0; i < LOBE_BRIDGES; i++) {
       const lobes = findLobes();
       if (!lobes.length) break;
+      // What brambles are gating right now. Nothing this round may shrink it.
+      // Only a floor that HAS a vault pays for the snapshot below.
+      const tfBefore = torchFreeSet();
+      const gated = [];
+      for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+        if (passable(x, y) && !tfBefore.has(tkey(x, y))) gated.push(tkey(x, y));
+      }
       let dug = false;
       for (const lobe of lobes) if (bridgeLobe(lobe)) { dug = true; break; }
       if (!dug) break;
       // fixOpenCorners can wall a tile, so it gets its say BEFORE the next scan
       // reads the map — otherwise we would be bridging a floor plan that is about
       // to change under us.
+      const preFix = gated.length ? map.map((r) => r.slice()) : null;
       fixOpenCorners(rooms);
+      // It can also OPEN a wall cell, when neither floor cell of an open corner is
+      // safe to solidify — and beside a vault that punches the bramble seal open
+      // sideways. Put back exactly what it opened and nothing else: the tunnel is
+      // never the culprit, because bridgeLobe refuses a pair that crosses the
+      // bramble line. Undoing the whole round instead threw away a good tunnel
+      // somewhere else on the floor and tripled the ground left behind one tile.
+      // What survives is a cosmetic diagonal-only touch, on about 1 floor in 20 —
+      // a far smaller price than a vault you can walk into.
+      if (preFix) {
+        const tfAfter = torchFreeSet();
+        if (gated.some((k) => tfAfter.has(k))) {
+          for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+            if (preFix[y][x] === WALL && map[y][x] !== WALL) map[y][x] = WALL;
+          }
+        }
+      }
     }
   }
+
+
 
   // ---- Dead ends: seal them, or make them worth walking ---------------------
   //
@@ -2460,7 +2507,10 @@
   // most — the forest is largely made of it, and testing for FLOOR alone made every
   // grassy dead end invisible to both passes below, which is exactly the kind the
   // player walked into. Stairs and doorways are never touched.
-  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR;
+  // THORN is excluded even though it is walkable: brambles are a placed gate with a
+  // torch budget counted against them, so walling one over strands a torch and
+  // leaves the vault behind it with no way in.
+  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR && map[y][x] !== THORN;
   function deadEndTiles(rooms) {
     const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
     const out = [];
@@ -2557,6 +2607,7 @@
     const start = { x: player.x, y: player.y };
     const stairs = findStairs();
     const full = floodReach(start.x, start.y, false);
+    const tf = torchFreeSet();
     const pockets = [], claimed = new Set();
     for (const k of articulationTiles(start.x, start.y)) {
       const parts = sidesWithout(full, k);
@@ -2564,6 +2615,7 @@
       parts.sort((a, b) => a.length - b.length);
       const small = parts[0];
       if (!small.length || small.length > POCKET_MAX) continue;   // a whole wing is not a nook
+      if (small.some((q) => !tf.has(q))) continue;                // a vault is not a nook either
       if (small.some((q) => claimed.has(q))) continue;
       let skip = false;
       const tiles = [];
@@ -5699,6 +5751,32 @@
     ctx.beginPath(); ctx.arc(px + t * 0.5, py + t * 0.40, t * 0.09, 0, Math.PI * 2); ctx.fill();
     ctx.fillRect(px + t * 0.42, py + t * 0.50, t * 0.16, t * 0.30);
   }
+  // A wall the player has been TOLD sounds hollow. The log line scrolls away after
+  // four more messages; the wall does not, and a clue you have to remember is not a
+  // clue. Drawn over whatever the biome's wall sprite is — a chalk ring and a
+  // sparkle read on tree bark as well as on stone, which a recoloured tile would
+  // not. Only ever shown for a door still unfound: searchHere drops it from
+  // secretDoors, and the mark goes with it.
+  function drawSecretHint(px, py, now) {
+    const t = tile;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 380);
+    const cx = px + t * 0.5, cy = py + t * 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.35 * pulse;
+    ctx.strokeStyle = "#f0c14b";
+    ctx.lineWidth = Math.max(1, t * 0.07);
+    ctx.beginPath(); ctx.arc(cx, cy, t * 0.30, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 0.65 + 0.35 * pulse;
+    ctx.fillStyle = "#ffe9a8";
+    const r = t * 0.17;                                   // a four-point sparkle
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r); ctx.quadraticCurveTo(cx, cy, cx + r, cy);
+    ctx.quadraticCurveTo(cx, cy, cx, cy + r); ctx.quadraticCurveTo(cx, cy, cx - r, cy);
+    ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+    ctx.fill();
+    ctx.restore();
+  }
+  const hintedSecretAt = (x, y) => secretsHinted.has(y * MAP_W + x) && secretDoors.some((d) => d.x === x && d.y === y);
   function drawGrass(px, py, b) { ctx.fillStyle = shade("#3a6b2e", b); ctx.fillRect(px, py, tile, tile); }
   // Wall-mounted torch: a bracket and a flickering flame, with a soft glow pool.
   function drawTorch(px, py, b, now) {
@@ -6085,6 +6163,7 @@
         if (t === WALL) {
           if (sarcophagi.has(my * MAP_W + mx)) drawSarcophagus(px, py, b);
           else if (!drawImg(SPRITES[biome.wall], px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
+          if (hintedSecretAt(mx, my)) drawSecretHint(px, py, now);
         } else {
           if (!drawImg(SPRITES[biome.floor], px, py)) {
             ctx.fillStyle = shade((mx + my) % 2 === 0 ? COL.floorA : COL.floorB, b);
@@ -6438,6 +6517,15 @@
         else if (t === CHASM) { mctx.fillStyle = been ? "#1a1a1e" : "#0c0c0e"; mctx.fillRect(px, py, sz, sz); }
         else if (t === RUBBLE) { mctx.fillStyle = been ? "#8a8578" : "#4e4a40"; mctx.fillRect(px, py, sz, sz); }
         else if (t === GRASS) { mctx.fillStyle = been ? "#4a7a3a" : "#2a4520"; mctx.fillRect(px, py, sz, sz); }
+        // A hollow wall you have found but not yet opened, in the stairs' own gold:
+        // the map is where you decide what to walk back to, so it has to be on it.
+        // Inset, not the whole cell: filled it read as another player pip when the
+        // two sat side by side, and as the stairs when they did not.
+        if (t === WALL && hintedSecretAt(x, y)) {
+          const in1 = Math.max(1, Math.floor(sz * 0.25));
+          mctx.fillStyle = "#f0c14b";
+          mctx.fillRect(px + in1, py + in1, Math.max(1, sz - in1 * 2), Math.max(1, sz - in1 * 2));
+        }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -8757,6 +8845,11 @@
       const k = d.y * MAP_W + d.x;
       if (secretsHinted.has(k)) continue;
       secretsHinted.add(k);
+      // Stop, the way a trap does. Auto-travel walks straight past this otherwise:
+      // the line appears and four more messages push it off the log before you have
+      // finished crossing the room, and the one moment you could have acted on it
+      // is gone.
+      walkPath = [];
       log("The wall here sounds hollow. Wait to search it.", "hit");
       floatText(d.x, d.y, "?", "#f0c14b");
     }
