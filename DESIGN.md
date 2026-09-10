@@ -3060,3 +3060,75 @@ two were adjacent and as the stairs when they were not.
 
 Auto-travel already routes around brambles — THORN carries `noTravel` — so the
 thorn damage in the same report was a manual step, and pathing was left alone.
+
+---
+
+## Most hidden rooms were not there
+
+"Secret opened like this. No good." The wall gives way, and behind it is nothing
+worth the walk — or nothing at all. Measured over 125–145 secret doors:
+
+| | before | after |
+|---|---|---|
+| door not orthogonally touching its own chamber | **20%** | **0%** |
+| door with no reachable ground beside it | **58%** | **3%** |
+| chamber still unreachable after opening it | **12%** | **0%** |
+
+Three separate defects, all in the same feature.
+
+### The chamber was placed a tile clear of its door
+
+`trySecretRect` folds the sideways nudge into `cx`/`cy` and then did it again:
+
+```js
+const rect = { x: rx + (dx !== 0 ? 0 : 0), y: ry + (dy !== 0 ? shift : 0), ... };
+```
+
+On a vertical door with a non-zero shift, that moves the chamber one tile further
+up or down — so the door opens onto solid rock with the room behind it, permanently
+sealed. The `x` half of that line is `+ 0` either way, which is the tell: it was
+never doing anything.
+
+Fixing the arithmetic would have left the size-2 fallback still missing on the
+horizontal axis. So instead the function now **asserts what actually matters**: the
+door must be orthogonally against the chamber, or the placement is rejected and the
+caller's next size/shift is tried. 20% to 0%, and it stays 0% whatever anyone does
+to the geometry later.
+
+### The antechamber was filled in behind you
+
+`resolveDeadEnds` sweeps four times. A hidden room is dug off a nook, and that nook
+is *still a nook* on the next round — the secret door is a WALL, so nothing about
+reachability changed. With `SECRET_MAX` already spent, the second round did the
+other thing it knows how to do and filled the nook in, walling the player away from
+the door just carved. 58% of secret doors had no reachable ground beside them.
+
+A nook that produced a hidden room is not a pointless nook any more, it is the
+antechamber. Its tiles go into `secretApproach`, and `sealableTile`, the pocket
+filler and `fixOpenCorners` all refuse to touch them.
+
+That last one matters and is easy to miss: `fixOpenCorners` buries a floor tile to
+resolve a diagonal-only touch, and it was burying the one tile you have to stand on.
+
+### Nooks that lead to secrets now survive on purpose
+
+Unresolved nooks per floor read 0.02 before and 0.63 after, and that is the feature
+working rather than a regression: an antechamber is a dead end *until you search
+it*. That is the shape the whole thing was asked for in — "these should end in a
+secret passage" — and the pulsing mark on the wall is what tells you which dead ends
+are which.
+
+### Vaults get the invariant restated, not another special case
+
+Guarding `fixOpenCorners` against burying the antechamber pushed it toward its other
+fallback — **opening** a wall cell — which beside a thorn vault punches the seal open
+sideways. Pointless thorns went 0% → 6%. Patching each pass that digs had now failed
+twice in a row, so the fix is `resealVaults`, run last: if a vault interior became
+reachable without a torch, put THORN back across every opening it now has (the
+breach included, since `roomOpenings` finds it), and revert the lot if that would
+strand a room or the stairs — a vault is always optional, and that outranks it being
+sealed.
+
+Final: **1 pointless thorn in 83**, against 3 in 90 on the pre-regression baseline.
+Loop quality is unchanged throughout: 7.9% of ground behind a single tile, 2.42
+tunnels a floor, 1.49 hidden rooms.

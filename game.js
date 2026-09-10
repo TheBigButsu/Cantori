@@ -1582,6 +1582,36 @@
         if (map[y][x] === FLOOR && reach.has(y * MAP_W + x)) return true;
     return false;
   }
+  // A vault's promise is one line: brambles are the only way in. Everything that
+  // digs after makeThornVaults can breach that sideways — the loop pass did it head
+  // on, and fixOpenCorners does it by opening a wall cell when neither floor cell of
+  // an open corner is safe to solidify. Teaching each pass about brambles caught the
+  // ones we knew about and missed the next one, so instead the invariant is simply
+  // restated last: if a vault interior became reachable torch-free, put THORN back
+  // across every opening it now has (the breach included, since roomOpenings finds
+  // it). Reverted whole if that would strand a room or the stairs — a vault is
+  // always optional, and that outranks it being sealed.
+  function resealVaults(rooms, restricted) {
+    if (!restricted || !restricted.size) return;
+    const stairs = findStairs();
+    for (const i of restricted) {
+      const r = rooms[i];
+      if (!r || !interiorReachableTorchFree(r)) continue;      // still sealed
+      const openings = roomOpenings(r);
+      if (!openings.length) continue;
+      const saved = openings.map(([x, y]) => map[y][x]);
+      for (const [x, y] of openings) map[y][x] = THORN;
+      const reach = floodReach(player.x, player.y, true);
+      let ok = !interiorReachableTorchFree(r);
+      if (ok && stairs && !reach.has(stairs.y * MAP_W + stairs.x)) ok = false;
+      for (let j = 0; j < rooms.length && ok; j++) {
+        if (j === i) continue;
+        const c = roomCenter(rooms[j]);
+        if (!reach.has(c.y * MAP_W + c.x)) ok = false;
+      }
+      if (!ok) openings.forEach(([x, y], o) => { map[y][x] = saved[o]; });
+    }
+  }
   // Tiles reachable from (sx,sy) by real movement (8-dir + corner rule). When
   // blockThorns is true, brambles count as walls — i.e. reachable WITHOUT a torch.
   function floodReach(sx, sy, blockThorns) {
@@ -1646,6 +1676,7 @@
           for (const [ox, oy] of openCells) {
             if (map[oy][ox] !== FLOOR) continue;   // never wall over a door threshold
             if ((ox === player.x && oy === player.y) || monsterAt(ox, oy) || itemAt(ox, oy)) continue;  // never bury an occupant
+            if (secretApproach.has(oy * MAP_W + ox)) continue;   // nor the only ground a hidden door opens onto
             map[oy][ox] = WALL;
             if (allRoomsReachable(rooms, anchor.x, anchor.y)) { fixed = true; break; }
             map[oy][ox] = FLOOR;
@@ -1949,7 +1980,7 @@
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
     // run that pass, so a door found on the last floor would otherwise stay in the
     // list pointing at a tile that is now something else entirely.
-    secretDoors = []; secretsHinted = new Set();
+    secretDoors = []; secretsHinted = new Set(); secretApproach = new Set();
     auraSig = "";                              // whatever field you stood in is a floor behind you
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
 
@@ -2104,6 +2135,7 @@
     resolveDeadEnds(rooms);
     addLoops(rooms);
     resolveDeadEnds(rooms);
+    resealVaults(rooms, restricted);   // last word: brambles are the only way into a vault
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -2142,7 +2174,7 @@
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
     // run that pass, so a door found on the last floor would otherwise stay in the
     // list pointing at a tile that is now something else entirely.
-    secretDoors = []; secretsHinted = new Set();
+    secretDoors = []; secretsHinted = new Set(); secretApproach = new Set();
     auraSig = "";
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
     bossActive = false;
@@ -2510,7 +2542,16 @@
   // THORN is excluded even though it is walkable: brambles are a placed gate with a
   // torch budget counted against them, so walling one over strands a torch and
   // leaves the vault behind it with no way in.
-  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR && map[y][x] !== THORN;
+  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR && map[y][x] !== THORN && !besideSecret(x, y);
+  // The nook a hidden room was dug off is no longer a pointless nook: it is the
+  // antechamber. Filling it on a later sweep walled the player away from the very
+  // door just carved — measured, 58% of secret doors had no reachable ground beside
+  // them at all, which is every bit of "I searched and found nothing worth it".
+  const besideSecret = (x, y) => secretApproach.has(y * MAP_W + x) || secretDoors.some((d) => cheb(d.x, d.y, x, y) === 1);
+  // Every tile of the nook a hidden room was dug off, not just the one against the
+  // door: guarding a single tile still let a later sweep seal the path leading TO
+  // it, which strands the room and its loot behind a door nobody can stand next to.
+  let secretApproach = new Set();
   function deadEndTiles(rooms) {
     const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
     const out = [];
@@ -2552,7 +2593,21 @@
     const cx = doorX + dx + (dx !== 0 ? 0 : shift), cy = doorY + dy + (dy !== 0 ? 0 : shift);
     const rx = (dx !== 0 ? cx - (dx < 0 ? size - 1 : 0) : cx - half);
     const ry = (dy !== 0 ? cy - (dy < 0 ? size - 1 : 0) : cy - half);
-    const rect = { x: rx + (dx !== 0 ? 0 : 0), y: ry + (dy !== 0 ? shift : 0), w: size, h: size };
+    const rect = { x: rx, y: ry, w: size, h: size };
+    // The shift is already folded into cx/cy above — adding it to y again here (the
+    // old `ry + (dy !== 0 ? shift : 0)`) pushed a vertical chamber a tile clear of
+    // its own door, so the wall gave way onto solid rock. Rather than trust the
+    // arithmetic across every size/shift/direction combination, assert what actually
+    // matters: the door has to be orthogonally against the chamber. Measured before
+    // this, 20% of secret doors were not (and size 2 with a shift missed on the
+    // horizontal axis too, which the vertical fix alone would have left in place).
+    // Failing here just moves on to the next size/shift the caller offers.
+    let touches = false;
+    for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = doorX + ax, ny = doorY + ay;
+      if (nx >= rect.x && nx < rect.x + rect.w && ny >= rect.y && ny < rect.y + rect.h) touches = true;
+    }
+    if (!touches) return null;
     // Everything the chamber will occupy, plus a one-tile skin around it, has to be
     // solid rock right now — otherwise it would open onto the floor somewhere else
     // and stop being secret.
@@ -2687,10 +2742,12 @@
         const found = secretFromPocket(pk);
         if (found) {
           secretDoors.push({ x: found.door.x, y: found.door.y, room: found.room });
+          for (const t of pk.tiles) secretApproach.add(t.y * MAP_W + t.x);
           stockSecretRoom(found.room);
           continue;
         }
       }
+      if (pk.tiles.some((t) => besideSecret(t.x, t.y))) continue;   // the antechamber of a hidden room
       // Sealing is refused when the nook is load-bearing — almost always a small
       // ROOM that happens to be a dead end, and deleting a room is not on the
       // table. Give it a second door instead: that is the same answer the loop
@@ -2706,6 +2763,7 @@
         const rect = carveSecretRoom(end);
         if (rect) {
           secretDoors.push({ x: end.x + end.dir[0], y: end.y + end.dir[1], room: rect });
+          secretApproach.add(end.y * MAP_W + end.x);
           stockSecretRoom(rect);
           continue;                                     // this one earns its walk
         }
