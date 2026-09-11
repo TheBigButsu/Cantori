@@ -1267,6 +1267,16 @@
       ],
     },
     {
+      title: "Sera: how many notes, and how many banked",
+      rows: [
+        { name: "Her reach", formula: "noteSense = mod(INT) + mod(LCK) + level, read off EFFECTIVE stats so gear counts", note: "INT and LCK cannot carry this alone: measured, both modifiers sit flat at +2 from level 1 to level 5, so a pure-stat formula gives the same answer on floor 1 as on floor 5. Level is the third term for exactly that reason \u2014 and the stats are the half a player can push, so every point into INT or LCK, and every ring that carries them, brings the next note forward." },
+        { name: "On the board at once", formula: "clamp(1, 5, \u230areach \u00f7 5\u230b + Counterpoint)", note: "Measured on her natural curve: 1 note at level 1, 2 by 5, 3 by 10, 4 by 15, 5 by 20. Hard-capped at five \u2014 past that the board stops being a decision about WHERE and becomes a question of how many you managed to lay. Counterpoint brings each slot forward rather than stacking past the ceiling." },
+        { name: "Banked uses", formula: "the rank's `charges` + \u230a(reach \u2212 3) \u00f7 5\u230b, capped at 8", note: "3 at first, 4 by level 3\u20134, 5 by 8, 6 by 12, 7 by 20. A different divisor from the board on purpose: she should be able to bank more than she can lay, so a note that dies is replaced from the rack rather than from a 45-turn wait. Only notecast and symphony grow their rack; anything else authored with `charges` keeps exactly what its rank says." },
+        { name: "A level can widen either", formula: "the level-up banner names the new board size and rack size, and the new rack slot arrives FULL", note: "Both numbers are read live rather than stored, so a level-up can hand her a slot without anything in the code pushing it. An empty new slot would be a reward you have to wait 45 turns to collect, so it arrives loaded." },
+        { name: "What five notes are worth", formula: "measured 87.6 damage a turn at level 20, against 54.5 from three", note: "Back at ToneTum's Magic Missile (~88) \u2014 but passive, and against a target standing still in the middle of five notes. What pays for it is fragility rather than count: at level 20 a note has SIX hit points, so anything that reaches one ends it. The limiter is no longer the size of the board, it is keeping the board alive." },
+      ],
+    },
+    {
       title: "Sera: the early-game nerf",
       rows: [
         { name: "A note's body is her LUCK", formula: "hp = mod(LCK) + Counterpoint's bonus \u2014 not the rank, not her level", note: "At level 1 that is TWO hit points, and anything that reaches a note kills it outright. The whole board is fragile on purpose: three notes that a rat can swat are a positioning puzzle, where three notes with 40 hit points each were free damage the early floors had no answer to. The rank tables no longer carry an `hp` field at all \u2014 the stat is the only input." },
