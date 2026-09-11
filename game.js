@@ -5576,10 +5576,14 @@
     ...DATA.biomes.flatMap((b) => [b.floor, b.wall]),   // per-biome terrain
     ...DATA.biomes.map((b) => b.exitSprite).filter(Boolean),
   ]));
+  // Written once because offline.js hands this exact list to the service worker
+  // to save for a flight — a second copy of the URL shape is a second thing to
+  // get wrong, and getting it wrong means a monster that renders blank at altitude.
+  const spriteUrl = (n) => "./assets/tiles/" + encodeURIComponent(n) + ".png";   // a key may contain a space ("big axe")
   const SPRITES = {};
   for (const n of SPRITE_NAMES) {
     const img = new Image();
-    img.src = "./assets/tiles/" + encodeURIComponent(n) + ".png";   // a key may contain a space ("big axe")
+    img.src = spriteUrl(n);
     SPRITES[n] = img;
   }
   const ready = (img) => img && img.complete && img.naturalWidth > 0;
@@ -8861,6 +8865,9 @@
 
   // ---- Dev hook ------------------------------------------------------------
   window.cantori = {
+    // Every file the game needs on a plane, derived from the content rather than
+    // listed by hand (see offline.js).
+    spriteUrls: () => SPRITE_NAMES.map(spriteUrl),
     descend, regenerate: generateLevel, setZoom, toggleMap, toggleInv, toggleChar, restart, beginNewRun,
     toggleShop, toggleFountain, buyPotion: (i) => buyPotion(i), sellGear: (i) => sellGear(i), useFountain: () => useFountain(),
     pickClass: (key) => { if (classSelectCb) classSelectCb(key); },

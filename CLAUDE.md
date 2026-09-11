@@ -13,8 +13,10 @@ data.js             ALL editable content: monsters, gear, consumables, biomes, b
 loot.js             loot roll engine (rarity / tier / affix / identify)
 game.js             the engine — map, FOV, combat, AI, bosses, render, UI
 editor.html/.js     no-backend content editor that reads and writes data.js
+sw.js               service worker — keeps a copy of the site so it plays with no network
+offline.js          registers sw.js, tells it what this page is made of, shows the offline badge
 assets/tiles/       sprites (CC0 Dungeon Crawl Stone Soup — see ART-CREDITS.md)
-tests/              headless smoke test (see below)
+tests/              headless smoke, editor and offline tests (see below)
 ```
 
 `game.js` is large and organised by `// ---- Section ----` banners. Find your way around with those
@@ -63,6 +65,13 @@ browser cache — and "Commit data.js" replaces the file wholesale, so every sav
 everything that had landed since. The editor now refuses to commit over a `data.js` it didn't load,
 but that is the backstop, not the fix. Move both files.
 
+`sw.js` is deliberately **not** a third place to bump, and must not become one. It precaches no fixed
+list: `offline.js` reads the `<script src>` and `<link href>` URLs out of the live document, `?v=` and
+all, and hands that list to the worker — so the worker cannot fall out of step with a bump it never
+knew about, and last version's copies are pruned once the new ones are safely saved. Both documents
+are served network-first for the same reason this rule exists: an `.html` answered from cache while a
+network is available would rebuild the stale-editor trap from the other side.
+
 **5. New terrain must be added to every map predicate.**
 Tiles are `WALL / FLOOR / STAIRS / DOOR / THORN / WATER / CHASM / RUBBLE / GRASS`, each a row in the
 `TILE` property table. A tile with no properties is walkable, sighted-through and harmless by
@@ -82,7 +91,8 @@ onward once doors, thorns and trees are down, calling `unpaintTerrain()` if it's
 new that blocks movement needs the same treatment. Miss one and levels become unwinnable in ways
 that only surface on rare seeds. This is the single most common way to break the game.
 
-**6. Run the tests before committing:** `node tests/smoke.js` and `node tests/editor.js`.
+**6. Run the tests before committing:** `node tests/smoke.js`, `node tests/editor.js` and
+`node tests/offline.js`.
 
 **7. Keep the run deterministic-ish and permadeath real.** Death clears progress. Don't add anything
 that silently rescues the player.
@@ -97,6 +107,12 @@ change to `game.js`, `data.js` or `loot.js`.
 button uses, and diffs the result against `data.js` on disk. It fails if the editor would drop or
 alter a single field — which is rule 2 above, enforced. Run it after any `data.js` or `editor.js`
 change.
+
+`node tests/offline.js` flies the flight: it loads the page, waits for the service worker to report
+every file saved, cuts the network, reloads, and asserts the game still boots and starts a run with
+all of its sprites. It also pins the two cache strategies — documents network-first, `?v=` assets
+cache-first and never re-fetched. Run it after any change to `sw.js`, `offline.js`, or the script and
+link tags in `index.html` / `editor.html`.
 
 Play it by hand with `python3 -m http.server 8000`, then open `http://localhost:8000`.
 
