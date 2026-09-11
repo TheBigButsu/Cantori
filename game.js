@@ -208,7 +208,7 @@
   // it bare-skinned, tier + plus in medium, none in light or heavy. See ARMOR_SUB.
   // Happy Feet is the first thing that adds AC from a passive, and the Meditate
   // afterglow the first that adds it on a timer.
-  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac");
+  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac") + balladBonus();
   // Evasion is NOT armour class. AC is how hard you are to aim at; Evasion is
   // slipping a blow that was already aimed true — it is rolled AFTER the attack
   // roll has beaten your AC. Keeping them apart is what lets Ourn's Foresight
@@ -287,6 +287,7 @@
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
     lvlEvaPct: 0, lvlRegenInt: 0, lvlMitMax: 0,        // per-level class progression (dodge %, mana-regen INT, block ceiling)
+    lvlNote: 0,                                        // ...and what Sera's levels add to every note
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
     killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
@@ -313,7 +314,7 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
-    player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0;
+    player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0; player.lvlNote = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -361,6 +362,13 @@
   let decoys = [];
   const DECOY_TURNS = 30;
   const decoyAt = (x, y) => decoys.find((dc) => dc.x === x && dc.y === y) || null;
+  // Sera's notes. A fourth kind of thing on the board, built on exactly the shape
+  // decoys established — its own list, its own tick, its own draw pass, cleared
+  // per floor — with the two differences that make it a turret rather than a
+  // feint: it SHOOTS on its turn, and it has hit points, so a monster that reaches
+  // it can silence it. A note you could not kill would be free damage forever.
+  let notes = [];
+  const noteAt = (x, y) => notes.find((n) => n.x === x && n.y === y) || null;
   let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
   let biomeScrollFloors = null;   // Set of 2 floor-in-biome numbers (1-5) that guarantee a Scroll of Upgrade this biome
   let bossRoom = null;            // the room the current floor's boss occupies (its exit opens on the nearest wall, not the death tile)
@@ -1977,6 +1985,7 @@
     items = [];
     traps = [];
     decoys = [];
+    notes = [];
     turns = 0;
     sarcophagi = new Set();
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
@@ -2171,6 +2180,7 @@
     items = [];
     traps = [];
     decoys = [];
+    notes = [];
     turns = 0;
     sarcophagi = new Set();
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
@@ -3875,7 +3885,7 @@
       // "with no floor", so a low-STR character on a weak weapon really could get
       // there. Rolling STR rather than adding it flat lowers the bottom end, which
       // is what brought this within reach rather than merely theoretical.
-      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg") + timedBonus("dmg"));
+      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg") + timedBonus("dmg") + balladBonus());
       // The per-square multiplier lands BEFORE the crit, so a critical Dragon Kick
       // multiplies the whole run-up rather than one square of it.
       if (opts && opts.per > 0) dmg = Math.max(1, (dmg - (opts.full ? 0 : 1)) * opts.per);
@@ -4228,6 +4238,7 @@
       if (pr.toHitEvenLevels && player.level % 2 === 0) { player.lvlAcc += pr.toHitEvenLevels; grew.push("+" + pr.toHitEvenLevels + " to hit"); }
       if (pr.evaPctEvenLevels && player.level % 2 === 0) { player.lvlEvaPct += pr.evaPctEvenLevels; grew.push("+" + pr.evaPctEvenLevels + "% evade"); }
       if (pr.mitMaxOddLevels && player.level % 2 === 1) { player.lvlMitMax = (player.lvlMitMax || 0) + pr.mitMaxOddLevels; grew.push("+" + pr.mitMaxOddLevels + " max block"); }
+      if (pr.noteDmgEvenLevels && player.level % 2 === 0) { player.lvlNote = (player.lvlNote || 0) + pr.noteDmgEvenLevels; grew.push("+" + pr.noteDmgEvenLevels + " note dmg"); }
       if (pr.mpRegenIntPerLevel) {
         player.lvlRegenInt = +((player.lvlRegenInt || 0) + pr.mpRegenIntPerLevel).toFixed(2);
         grew.push("mana regen INT " + (mod("INT") + player.lvlRegenInt).toFixed(1));
@@ -4890,6 +4901,12 @@
     // an image that pulled monsters across the room would be a wall, not a feint.
     const near = nearestDecoy(m.x, m.y, 1);
     if (near) { strikeDecoy(m, near); return; }
+    // A note beside it is a nuisance it wants gone, and it gets priority over you
+    // for the same reason the decoy does: it is the thing actually hurting it.
+    // Adjacency only, so a note is silenced by something reaching it rather than
+    // by something noticing it across the room.
+    const nn = nearestNote(m.x, m.y, 1);
+    if (nn) { strikeNote(m, nn); return; }
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -5180,6 +5197,154 @@
     floatText(dc.x, dc.y, "shatters", "#9ad0ff");
     log("The " + monName(m) + " strikes an image of you — it bursts like glass.");
   }
+  function nearestNote(x, y, within) {
+    let best = null, bd = Infinity;
+    for (const n of notes) {
+      const d = cheb(x, y, n.x, n.y);
+      if (d <= within && d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+  // Unlike a decoy, a note takes the blow and may survive it. That is what makes
+  // placement a decision: a note dropped next to a bear is silenced next turn, and
+  // that is the placement being bad rather than the skill being bad.
+  function strikeNote(m, n) {
+    bump(m, n.x, n.y);
+    const dmg = randInt(m.atkMin, m.atkMax);
+    n.hp -= dmg;
+    flash(n);
+    floatText(n.x, n.y, "-" + dmg, "#ff8f84");
+    if (n.hp <= 0) {
+      notes = notes.filter((o) => o !== n);
+      spawnBurst(n.x, n.y, "#f2c76a");
+      log("The " + monName(m) + " smashes the note flat — it goes silent.", "hurt");
+    } else {
+      log("The " + monName(m) + " strikes at the note.");
+    }
+  }
+  // What a note is worth on the turn it fires: its rank's base, her DEX, whatever
+  // her levels bought, and Crescendo's reward for having placed it early.
+  // Deliberately NOT the full DEX modifier, and deliberately a slow level dial.
+  // A turret fires every turn without costing her one, so every term here is
+  // multiplied by however many notes are on the board and then by the whole fight.
+  // At full investment and level 20 this is about 18 a note, three notes, ~54 a
+  // turn — roughly one good bow shot's worth spread across the room, which is the
+  // budget a passive damage source gets. The first pass put it at 128 a turn from
+  // TWO notes, which is not a class, it is a cheat code.
+  function noteDamage(n) {
+    const cres = passiveMod("crescendo");
+    const aged = cres ? Math.min(cres, Math.floor((n.age || 0) / 3)) : 0;
+    return Math.max(1, (n.dmg || 1) + Math.floor(mod("DEX") / 2) + Math.floor(player.lvlNote || 0) + aged);
+  }
+  // Notes act, once per world turn, after the player and before the monsters. Each
+  // picks the nearest thing it can SEE inside its range — the same rule the slime
+  // auras are held to, because damage arriving from something two corners away in
+  // an unlit room is a bug report rather than a mechanic.
+  function noteTick() {
+    if (!notes.length) return;
+    const alive = [];
+    for (const n of notes) {
+      n.age = (n.age || 0) + 1;
+      if (--n.turns <= 0) { spawnBurst(n.x, n.y, "#f2c76a"); floatText(n.x, n.y, "\u266a", "#f2c76a"); continue; }
+      alive.push(n);
+    }
+    notes = alive;
+    const shots = 1 + (passiveMod("noteShots") || 0);
+    for (let pass = 0; pass < shots; pass++) {
+      for (const n of notes.slice()) {
+        let tgt = null, td = Infinity;
+        for (const m of monsters) {
+          if (m.hp <= 0) continue;
+          const d = cheb(n.x, n.y, m.x, m.y);
+          if (d > n.range || d >= td) continue;
+          if (!lineOfSight(n.x, n.y, m.x, m.y)) continue;
+          td = d; tgt = m;
+        }
+        if (!tgt) continue;
+        if (n.chill) {
+          // Dissonance: no damage, it just drags on everything it can reach.
+          for (const m of monsters) {
+            if (m.hp <= 0 || cheb(n.x, n.y, m.x, m.y) > n.range) continue;
+            if (!lineOfSight(n.x, n.y, m.x, m.y)) continue;
+            m.chill = Math.max(m.chill || 0, n.chill);
+            floatText(m.x, m.y, "\u2744", "#9fd8ff");
+          }
+          continue;
+        }
+        if (n.sleep) {
+          // Lullaby: the same threshold Sleep uses, applied by the note rather than
+          // by her — so it keeps working while she is somewhere else entirely.
+          if (!tgt.magicSleep && tgt.hp <= eff("INT") * n.sleep) {
+            tgt.magicSleep = SLEEP_TURNS; setState(tgt, SLEEPING); tgt.aware = false; tgt.target = null;
+            floatText(tgt.x, tgt.y, "\ud83d\udca4", "#bfa8e0");
+          }
+          continue;
+        }
+        const dmg = noteDamage(n);
+        spawnProjectile(n.x, n.y, tgt.x, tgt.y, "#f2c76a");
+        tgt.hp -= dmg; flash(tgt);
+        floatText(tgt.x, tgt.y, "-" + dmg, "#f2c76a");
+        startHunting(tgt);
+        if (tgt.hp <= 0) killMonster(tgt, "is struck silent");
+      }
+    }
+    chordTick();
+    // Cadence — only while something is actually ringing, so it is an engine that
+    // runs on her playing rather than a flat regen bonus wearing a hat.
+    const cad = passiveMod("cadence");
+    if (cad > 0 && notes.length && player.mp < player.maxMp) {
+      const back = Math.min(cad, player.maxMp - player.mp);
+      player.mp += back;
+      if (back > 0) floatText(player.x, player.y, "+" + back + " MP", "#7fb2ff");
+    }
+  }
+  // Chord: two notes on the board are not two turrets, they are a line. Anything
+  // standing on the segment between any pair takes the lower of the two notes'
+  // damage. It is what turns placement from "near the enemy" into "across the path".
+  function chordLine(a, b) {
+    const out = [];
+    let x = a.x, y = a.y, guard = 0;
+    const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y);
+    const sx = x < b.x ? 1 : -1, sy = y < b.y ? 1 : -1;
+    let err = dx - dy;
+    while ((x !== b.x || y !== b.y) && guard++ < 120) {
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+      if (x === b.x && y === b.y) break;
+      out.push({ x, y });
+    }
+    return out;
+  }
+  function chordTick() {
+    if (!passiveMod("chord") || notes.length < 2) return;
+    const seen = new Set();
+    for (let i = 0; i < notes.length; i++) {
+      for (let j = i + 1; j < notes.length; j++) {
+        const a = notes[i], b = notes[j];
+        if (a.chill || a.sleep || b.chill || b.sleep) continue;   // only singing notes carry a line
+        if (cheb(a.x, a.y, b.x, b.y) > a.range + b.range) continue;
+        for (const t of chordLine(a, b)) {
+          const m = monsterAt(t.x, t.y);
+          if (!m || m.hp <= 0 || seen.has(m)) continue;
+          seen.add(m);
+          const dmg = Math.max(1, Math.round(Math.min(noteDamage(a), noteDamage(b)) * 0.5));
+          m.hp -= dmg; flash(m);
+          floatText(m.x, m.y, "-" + dmg, "#ffd98a");
+          startHunting(m);
+          if (m.hp <= 0) killMonster(m, "is cut apart by the chord");
+        }
+      }
+    }
+  }
+  // Ballad: the aura system reads monsters only, so Sera's is its own two lines
+  // rather than a generalisation nothing else would use.
+  const balladBonus = () => {
+    const b = passiveMod("ballad");
+    if (!b) return 0;
+    for (const n of notes) if (cheb(n.x, n.y, player.x, player.y) <= 2) return b;
+    return 0;
+  };
   // Decoys age out, and the roaming ones drift a tile at a time.
   function decoyTick() {
     if (!decoys.length) return;
@@ -5449,6 +5614,7 @@
     healQueueTick();
     searchForTraps();
     decoyTick();
+    noteTick();       // her turrets take their turn after her and before the monsters
     maybeReinforce();
     maybeHorror();
     updateHotbar();
@@ -5573,6 +5739,8 @@
         return;
       }
       if (pk === "frostcast") { executeFrostNova(pendingSkill, tx, ty); return; }   // a tile, not a monster
+      if (pk === "notecast") { placeNote(pendingSkill, tx, ty, null); return; }     // ...and so is a note
+      if (pk === "symphony") { placeNote(pendingSkill, tx, ty, { spread: (skillCur(pendingSkill) || {}).count || 3 }); return; }
       if (pk === "sneakcast" || pk === "dominatecast") {
         const m = monsterAt(tx, ty);
         if (!m || !inBounds(tx, ty)) { log("No target there."); return; }
@@ -6465,6 +6633,46 @@
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText("z", px + tile * 0.80, py + tile * 0.18);
       }
+    }
+
+    // Sera's notes. Drawn as a ring with the glyph inside rather than a sprite, so
+    // they read as an object she put there rather than a creature — and with a
+    // health bar, because a note you cannot tell is about to die is a note you
+    // cannot make a decision about.
+    for (const n of notes) {
+      if (!inBounds(n.x, n.y) || !visible[n.y][n.x]) continue;
+      const nx = SX(n.x), ny = SY(n.y);
+      const col = n.chill ? "#9fd8ff" : n.sleep ? "#bfa8e0" : "#f2c76a";
+      const pulse = 0.55 + 0.45 * Math.sin(now / 300 + n.x + n.y);
+      ctx.save();
+      ctx.globalAlpha = n.turns <= 2 ? 0.45 : 0.85;
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, tile * 0.06);
+      ctx.beginPath(); ctx.arc(nx + tile * 0.5, ny + tile * 0.5, tile * (0.30 + 0.04 * pulse), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      drawGlyphInto(ctx, nx, ny, tile, n.sleep ? "\u266d" : n.chill ? "\u266e" : "\u266a", col);
+      hitFlash(n, nx, ny, now);
+      if (n.hp < n.maxHp) {
+        const w = tile * 0.7, h = Math.max(2, tile * 0.07), bx = nx + tile * 0.15, by = ny + tile * 0.86;
+        ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(bx, by, w, h);
+        ctx.fillStyle = col; ctx.fillRect(bx, by, w * Math.max(0, n.hp / n.maxHp), h);
+      }
+    }
+    // Chord: the line between two notes is a thing the player has to be able to
+    // SEE, or placing them is guesswork.
+    if (passiveMod("chord") && notes.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,217,138,0.35)"; ctx.lineWidth = Math.max(1, tile * 0.08);
+      for (let i = 0; i < notes.length; i++) for (let j = i + 1; j < notes.length; j++) {
+        const a = notes[i], b = notes[j];
+        if (a.chill || a.sleep || b.chill || b.sleep) continue;
+        if (cheb(a.x, a.y, b.x, b.y) > a.range + b.range) continue;
+        if (!visible[a.y][a.x] || !visible[b.y][b.x]) continue;
+        ctx.beginPath();
+        ctx.moveTo(SX(a.x) + tile * 0.5, SY(a.y) + tile * 0.5);
+        ctx.lineTo(SX(b.x) + tile * 0.5, SY(b.y) + tile * 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Mirror Image decoys: the player's own sprite, translucent and faintly blue, so
@@ -7909,11 +8117,14 @@
     else if (d.kind === "sol") executeSpeedOfLight(key);
     else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
     else if (d.kind === "wardcast") executeWard(key);                    // aimed at yourself
+    else if (d.kind === "encore") executeEncore(key);                    // every note she already placed
+    else if (d.kind === "finale") executeFinalMovement(key);
     else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
              d.kind === "smite" || d.kind === "ragesmite" || d.kind === "healsmite" || d.kind === "throwmon" ||
              d.kind === "sleepcast" || d.kind === "blinkcast" ||
              d.kind === "madnesscast" || d.kind === "burncast" ||
-             d.kind === "sneakcast" || d.kind === "frostcast" || d.kind === "dominatecast") beginTargetedSkill(key);
+             d.kind === "sneakcast" || d.kind === "frostcast" || d.kind === "dominatecast" ||
+             d.kind === "notecast" || d.kind === "symphony") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -8380,6 +8591,110 @@
   // Now You See Me. The Scroll of Invisibility's trick on a cooldown, with rank 4
   // paying you for coming out of it: strike from the veil and the strike after it
   // hits harder too.
+  // ---- Sera: placing notes ------------------------------------------------
+  // Every note skill lands through here. The three rules that keep a turret from
+  // being a win button live in this one function:
+  //   · a CAP on how many can be on the board at once, so placement is a choice
+  //     about where rather than a question of how many;
+  //   · never adjacent to her, or she is a melee character with extra steps;
+  //   · it must be somewhere she can see, like every other targeted cast.
+  // Over the cap, the oldest note is spent rather than the cast being refused —
+  // refusing would mean reading a counter before every button press.
+  function placeNote(key, tx, ty, opts) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); updateHotbar(); return; }
+    if (!passable(tx, ty) || isWall(tx, ty)) { log("A note needs somewhere to stand."); updateHotbar(); return; }
+    const spread = opts && opts.spread;
+    // A spread cast lays its notes AROUND the tap, so an occupied centre is not a
+    // reason to refuse the whole thing — noteSpread simply skips that tile.
+    if (!spread && (monsterAt(tx, ty) || decoyAt(tx, ty) || noteAt(tx, ty))) { log("Something is already there."); updateHotbar(); return; }
+    if (cheb(player.x, player.y, tx, ty) < 2) { log("Too close — a note has to be struck at a distance."); updateHotbar(); return; }
+    payCast(key, c);
+    const spots = spread ? noteSpread(tx, ty, spread) : [{ x: tx, y: ty }];
+    // Symphony throws out more than the passive cap allows, so for that cast its
+    // own count IS the cap — otherwise the skill would spend three notes to leave
+    // one standing, which is not what the button says it does.
+    const cap = Math.max(noteCap(), spots.length);
+    const born = [];
+    for (const sp of spots) {
+      while (notes.length >= cap) { const old = notes.shift(); spawnBurst(old.x, old.y, "#f2c76a"); }
+      const hp = Math.max(1, (c.cur.hp || 6) + player.level + (passiveMod("noteHp") || 0));
+      born.push({ x: sp.x, y: sp.y, turns: (c.cur.turns || 6) + 1 + (passiveMod("noteLife") || 0), age: 0, hp, maxHp: hp,
+                  dmg: c.cur.dmg || 0, range: (c.cur.range || 3) + (passiveMod("noteRange") || 0),
+                  chill: c.cur.chill || 0, sleep: c.cur.sleep || 0 });
+      notes.push(born[born.length - 1]);
+    }
+    for (const n of born) { floatText(n.x, n.y, "\u266a", "#f2c76a"); spawnProjectile(player.x, player.y, n.x, n.y, "#f2c76a"); }
+    log(born.length === 1 ? "A note hangs in the air." : born.length + " notes hang in the air.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  const noteCap = () => 1 + (passiveMod("noteCap") || 0);
+  // Symphony: a ring of tiles around the tap, so the three land as a shape rather
+  // than a stack — which is what gives Chord something to draw lines between.
+  function noteSpread(tx, ty, n) {
+    const free = (x, y) => inBounds(x, y) && passable(x, y) && !isWall(x, y) && !monsterAt(x, y) &&
+                           !noteAt(x, y) && !decoyAt(x, y) && cheb(player.x, player.y, x, y) >= 2 &&
+                           visible[y] && visible[y][x];
+    const out = free(tx, ty) ? [{ x: tx, y: ty }] : [];
+    for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [2, -2], [-2, 2],
+                            [1, 2], [-1, 2], [1, -2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1],
+                            [3, 0], [-3, 0], [0, 3], [0, -3]]) {
+      if (out.length >= n) break;
+      const x = tx + dx, y = ty + dy;
+      if (!free(x, y)) continue;
+      out.push({ x, y });
+    }
+    return out.slice(0, n);
+  }
+  // Encore — every note on the board goes back to full life and full duration.
+  // The deliberate opposite of Final Movement: one holds the room, the other
+  // spends it, and taking both means choosing which every fight.
+  function executeEncore(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!notes.length) { log("There is nothing left ringing."); updateHotbar(); return; }
+    payCast(key, c);
+    for (const n of notes) {
+      n.turns = Math.max(n.turns, (c.cur.turns || 8) + 1);
+      n.hp = n.maxHp;
+      floatText(n.x, n.y, "\u266b", "#ffe9a8");
+    }
+    log("You take it from the top — " + notes.length + " note" + (notes.length === 1 ? "" : "s") + " ring out again.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Final Movement — spend the board. Every note bursts for real damage in a
+  // radius and is gone, which is why it is worth a tier-5 slot despite costing
+  // you everything you spent the fight building.
+  function executeFinalMovement(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!notes.length) { log("There is nothing to end."); updateHotbar(); return; }
+    payCast(key, c);
+    const r = c.cur.radius || 2, spent = notes.slice();
+    notes = [];
+    let hit = 0;
+    for (const n of spent) {
+      spawnBurst(n.x, n.y, "#ffb26a");
+      for (const m of monsters.slice()) {
+        if (m.hp <= 0 || cheb(n.x, n.y, m.x, m.y) > r) continue;
+        if (!lineOfSight(n.x, n.y, m.x, m.y)) continue;
+        const dmg = Math.max(1, Math.round(noteDamage(n) * (c.cur.mult || 2)));
+        m.hp -= dmg; flash(m); hit++;
+        floatText(m.x, m.y, "-" + dmg, "#ffb26a");
+        startHunting(m);
+        if (m.hp <= 0) killMonster(m, "is shaken apart");
+      }
+    }
+    flashScreen("#3a2410", 320);
+    log("Every note breaks at once. (" + spent.length + " spent, " + hit + " struck)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
   // ---- Brynn: Riposte, Sneak Attack, Dragon's Fury -------------------------
   // Riposte is a passive, so it has no button and no cast — it is simply what a
   // dodge now means. Everything about it is in the data: `ripostePct` is how much
@@ -9314,6 +9629,7 @@
         lvlAcc: player.lvlAcc || 0, lvlEvaPct: player.lvlEvaPct || 0, lvlRegenInt: player.lvlRegenInt || 0,
         lvlMitMax: player.lvlMitMax || 0,
         ward: player.ward || 0, wardTurns: player.wardTurns || 0, wardReflect: player.wardReflect || 0,
+        lvlNote: player.lvlNote || 0, notes: notes.length,
         lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
@@ -9440,6 +9756,10 @@
     godBoons: (g) => godBoonKeys(g),
     openBoonsOf: (g) => godOpenBoons(g),
     decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
+    notes: () => notes.map((n) => ({ x: n.x, y: n.y, turns: n.turns, hp: n.hp, maxHp: n.maxHp, dmg: n.dmg,
+                                     out: noteDamage(n), range: n.range, chill: n.chill || 0, sleep: n.sleep || 0, age: n.age || 0 })),
+    noteCap: () => noteCap(),
+    ballad: () => balladBonus(),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },
     horrorState: () => {

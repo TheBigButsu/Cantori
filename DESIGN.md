@@ -3218,3 +3218,92 @@ monster and holds station if there is none.
 | Ward | 10 + 3×RES... | **59** absorb at RES 20; 11 bear blows, 40 absorbed, **0 reached HP**, 40 reflected |
 | Frost Nova | 18 turns, 11+INT | **17** turns of chill and **19** damage to everything in the bloom |
 | Dominate | 55% of current HP | a 40 HP rat cost **20 MP**, and never turned on its owner |
+
+---
+
+## Sera, the fourth class: notes as turrets
+
+Chadwick is where the damage is, Brynn is where the damage isn't, ToneTum deletes
+things from across the room. **Sera builds a room and makes you fight in it.** She
+spends her turn placing notes; they spend their turns for her.
+
+Starts unlocked, alongside the other three. DEX main, INT secondary, opening with a
+shortbow and grass armour — the bow line already ran tiers 1–5, so `when: "bow"`
+works exactly as Sword Master does and she needed no new gear.
+
+### A note is a fourth kind of thing on the board
+
+`decoys` had already established the shape — its own list, its own tick, its own
+draw pass, cleared per floor, neither a monster nor the player. A note is that with
+two differences, and those two differences are the class:
+
+- **It shoots.** After the player acts and before the monsters do, each note picks
+  the nearest thing it can *see* inside its range and plucks it. The visibility rule
+  is the same one the slime auras are held to: damage arriving from something two
+  corners away in an unlit room is a bug report, not a mechanic.
+- **It has hit points.** A monster standing beside a note swings at the note, before
+  it swings at you. Unlike a decoy, which always shatters, a note takes the blow and
+  may survive it — which is what makes placement a decision rather than a formality.
+  A note dropped next to a bear is silenced next turn, and that is the *placement*
+  being bad rather than the skill being bad.
+
+Three more rules keep the turret from being a win button: a **board cap** (so
+placement is a question of where, not how many), never **adjacent to her** (or she
+is a melee character with extra steps), and it must be somewhere she can **see**.
+Over the cap the oldest note is spent rather than the cast refused — refusing would
+mean reading a counter before every button press.
+
+### The tree
+
+| tier | | | |
+|---|---|---|---|
+| **1 · L0** | Sharp Note | Grace Note · Carrying Tone | Cadence |
+| **2 · L5** | Dissonance | Counterpoint | Lullaby |
+| **3 · L10** | Shatter | Ballad | Encore |
+| **4 · L15** | **Chord** | Crescendo | |
+| **5 · L20** | **Symphony** | Final Movement | |
+
+Seven prerequisite edges, including the two that matter. **Chord** is gated on Sharp
+Note maxed and is the node that changes how she plays: any pair of singing notes
+cuts anything standing on the line between them, so placement stops being "near the
+enemy" and becomes "across the path". **Symphony** needs Chord maxed *and*
+Counterpoint 3 — the cross-tree double gate, the Spinning Smite device.
+
+Encore and Final Movement are deliberately opposed: one resets every note to full
+life, the other breaks them all for ×2–×3.5 in a radius and leaves the board empty.
+Taking both means choosing which, every fight.
+
+### The number that had to come down
+
+A turret fires every turn without costing her one, so **every term in its damage is
+multiplied by the board and then by the whole fight.** The first pass used the full
+DEX modifier, a full point per even level, and Crescendo at +1 per two turns, and
+measured:
+
+> **128 damage in one turn, from two notes.**
+
+That is not a class, it is a cheat code — ToneTum's Magic Missile, the strongest
+nuke in the game, is about 88 and costs him his turn. Every term was cut: half the
+DEX modifier, **half** a point per even level, Crescendo at +1 per three turns with a
++5 ceiling, Counterpoint buying board slots and toughness instead of double shots,
+and note range capped at 6 rather than 8.
+
+| measured at level 20, everything maxed | |
+|---|---|
+| one note | **13–14** damage a turn, range 6, 15 turns, 46 HP |
+| a full board of three, target on a Chord line | **54.5** a turn |
+| Cadence | **+5** MP a turn while notes are ringing |
+| Ballad | **+4** AC and damage standing inside her own music |
+| Symphony | 4 notes laid out in a shape, not a stack |
+
+54.5 a turn is the ceiling, and it requires the target to stand still in the middle
+of three notes she spent three turns and 30 MP placing, any of which a monster can
+walk up and smash.
+
+### Worth knowing
+
+The Horror clock and a turret class pull against each other — turrets reward
+camping, and the floor's spark dies at 300 turns. The answer here was short note
+durations (6–16 turns) so she is always moving to re-place rather than settling in
+for a siege. Whether that is enough tension or too much is a play question, not an
+implementation one.
