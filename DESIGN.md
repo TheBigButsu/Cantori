@@ -3341,3 +3341,44 @@ camping, and the floor's spark dies at 300 turns. The answer here was short note
 durations (6–16 turns) so she is always moving to re-place rather than settling in
 for a siege. Whether that is enough tension or too much is a play question, not an
 implementation one.
+
+---
+
+## Sera was too strong early: three cuts
+
+Played, and the verdict was "way too strong early". Three changes, all of them
+aimed at the first few floors rather than at level 20.
+
+**A note's body is her LUCK.** `hp = mod("LCK")`, not the rank and not her level.
+At level 1 that is **two hit points**, and anything that reaches a note kills it in
+one blow — measured, a rat ends one the turn it arrives. That is the intent: three
+notes a rat can swat are a positioning puzzle; three notes with forty hit points
+each were free damage the early floors had no answer to. The rank tables no longer
+carry an `hp` field at all.
+
+**A long cooldown she can bank.** 45 turns a charge at rank 1, **three stored**. The
+cost is unchanged — she just chooses when to spend it, so a dead note is replaced
+instantly rather than leaving her with nothing for most of a minute. Measured
+banking: `ch0/cd27 → ch1/cd42 → ch2/cd42 → ch3`.
+
+`charges` is generic and opt-in: undefined on every other skill, `skillCharges`
+reports null for those, and nothing else changes shape. The hotbar shows the banked
+count (`×3`) and falls back to the timer only when the rack is empty.
+
+One bug fell out of building it. Placing at the board cap used to **evict the
+oldest note** — so at rank 1, where the cap is one, laying three burned all three
+charges and left one note standing. A stored use has a 45-turn price and may not
+vanish for nothing; it now refuses and costs nothing. Symphony is the exception,
+since a spread cast sets its own cap.
+
+**Bows require DEX.** `req: { DEX: 10..14 }` across the five tiers. A bow was asking
+for the one stat its wielder has least of. `gearReqUnmet` already walked every key
+of `req`, so the engine needed nothing — but the **editor** had a single hard-coded
+`reqSTR` column whose setter *replaced the whole req object*, so a DEX requirement
+authored by hand would have been silently thrown away the next time anyone touched
+that row in the browser. Exactly the failure rule 2 exists to prevent. The column is
+now one per stat over a shared get/set that edits its own key and leaves the others
+alone.
+
+Verified both directions: a stormcaller (DEX 14) refuses Chadwick at DEX 12, and a
+sword (STR 10) still refuses ToneTum at STR 8.
