@@ -2975,9 +2975,9 @@ window.CANTORI_DATA = {
           "icon": "♪",
           "kind": "notecast",
           "innate": true,
-          "desc": "Hers from the first step, the way ToneTum always has his missile. Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it — and a note is only as sturdy as your LUCK, so it does not take much. Uses bank up to three, so you can lay a whole board at once and then wait for it.",
+          "desc": "Hers from the first step, the way ToneTum always has his missile. Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it — and a note is only as sturdy as your LUCK, so it does not take much. How many you can hold on the board, and how many uses you can bank, both grow with INT + LCK + your level: 1 note at first, 2 by level 5, 3 by 10, and a rack of 3 that reaches 4 by level 4 and 5 by 8.",
           "levels": [
-            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · stores 3, one back every 45 turns · known from the start",
+            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · one use back every 45 turns · known from the start",
             "3 + ½DEX mod · 9 turns · one back every 42",
             "4 + ½DEX mod · range 4 · 10 turns · one back every 38",
             "5 + ½DEX mod · range 4 · 12 turns · one back every 34"
@@ -3181,12 +3181,12 @@ window.CANTORI_DATA = {
           "name": "Counterpoint",
           "icon": "⑂",
           "kind": "passive",
-          "desc": "More than one line at a time. You may hold more notes on the board, and they stand up to more before they are smashed.",
+          "desc": "More than one line at a time. The board already widens with INT, LUCK and your level — this brings each new slot forward, and toughens every note while it is out. The board never goes past five.",
           "levels": [
-            "2 notes on the board at once.",
-            "2 notes, each with +2 hit points.",
-            "3 notes, each with +2 hit points.",
-            "3 notes, each with +4 hit points."
+            "Reach the next note-slot a step early.",
+            "A slot early, and +2 note hit points.",
+            "Two slots early, and +2 hit points.",
+            "Two slots early, and +4 hit points."
           ],
           "ranks": [
             {

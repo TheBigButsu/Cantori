@@ -3382,3 +3382,50 @@ alone.
 
 Verified both directions: a stormcaller (DEX 14) refuses Chadwick at DEX 12, and a
 sword (STR 10) still refuses ToneTum at STR 8.
+
+---
+
+## How many notes: INT, LUCK, and her level
+
+The board was stuck at one until Counterpoint, which made the banked charges nearly
+pointless — three stored uses and nowhere to put them.
+
+**`noteSense = mod(INT) + mod(LCK) + level`**, read off *effective* stats so gear
+counts. INT and LCK cannot carry this on their own, and the measurement says why:
+
+| level | INT mod | LCK mod | sum |
+|---|---|---|---|
+| 1 | +2 | +2 | 4 |
+| 5 | +2 | +2 | 4 |
+
+Both sit flat from level 1 to level 5, so a pure-stat formula gives the same answer
+on floor 1 as on floor 5. Level is the third term for exactly that reason — and the
+stats are the half a player can actually push, so every point into INT or LCK, and
+every ring carrying them, brings the next note forward.
+
+| | formula | measured on her natural curve |
+|---|---|---|
+| **on the board** | `clamp(1, 5, ⌊reach ÷ 5⌋ + Counterpoint)` | 1 at L1, **2 by 5**, **3 by 10**, 4 by 15, 5 by 20 |
+| **banked uses** | `rank's charges + ⌊(reach − 3) ÷ 5⌋`, max 8 | 3 at first, **4 by 3–4**, **5 by 8**, 6 by 12, 7 by 20 |
+
+Different divisors on purpose: she should be able to bank more than she can lay, so
+a dead note is replaced from the rack rather than from a 45-turn wait. Five is a
+hard ceiling on the board — past that it stops being a decision about *where* and
+becomes a question of how many you managed to lay.
+
+Both numbers are read live rather than stored, so a level-up can widen either with
+nothing in the code pushing it. The banner names it when it happens, and the new
+rack slot **arrives full** — an empty one would be a reward you wait 45 turns to
+collect.
+
+### What five notes are worth
+
+**87.6 damage a turn at level 20**, against 54.5 from three. That is back at
+ToneTum's Magic Missile (~88), except passive — and it needs a target standing still
+in the middle of five notes.
+
+What pays for it now is fragility rather than count: at level 20 a note has **six
+hit points**. Anything that reaches one ends it. The limiter is no longer the size
+of the board, it is keeping the board alive, which is the trade the LUCK change made
+deliberately. Worth watching in play — if a five-note board turns out to be easy to
+protect, the ceiling is the number to cut, not the count.

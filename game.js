@@ -4232,12 +4232,26 @@
       // can name it instead of printing a term of art nobody defined.
       const pr = cls.progression || {};
       const grew = [];
+      const capBefore = noteCap(), stackBefore = skillMaxCharges("sharp_note");
       if (pr.toHitPerLevel) { player.lvlAcc += pr.toHitPerLevel; grew.push("+" + pr.toHitPerLevel + " to hit"); }
       if (pr.toHitOddLevels && player.level % 2 === 1) { player.lvlAcc += pr.toHitOddLevels; grew.push("+" + pr.toHitOddLevels + " to hit"); }
       if (pr.toHitEvenLevels && player.level % 2 === 0) { player.lvlAcc += pr.toHitEvenLevels; grew.push("+" + pr.toHitEvenLevels + " to hit"); }
       if (pr.evaPctEvenLevels && player.level % 2 === 0) { player.lvlEvaPct += pr.evaPctEvenLevels; grew.push("+" + pr.evaPctEvenLevels + "% evade"); }
       if (pr.mitMaxOddLevels && player.level % 2 === 1) { player.lvlMitMax = (player.lvlMitMax || 0) + pr.mitMaxOddLevels; grew.push("+" + pr.mitMaxOddLevels + " max block"); }
       if (pr.noteDmgEvenLevels && player.level % 2 === 0) { player.lvlNote = (player.lvlNote || 0) + pr.noteDmgEvenLevels; grew.push("+" + pr.noteDmgEvenLevels + " note dmg"); }
+      // Her reach is read live off INT + LCK + level, so a level can widen the board
+      // or the rack on its own. Both are worth naming on the banner, and the new
+      // rack slot arrives full rather than as an empty space to wait for.
+      if (pr.noteDmgEvenLevels) {
+        const capNow = noteCap();
+        if (capNow > capBefore) grew.push(capNow + " notes at once");
+        for (const k in player.skills) {
+          const mx = skillMaxCharges(k);
+          if (mx && player.skills[k].charges != null && player.skills[k].charges < mx) player.skills[k].charges++;
+        }
+        const stackNow = skillMaxCharges("sharp_note");
+        if (stackNow > stackBefore) grew.push("stores " + stackNow);
+      }
       if (pr.mpRegenIntPerLevel) {
         player.lvlRegenInt = +((player.lvlRegenInt || 0) + pr.mpRegenIntPerLevel).toFixed(2);
         grew.push("mana regen INT " + (mod("INT") + player.lvlRegenInt).toFixed(1));
@@ -8237,7 +8251,15 @@
   // lay a whole board at once — the cost is the same, you just choose when to
   // spend it. `charges` is left undefined on every other skill, and skillCharges
   // reports null for those, so nothing else changes shape.
-  const skillMaxCharges = (key) => { const cur = skillCur(key); return cur && cur.charges ? cur.charges : 0; };
+  const skillMaxCharges = (key) => {
+    const cur = skillCur(key);
+    if (!cur || !cur.charges) return 0;
+    // Only the note skills grow their rack; anything else authored with `charges`
+    // keeps exactly what its rank says.
+    const d = skillDef(key);
+    const grows = d && (d.kind === "notecast" || d.kind === "symphony");
+    return Math.min(NOTE_STACK_MAX, cur.charges + (grows ? noteStackBonus() : 0));
+  };
   function skillCharges(key) {
     const st = player.skills[key], max = skillMaxCharges(key);
     if (!st || !max) return null;
@@ -8679,7 +8701,22 @@
     updateHUD(); updateHotbar();
     worldTurn();
   }
-  const noteCap = () => 1 + (passiveMod("noteCap") || 0);
+  // How far the music carries: her two casting stats plus the experience to use
+  // them. INT and LCK alone cannot do this on their own — measured, both modifiers
+  // sit flat at +2 from level 1 to level 5, so a pure-stat formula gives the same
+  // answer on floor 1 as on floor 5. Level is the third term for that reason, and
+  // the stats are what a player can actually push: every point into INT or LCK
+  // brings the next note forward.
+  const noteSense = () => mod("INT") + mod("LCK") + player.level;
+  const NOTE_CAP_MAX = 5;        // past this the board stops being a decision
+  const NOTE_STACK_MAX = 8;
+  // On the board at once: 1 at level 1, 2 by 5, 3 by 10, 5 by 15 — and Counterpoint
+  // brings each of those forward rather than stacking past the ceiling.
+  const noteCap = () => Math.max(1, Math.min(NOTE_CAP_MAX,
+    Math.floor(noteSense() / 5) + (passiveMod("noteCap") || 0)));
+  // Banked uses: the rank's own number, plus one for every 6 points of reach —
+  // 4 by level 4, 5 by level 8, and on up.
+  const noteStackBonus = () => Math.max(0, Math.floor((noteSense() - 3) / 5));
   // Symphony: a ring of tiles around the tap, so the three land as a shape rather
   // than a stack — which is what gives Chord something to draw lines between.
   function noteSpread(tx, ty, n) {
@@ -9812,6 +9849,8 @@
     notes: () => notes.map((n) => ({ x: n.x, y: n.y, turns: n.turns, hp: n.hp, maxHp: n.maxHp, dmg: n.dmg,
                                      out: noteDamage(n), range: n.range, chill: n.chill || 0, sleep: n.sleep || 0, age: n.age || 0 })),
     noteCap: () => noteCap(),
+    noteSense: () => noteSense(),
+    noteStack: () => skillMaxCharges("sharp_note"),
     ballad: () => balladBonus(),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },
