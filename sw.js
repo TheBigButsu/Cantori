@@ -28,6 +28,13 @@
 const CACHE = "cantori";
 const HERE = (p) => new URL(p, self.location.href).href;
 
+// How long a network-first request waits before falling back to a copy we
+// already hold. Airport wifi that accepts the connection and then never answers
+// is a real thing, and on the one day this file exists for, a page that hangs is
+// worse than a page one version behind — the slow answer still lands in the
+// cache for next time.
+const SLOW_NETWORK_MS = 3000;
+
 // Nothing is precached at install — this worker doesn't know what ?v= today's
 // page is on until a page tells it. Taking over straight away is what matters:
 // on a first visit the page is already running uncontrolled, and skipWaiting +
@@ -55,44 +62,71 @@ self.addEventListener("fetch", (event) => {
   if (req.cache === "no-store" || req.cache === "reload") return;
 
   const doc = req.mode === "navigate" || url.pathname.endsWith(".html");
-  event.respondWith(doc ? networkFirst(event, req) : cacheFirst(event, req));
+  // data.js is the one file a SECOND author rewrites in place. "Commit data.js"
+  // in the editor pushes it straight to main and cannot reach the ?v= in
+  // index.html that would otherwise retire the cached copy — so treating it as
+  // versioned would pin every content edit behind a stale copy for as long as
+  // the cache lives, which is rule 4's trap sprung from the other side. It gets
+  // the document treatment: the network wins whenever it answers.
+  const content = url.pathname.endsWith("/data.js");
+  event.respondWith(doc || content ? networkFirst(event, req) : cacheFirst(event, req));
 });
 
 async function networkFirst(event, req) {
   const cache = await caches.open(CACHE);
-  try {
-    const res = await fetch(req);
-    if (res && res.ok) event.waitUntil(cache.put(req, res.clone()));
+  // ignoreSearch for a navigation only: a launch from the home screen or a
+  // shared link can arrive with a query the cached copy never had, and it
+  // addresses the same page. For data.js the query is the version and a
+  // different one is a different file, so that match has to be exact.
+  const nav = req.mode === "navigate";
+  const hit = await cache.match(req, { ignoreSearch: nav });
+
+  const net = fetch(req).then((res) => {
+    if (res && res.ok) return cache.put(req, res.clone()).then(() => res);
     return res;
-  } catch (e) {
-    // ignoreSearch: a launch from the home screen or a shared link can arrive
-    // with a query the cached copy never had, and it addresses the same page.
-    const hit = await cache.match(req, { ignoreSearch: true });
-    if (hit) return hit;
-    // "./" and "./index.html" address the same page but are two cache entries,
-    // and which one got saved depends on how the first visit was spelled. Either
-    // answers for the game — but only for the game: handing index.html to
-    // someone who asked for editor.html would silently give them the wrong app.
-    if (req.mode === "navigate" && !new URL(req.url).pathname.endsWith("editor.html")) {
-      for (const shell of [HERE("./index.html"), HERE("./")]) {
-        const idx = await cache.match(shell, { ignoreSearch: true });
-        if (idx) return idx;
-      }
-    }
-    return notSaved();
+  });
+
+  if (hit) {
+    const raced = await Promise.race([
+      net.catch(() => null),
+      new Promise((r) => setTimeout(() => r(null), SLOW_NETWORK_MS)),
+    ]);
+    if (raced && raced.ok) return raced;
+    event.waitUntil(net.catch(() => null));   // a late answer still refreshes the cache
+    return hit;
   }
+
+  try {
+    const res = await net;
+    if (res) return res;
+  } catch (e) {
+    /* nothing saved and nothing answering — the fallbacks below are all that's left */
+  }
+
+  // "./" and "./index.html" address the same page but are two cache entries, and
+  // which one got saved depends on how the first visit was spelled. Either
+  // answers for the game — but only for the game: handing index.html to someone
+  // who asked for editor.html would silently give them the wrong app.
+  if (nav && !new URL(req.url).pathname.endsWith("editor.html")) {
+    for (const shell of [HERE("./index.html"), HERE("./")]) {
+      const idx = await cache.match(shell, { ignoreSearch: true });
+      if (idx) return idx;
+    }
+  }
+  return notSaved();
 }
 
 async function cacheFirst(event, req) {
   const cache = await caches.open(CACHE);
   const hit = await cache.match(req);
 
-  // A ?v= URL is its own version stamp: the file it names cannot change without
-  // the URL changing too, so a hit is final and re-asking is pure waste on a
-  // phone connection. Sprites and icons carry no ?v= at all — rule 3 ships a
-  // sprite with its data row, so replaced art keeps its URL forever — and those
-  // we serve from cache but refresh behind the reader's back, so the next load
-  // shows the new tile. Offline the refresh just fails, quietly.
+  // A ?v= URL is its own version stamp: rule 4 moves it whenever the file moves,
+  // so a hit is final and re-asking is pure waste on a phone connection. (data.js
+  // is the exception and never reaches here — see the dispatcher above.) Sprites
+  // and icons carry no ?v= at all — rule 3 ships a sprite with its data row, so
+  // replaced art keeps its URL forever — and those we serve from cache but
+  // refresh behind the reader's back, so the next load shows the new tile.
+  // Offline the refresh just fails, quietly.
   if (hit && new URL(req.url).search) return hit;
 
   const fresh = fetch(req).then((res) => {

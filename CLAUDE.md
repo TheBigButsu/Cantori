@@ -72,6 +72,14 @@ knew about, and last version's copies are pruned once the new ones are safely sa
 are served network-first for the same reason this rule exists: an `.html` answered from cache while a
 network is available would rebuild the stale-editor trap from the other side.
 
+**`data.js` is network-first too, and that is not an optimisation to undo.** It is the one file a
+second author rewrites in place: "Commit data.js" pushes it straight to `main` and cannot reach the
+`?v=` in `index.html` that would otherwise retire the cached copy. Treat it as versioned and every
+content edit you commit disappears behind a stale copy for as long as the cache lives — rule 4's trap
+sprung from the other side, with the editor's freshness banner as the only clue. `tests/offline.js`
+pins this: it commits an edit the way the editor commits one and asserts it reaches the game on the
+next load.
+
 **5. New terrain must be added to every map predicate.**
 Tiles are `WALL / FLOOR / STAIRS / DOOR / THORN / WATER / CHASM / RUBBLE / GRASS`, each a row in the
 `TILE` property table. A tile with no properties is walkable, sighted-through and harmless by
@@ -110,9 +118,11 @@ change.
 
 `node tests/offline.js` flies the flight: it loads the page, waits for the service worker to report
 every file saved, cuts the network, reloads, and asserts the game still boots and starts a run with
-all of its sprites. It also pins the two cache strategies — documents network-first, `?v=` assets
-cache-first and never re-fetched. Run it after any change to `sw.js`, `offline.js`, or the script and
-link tags in `index.html` / `editor.html`.
+all of its sprites. It also pins the cache strategies — documents and `data.js` network-first, other
+`?v=` assets cache-first and never re-fetched, sprites refreshed in the background — and checks that a
+content edit committed the way the editor commits one reaches the game on the next load, offline copy
+included. Run it after any change to `sw.js`, `offline.js`, or the script and link tags in
+`index.html` / `editor.html`.
 
 Play it by hand with `python3 -m http.server 8000`, then open `http://localhost:8000`.
 

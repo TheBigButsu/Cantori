@@ -86,10 +86,15 @@ For the best of it, **add it to your home screen** first (iOS: Share → Add to 
 Screen), then open it once from there — that's the launch path the offline copy is
 saved for, and it opens fullscreen with no browser chrome.
 
-Updates still land normally: with a connection the page is always fetched fresh,
-and a new version replaces the saved copy as soon as you open it. The content
-editor saves itself the same way, so you can author monsters at 30,000 feet too —
-though committing them to GitHub has to wait until you land.
+Updates still land normally: with a connection the page and `data.js` are always
+fetched fresh, so a new version — or content you just committed from the editor —
+replaces the saved copy the next time you open it. Nothing to clear, no hard
+refresh.
+
+The editor saves itself the same way, so you can author monsters at 30,000 feet:
+edit, hit **Playtest**, and the game picks up your draft from `localStorage` with
+no network involved. **Commit data.js** needs GitHub, so that part waits until you
+land — and once it lands, opening the game with a signal is all it takes to see it.
 
 ## Content editor (no code needed)
 

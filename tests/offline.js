@@ -51,12 +51,19 @@ const MIME = {
   ".webmanifest": "application/manifest+json", ".md": "text/plain",
 };
 
-function serve(hits, fail) {
+function serve(hits, fail, edits) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = decodeURIComponent(req.url.split("?")[0]);
       hits.set(url, (hits.get(url) || 0) + 1);
       if (fail.has(url)) { res.writeHead(500); res.end("the departure lounge wifi"); return; }
+      // Stands in for "Commit data.js": the editor pushes that one file straight
+      // to main and never touches the ?v= in index.html, so the content behind a
+      // URL changes while the URL does not.
+      if (edits.has(url)) {
+        res.writeHead(200, { "Content-Type": "text/javascript", "Cache-Control": "no-store" });
+        res.end(edits.get(url)); return;
+      }
       const rel = path.normalize(url === "/" ? "/index.html" : url).replace(/^(\.\.[/\\])+/, "");
       const file = path.join(ROOT, rel);
       if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -85,7 +92,8 @@ async function main() {
   const chromium = loadChromium();
   const hits = new Map();
   const fail = new Set();
-  const { server, port } = await serve(hits, fail);
+  const edits = new Map();
+  const { server, port } = await serve(hits, fail, edits);
   const origin = `http://127.0.0.1:${port}`;
   const browser = await chromium.launch({ headless: !HEADED });
   const context = await browser.newContext({ viewport: { width: 430, height: 930 } });
@@ -120,7 +128,31 @@ async function main() {
 
   check(since("/index.html") > 0, "index.html was served from cache while online — documents must be network-first");
   check(since("/game.js") === 0, "game.js was re-fetched though its ?v= URL hadn't changed");
-  check(since("/data.js") === 0, "data.js was re-fetched though its ?v= URL hadn't changed");
+  check(since("/data.js") > 0, "data.js was served from cache while online — the editor rewrites it in place, so it must be network-first");
+
+  // ---- 2b. a content edit, committed the way the editor commits it ---------
+  // "Commit data.js" writes one file and cannot bump the ?v= in index.html. If
+  // the cached copy won this, every content edit would vanish behind a stale
+  // data.js for as long as the cache lived, and the editor's own freshness
+  // banner would be the only clue. It must land on the FIRST reload.
+  const edited = fs.readFileSync(path.join(ROOT, "data.js"), "utf8")
+    .replace('"name": "Rat"', '"name": "Committed Rat"');
+  edits.set("/data.js", edited);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForFunction(() => window.CANTORI_DATA, null, { timeout: 20000 }).catch(() => {});
+  const landed = await page.evaluate(() => window.CANTORI_DATA.monsters.rat.name);
+  check(landed === "Committed Rat", `a committed content edit didn't reach the game (rat is still "${landed}")`);
+
+  // ...and it's the edit, not the copy it replaced, that goes on the plane.
+  await context.setOffline(true);
+  await page.reload({ waitUntil: "load" }).catch(() => {});
+  const flown = await page.evaluate(() => window.CANTORI_DATA && window.CANTORI_DATA.monsters.rat.name).catch(() => null);
+  check(flown === "Committed Rat", `the offline copy kept the pre-edit content (rat is "${flown}")`);
+  await context.setOffline(false);
+  edits.clear();
+  await page.reload({ waitUntil: "load" });
+  await page.waitForFunction(() => window.CANTORI_DATA && window.CANTORI_DATA.monsters.rat.name === "Rat",
+    null, { timeout: 20000 }).catch(() => {});
 
   // ---- 3. wheels up --------------------------------------------------------
   await context.setOffline(true);
