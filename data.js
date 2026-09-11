@@ -2976,35 +2976,35 @@ window.CANTORI_DATA = {
           "kind": "notecast",
           "desc": "Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it.",
           "levels": [
-            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 6 turns · 20 turn cooldown",
-            "3 + ½DEX mod · 8 turns",
-            "4 + ½DEX mod · range 4 · 10 turns · 16 turn cooldown",
-            "5 + ½DEX mod · range 4 · 12 turns · 12 turn cooldown"
+            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · 14 HP · 14 turn cooldown",
+            "3 + ½DEX mod · 9 turns · 18 HP",
+            "4 + ½DEX mod · range 4 · 10 turns · 22 HP · 12 turn cooldown",
+            "5 + ½DEX mod · range 4 · 12 turns · 26 HP"
           ],
           "ranks": [
             {
               "mp": 8,
-              "cd": 20,
+              "cd": 14,
               "dmg": 2,
               "range": 3,
-              "turns": 6,
-              "hp": 6
+              "turns": 8,
+              "hp": 14
             },
             {
               "mp": 8,
-              "cd": 20,
+              "cd": 14,
               "dmg": 3,
               "range": 3,
-              "turns": 8,
-              "hp": 8
+              "turns": 9,
+              "hp": 18
             },
             {
               "mp": 8,
-              "cd": 16,
+              "cd": 12,
               "dmg": 4,
               "range": 4,
               "turns": 10,
-              "hp": 10
+              "hp": 22
             },
             {
               "mp": 8,
@@ -3012,7 +3012,7 @@ window.CANTORI_DATA = {
               "dmg": 5,
               "range": 4,
               "turns": 12,
-              "hp": 12
+              "hp": 26
             }
           ],
           "req": []
@@ -3139,7 +3139,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 8,
-              "hp": 8,
+              "hp": 16,
               "chill": 6
             },
             {
@@ -3148,7 +3148,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 10,
-              "hp": 10,
+              "hp": 20,
               "chill": 9
             },
             {
@@ -3157,7 +3157,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 4,
               "turns": 12,
-              "hp": 12,
+              "hp": 24,
               "chill": 12
             },
             {
@@ -3166,7 +3166,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 5,
               "turns": 14,
-              "hp": 14,
+              "hp": 28,
               "chill": 16
             }
           ],
@@ -3236,7 +3236,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 8,
-              "hp": 8,
+              "hp": 16,
               "sleep": 0.5
             },
             {
@@ -3245,7 +3245,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 8,
-              "hp": 10,
+              "hp": 20,
               "sleep": 1
             },
             {
@@ -3254,7 +3254,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 4,
               "turns": 10,
-              "hp": 12,
+              "hp": 24,
               "sleep": 1
             },
             {
@@ -3263,7 +3263,7 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 4,
               "turns": 12,
-              "hp": 14,
+              "hp": 28,
               "sleep": 1
             }
           ],
@@ -3473,7 +3473,7 @@ window.CANTORI_DATA = {
               "dmg": 4,
               "range": 4,
               "turns": 10,
-              "hp": 12,
+              "hp": 20,
               "count": 3
             },
             {
@@ -3482,7 +3482,7 @@ window.CANTORI_DATA = {
               "dmg": 5,
               "range": 4,
               "turns": 12,
-              "hp": 14,
+              "hp": 24,
               "count": 3
             },
             {
@@ -3491,7 +3491,7 @@ window.CANTORI_DATA = {
               "dmg": 6,
               "range": 5,
               "turns": 14,
-              "hp": 16,
+              "hp": 28,
               "count": 4
             },
             {
@@ -3500,7 +3500,7 @@ window.CANTORI_DATA = {
               "dmg": 7,
               "range": 5,
               "turns": 16,
-              "hp": 18,
+              "hp": 32,
               "count": 4
             }
           ],

@@ -3300,6 +3300,27 @@ and note range capped at 6 rather than 8.
 of three notes she spent three turns and 30 MP placing, any of which a monster can
 walk up and smash.
 
+### A rat deleted her in two turns
+
+The first level-1 playtest, before she ever reached a human:
+
+```
+turn 1: rat 40->37 | note 5t 3hp | The Rat strikes at the note.
+turn 2: rat 37->34 | note 4t 1hp | The Rat strikes at the note.
+turn 3: rat 34->34 | note gone   | The Rat smashes the note flat.
+```
+
+A note opened at 7 hit points — 6 from the rank plus her character level — against
+the weakest monster in the game, which hits for 3 to 4. Two turns, for a third of
+her mana. Every number in the class had been measured at level 20, where a note has
+46 HP and this never comes up.
+
+Note hit points now open at 14 and run to 26 by rank, so a note survives four or
+five hits from a common early monster: long enough to do the job it was placed for.
+It still dies to sustained attention, which is the point — but "attackable" has to
+mean *a decision about placement*, not *a rat walks over and the class stops
+working*.
+
 ### Worth knowing
 
 The Horror clock and a turret class pull against each other — turrets reward
