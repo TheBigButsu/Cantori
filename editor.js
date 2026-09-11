@@ -97,7 +97,7 @@
       { f: "range", type: "num" },
       { f: "defMin", label: "def min", type: "num" }, { f: "defMax", label: "def max", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
-      { f: "reqSTR", label: "req STR", type: "num" },
+      { f: "reqSTR", label: "req STR", type: "num" }, { f: "reqDEX", label: "req DEX", type: "num" },
       // Armour only: a flat AC the piece grants, and the ceiling it puts on how
       // much of your DEX modifier reaches your AC. Blank dexCap falls back to the
       // subtype (light uncapped, medium 2 + tier + plus, heavy none).
@@ -123,7 +123,7 @@
       { f: "defMin", label: "mit min", type: "num" }, { f: "defMax", label: "mit max", type: "num" },
       { f: "int", label: "INT (light)", type: "num" }, { f: "mp", label: "MP (light)", type: "num" },
       { f: "tier", type: "num" }, { f: "rarity", label: "rarity %", type: "num" },
-      { f: "reqSTR", label: "req STR", type: "num" },
+      { f: "reqSTR", label: "req STR", type: "num" }, { f: "reqDEX", label: "req DEX", type: "num" },
       { f: "glyph", type: "text" }, { f: "color", type: "color" },
     ],
     consumables: [
@@ -303,15 +303,23 @@
 
   let activeTab = "monsters";
 
-  // ---- Field get/set (maps reqSTR <-> req.STR, drops empty optionals) --------
+  // ---- Field get/set (maps req<STAT> <-> req.<STAT>, drops empty optionals) --
+  // One column per stat rather than one STR column: bows want DEX, and the old
+  // setter REPLACED the whole req object, so a DEX requirement authored by hand
+  // was silently thrown away the next time anybody touched the row in here.
+  const REQ_PREFIX = "req";
+  const reqStatOf = (f) => (f.length > 3 && f.slice(0, 3) === REQ_PREFIX && f === f.slice(0, 3) + f.slice(3).toUpperCase() ? f.slice(3) : null);
   function getField(obj, f) {
-    if (f === "reqSTR") return obj.req && obj.req.STR != null ? obj.req.STR : "";
+    const rs = reqStatOf(f);
+    if (rs) return obj.req && obj.req[rs] != null ? obj.req[rs] : "";
     const v = obj[f];
     return v == null ? "" : v;
   }
   function setField(obj, f, type, raw, checked) {
-    if (f === "reqSTR") {
-      if (raw === "" ) delete obj.req; else obj.req = { STR: Number(raw) };
+    const rs = reqStatOf(f);
+    if (rs) {
+      if (raw === "") { if (obj.req) { delete obj.req[rs]; if (!Object.keys(obj.req).length) delete obj.req; } }
+      else { obj.req = obj.req || {}; obj.req[rs] = Number(raw); }
       return;
     }
     if (type === "bool") { if (checked) obj[f] = true; else delete obj[f]; return; }
@@ -347,7 +355,7 @@
     setStatus("");
   }
 
-  // Value shown in a column for a row (handles the key column + reqSTR mapping).
+  // Value shown in a column for a row (handles the key column + req<STAT> mapping).
   function cellValue(row, col) {
     if (col.f === "__key") return row.key || "";
     return getField(row.obj, col.f);   // "" when missing
@@ -1256,6 +1264,15 @@
         { name: "Hall length", formula: "a corridor leg runs randInt(3, hallLegMax) tiles before it must bend", note: "The path still alternates axes after every leg — this only sets how far a straight run may go first. Default 6; the crypt runs 14." },
         { name: "Pillars", formula: "a room over 20 tiles gets 1 + (area − 21) / 5 obstacle pillars, capped at 12, each reverted if it would strand any room", note: "The cap exists because the uncapped formula turns a 12×10 crypt hall into twenty obstacles. The reachability check is CLAUDE.md rule 5 applied to the pass that used to entomb bosses." },
         { name: "Sarcophagi", formula: "sarcophagusPct of a room's pillars are DRAWN as stone coffins", note: "Not a new tile: a sarcophagus is a pillar, so it is already solid, sight-blocking and correct in every map predicate. This is only how it is painted (and what Examine calls it)." },
+      ],
+    },
+    {
+      title: "Sera: the early-game nerf",
+      rows: [
+        { name: "A note's body is her LUCK", formula: "hp = mod(LCK) + Counterpoint's bonus \u2014 not the rank, not her level", note: "At level 1 that is TWO hit points, and anything that reaches a note kills it outright. The whole board is fragile on purpose: three notes that a rat can swat are a positioning puzzle, where three notes with 40 hit points each were free damage the early floors had no answer to. The rank tables no longer carry an `hp` field at all \u2014 the stat is the only input." },
+        { name: "Charges: a long cooldown you can bank", formula: "a rank with `charges` stores that many uses; the timer always runs and each completion banks one", note: "45 turns a charge at rank 1, three stored. The cost is unchanged \u2014 you just choose when to spend it, so a dead note is replaced instantly instead of leaving her with nothing for most of a minute. Generic: `charges` is undefined on every other skill and skillCharges reports null for those, so nothing else changes shape. The hotbar shows the banked count (\u00d73) rather than a timer, and falls back to the timer only when the rack is empty." },
+        { name: "At the board cap it REFUSES", formula: "placing a note when notes.length >= noteCap() is refused and costs nothing", note: "It used to evict the oldest. Measured at rank 1, where the cap is one: laying three burned all three charges and left ONE note standing. A stored use has a 45-turn price and may not disappear for nothing. Symphony is the exception \u2014 a spread cast sets its own cap, because otherwise the button would not do what it says." },
+        { name: "Bows require DEX", formula: "req: { DEX: 10..14 } across the five tiers, was STR", note: "A bow was asking for the one stat its wielder has least of. gearReqUnmet already walked every key of `req`, so the engine needed no change \u2014 but the EDITOR had a single hard-coded `reqSTR` column whose setter REPLACED the whole req object, so a DEX requirement authored by hand was thrown away the next time anybody touched that row. The column is now one per stat (req STR, req DEX) over a shared get/set that edits its own key and leaves the others alone." },
       ],
     },
     {

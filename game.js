@@ -152,7 +152,6 @@
   // plain words when it lands.
   const BASE_TO_HIT = 2;
   const classProg = () => ((DATA.classes[player.cls] || {}).progression || {});
-  const weaponStrReq = () => (player.weapon && GEAR[player.weapon.key].req ? (GEAR[player.weapon.key].req.STR || 0) : 0);
   // STR modifier is the damage bonus outright. It used to be (STR − weapon req) / 4,
   // which double-counted the requirement: `gearReqUnmet` already refuses to equip a
   // weapon you do not meet, so there is nothing left for the damage formula to gate.
@@ -5527,7 +5526,18 @@
       for (const k in player.skills) if (player.skills[k].cd > 0) waiting++;
       cdTick = 1 + waiting;
     }
-    for (const k in player.skills) if (player.skills[k].cd > 0) player.skills[k].cd = Math.max(0, player.skills[k].cd - cdTick);
+    for (const k in player.skills) {
+      const st = player.skills[k];
+      if (st.cd <= 0) continue;
+      st.cd = Math.max(0, st.cd - cdTick);
+      if (st.cd > 0) continue;
+      const max = skillMaxCharges(k);
+      if (!max) continue;
+      st.charges = Math.min(max, (st.charges == null ? max : st.charges) + 1);
+      const cur = skillCur(k);
+      if (st.charges < max && cur) st.cd = cur.cd || 0;          // keep filling
+      else if (st.charges >= max) log((skillDef(k) || {}).name + " is fully stored.", "");
+    }
     if (player.stoneSkin && player.stoneSkin.turns > 0 && --player.stoneSkin.turns <= 0) {
       player.stoneSkin = null; log("Your stone skin crumbles away.");
     }
@@ -8105,7 +8115,10 @@
     if (d.kind === "passive") { log(d.name + " is always active.", ""); return; }
     // Meditate is the exception: its button doubles as "stand up", and standing up
     // has to work while the cooldown it already started is running.
-    if (st.cd > 0 && !(d.kind === "meditate" && player.meditate)) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
+    const chg = skillCharges(key);
+    if (chg !== null) {
+      if (chg <= 0) { log(d.name + " has nothing stored (" + st.cd + " to the next).", ""); return; }
+    } else if (st.cd > 0 && !(d.kind === "meditate" && player.meditate)) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return; }
     if (d.kind === "rush" || d.kind === "dragonkick") beginRush(key);   // both ask for a direction
     else if (d.kind === "bolt") executeMagicMissile(key);        // no aiming — it finds the nearest
     else if (d.kind === "meditate") executeMeditate(key);
@@ -8218,15 +8231,37 @@
   // cooldown from the CURRENT rank, then take a world turn. `cur` is the active rank's
   // data straight out of data.js, so costs and cooldowns are authored, never hardcoded.
   const SLEEP_TURNS = 10;   // plus the INT modifier — long enough to walk away, or to line up the ambush
+  // A skill whose rank carries `charges` banks its cooldowns instead of wasting
+  // them: the timer always runs, and each time it completes another use is stored,
+  // up to the cap. That is what lets a long cooldown sit alongside being able to
+  // lay a whole board at once — the cost is the same, you just choose when to
+  // spend it. `charges` is left undefined on every other skill, and skillCharges
+  // reports null for those, so nothing else changes shape.
+  const skillMaxCharges = (key) => { const cur = skillCur(key); return cur && cur.charges ? cur.charges : 0; };
+  function skillCharges(key) {
+    const st = player.skills[key], max = skillMaxCharges(key);
+    if (!st || !max) return null;
+    if (st.charges == null) st.charges = max;          // a fresh skill starts loaded
+    return Math.min(st.charges, max);
+  }
+  function spendCharge(key, cd) {
+    const st = player.skills[key], max = skillMaxCharges(key);
+    if (!max) { st.cd = cd; return; }
+    st.charges = Math.max(0, skillCharges(key) - 1);
+    if (st.cd <= 0) st.cd = cd;                        // the timer only restarts if it was idle
+  }
   function castCheck(key) {
     const st = player.skills[key], cur = skillCur(key), d = skillDef(key);
     if (!st || !cur || !d) return null;
-    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return null; }
+    const ch = skillCharges(key);
+    if (ch !== null) {
+      if (ch <= 0) { log(d.name + " has nothing stored (" + st.cd + " to the next).", ""); return null; }
+    } else if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ").", ""); return null; }
     const cost = cur.mp || 0;
     if (player.mp < cost) { log("Not enough MP for " + d.name + " (need " + cost + ")."); return null; }
     return { st, cur, d, cost };
   }
-  function payCast(key, c) { player.mp -= c.cost; player.skills[key].cd = c.cur.cd || 0; }
+  function payCast(key, c) { player.mp -= c.cost; spendCharge(key, c.cur.cd || 0); }
 
   // Burning Sensation — a cast, not a rider on every blow. It opens at TWICE the
   // INT modifier and cools by 1 a turn, so its whole value is front-loaded: it is
@@ -8611,6 +8646,15 @@
     // reason to refuse the whole thing — noteSpread simply skips that tile.
     if (!spread && (monsterAt(tx, ty) || decoyAt(tx, ty) || noteAt(tx, ty))) { log("Something is already there."); updateHotbar(); return; }
     if (cheb(player.x, player.y, tx, ty) < 2) { log("Too close — a note has to be struck at a distance."); updateHotbar(); return; }
+    // At the board cap, refuse rather than evict. Evicting silently spent one of
+    // her banked uses to move a note she already had — measured, laying three at
+    // rank 1 burned all three charges and left ONE note standing. A stored use is
+    // a resource with a 45-turn price; it may not disappear for nothing.
+    if (!spread && notes.length >= noteCap()) {
+      log(noteCap() === 1 ? "A note is already ringing — you can only hold one." :
+          "You are already holding " + noteCap() + " notes.", "");
+      updateHotbar(); return;
+    }
     payCast(key, c);
     const spots = spread ? noteSpread(tx, ty, spread) : [{ x: tx, y: ty }];
     // Symphony throws out more than the passive cap allows, so for that cast its
@@ -8620,7 +8664,11 @@
     const born = [];
     for (const sp of spots) {
       while (notes.length >= cap) { const old = notes.shift(); spawnBurst(old.x, old.y, "#f2c76a"); }
-      const hp = Math.max(1, (c.cur.hp || 6) + player.level + (passiveMod("noteHp") || 0));
+      // A note's body is her LUCK, nothing else — not the rank, not her level. It
+      // makes the whole board fragile on purpose: three notes that anything can
+      // swat are a positioning puzzle, where three notes with 40 hit points each
+      // were just free damage the early floors could not answer.
+      const hp = Math.max(1, mod("LCK") + (passiveMod("noteHp") || 0));
       born.push({ x: sp.x, y: sp.y, turns: (c.cur.turns || 6) + 1 + (passiveMod("noteLife") || 0), age: 0, hp, maxHp: hp,
                   dmg: c.cur.dmg || 0, range: (c.cur.range || 3) + (passiveMod("noteRange") || 0),
                   chill: c.cur.chill || 0, sleep: c.cur.sleep || 0 });
@@ -9323,7 +9371,12 @@
     for (const key of Object.keys(player.skills || {})) {
       const st = player.skills[key], d = skillDef(key);
       if (!st || skillRank(key) < 1 || !d || d.kind === "passive") continue;   // passives are always-on, no button
-      bar.appendChild(makeSlot(d.icon, d.name, st.cd <= 0, st.cd > 0 ? st.cd : 0, pendingSkill === key, () => useSkill(key)));
+      const ch = skillCharges(key);
+      const ready = ch !== null ? ch > 0 : st.cd <= 0;
+      // Banked uses are the number that matters on a charge skill; the timer to the
+      // next one is only interesting when the rack is empty.
+      const badge = ch !== null ? (ch > 0 ? "\u00d7" + ch : (st.cd > 0 ? st.cd : 0)) : (st.cd > 0 ? st.cd : 0);
+      bar.appendChild(makeSlot(d.icon, d.name, ready, badge, pendingSkill === key, () => useSkill(key)));
     }
   }
 
@@ -9815,6 +9868,9 @@
     // test to measure zero.
     setHp: (n) => { player.hp = Math.max(1, Math.min(n == null ? player.maxHp : n, player.maxHp)); updateHUD(); return player.hp; },
     setCd: (k, n) => { const st = player.skills[k]; if (st) st.cd = Math.max(0, n | 0); updateHotbar(); return st ? st.cd : null; },
+    charges: (k) => skillCharges(k),
+    skillCd: (k) => { const st = player.skills[k]; return st ? st.cd : null; },
+    setCharges: (k, n) => { const st = player.skills[k]; if (st) st.charges = Math.max(0, n | 0); updateHotbar(); return skillCharges(k); },
     // What the floor map has to work with: how much of the level is rock, how much
     // of it is marked known, and whether anything walkable was left off the map
     // (which would strand auto-travel, since it only paths across explored tiles).

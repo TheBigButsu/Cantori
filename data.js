@@ -570,7 +570,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "tier": 1,
       "req": {
-        "STR": 10
+        "DEX": 10
       },
       "rarity": 40,
       "glyph": "}",
@@ -587,7 +587,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "tier": 2,
       "req": {
-        "STR": 11
+        "DEX": 11
       },
       "rarity": 28,
       "glyph": "}",
@@ -604,7 +604,7 @@ window.CANTORI_DATA = {
       "speed": 1,
       "tier": 3,
       "req": {
-        "STR": 12
+        "DEX": 12
       },
       "rarity": 18,
       "glyph": "}",
@@ -621,7 +621,7 @@ window.CANTORI_DATA = {
       "speed": 1.05,
       "tier": 4,
       "req": {
-        "STR": 13
+        "DEX": 13
       },
       "rarity": 10,
       "glyph": "}",
@@ -638,7 +638,7 @@ window.CANTORI_DATA = {
       "speed": 1.05,
       "tier": 5,
       "req": {
-        "STR": 14
+        "DEX": 14
       },
       "rarity": 4,
       "glyph": "}",
@@ -2975,45 +2975,45 @@ window.CANTORI_DATA = {
           "icon": "♪",
           "kind": "notecast",
           "innate": true,
-          "desc": "Hers from the first step, the way ToneTum always has his missile. Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it.",
+          "desc": "Hers from the first step, the way ToneTum always has his missile. Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it — and a note is only as sturdy as your LUCK, so it does not take much. Uses bank up to three, so you can lay a whole board at once and then wait for it.",
           "levels": [
-            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · 14 HP · 14 turn cooldown · known from the start",
-            "3 + ½DEX mod · 9 turns · 18 HP",
-            "4 + ½DEX mod · range 4 · 10 turns · 22 HP · 12 turn cooldown",
-            "5 + ½DEX mod · range 4 · 12 turns · 26 HP"
+            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · stores 3, one back every 45 turns · known from the start",
+            "3 + ½DEX mod · 9 turns · one back every 42",
+            "4 + ½DEX mod · range 4 · 10 turns · one back every 38",
+            "5 + ½DEX mod · range 4 · 12 turns · one back every 34"
           ],
           "ranks": [
             {
               "mp": 8,
-              "cd": 14,
+              "cd": 45,
               "dmg": 2,
               "range": 3,
               "turns": 8,
-              "hp": 14
+              "charges": 3
             },
             {
               "mp": 8,
-              "cd": 14,
+              "cd": 42,
               "dmg": 3,
               "range": 3,
               "turns": 9,
-              "hp": 18
+              "charges": 3
             },
             {
               "mp": 8,
-              "cd": 12,
+              "cd": 38,
               "dmg": 4,
               "range": 4,
               "turns": 10,
-              "hp": 22
+              "charges": 3
             },
             {
               "mp": 8,
-              "cd": 12,
+              "cd": 34,
               "dmg": 5,
               "range": 4,
               "turns": 12,
-              "hp": 26
+              "charges": 3
             }
           ],
           "req": []
@@ -3140,7 +3140,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 8,
-              "hp": 16,
               "chill": 6
             },
             {
@@ -3149,7 +3148,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 10,
-              "hp": 20,
               "chill": 9
             },
             {
@@ -3158,7 +3156,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 4,
               "turns": 12,
-              "hp": 24,
               "chill": 12
             },
             {
@@ -3167,7 +3164,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 5,
               "turns": 14,
-              "hp": 28,
               "chill": 16
             }
           ],
@@ -3188,9 +3184,9 @@ window.CANTORI_DATA = {
           "desc": "More than one line at a time. You may hold more notes on the board, and they stand up to more before they are smashed.",
           "levels": [
             "2 notes on the board at once.",
-            "2 notes, each with +6 hit points.",
-            "3 notes, each with +6 hit points.",
-            "3 notes, each with +14 hit points."
+            "2 notes, each with +2 hit points.",
+            "3 notes, each with +2 hit points.",
+            "3 notes, each with +4 hit points."
           ],
           "ranks": [
             {
@@ -3198,15 +3194,15 @@ window.CANTORI_DATA = {
             },
             {
               "noteCap": 1,
-              "noteHp": 6
+              "noteHp": 2
             },
             {
               "noteCap": 2,
-              "noteHp": 6
+              "noteHp": 2
             },
             {
               "noteCap": 2,
-              "noteHp": 14
+              "noteHp": 4
             }
           ],
           "req": [
@@ -3237,7 +3233,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 8,
-              "hp": 16,
               "sleep": 0.5
             },
             {
@@ -3246,7 +3241,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 3,
               "turns": 8,
-              "hp": 20,
               "sleep": 1
             },
             {
@@ -3255,7 +3249,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 4,
               "turns": 10,
-              "hp": 24,
               "sleep": 1
             },
             {
@@ -3264,7 +3257,6 @@ window.CANTORI_DATA = {
               "dmg": 0,
               "range": 4,
               "turns": 12,
-              "hp": 28,
               "sleep": 1
             }
           ],
@@ -3474,7 +3466,6 @@ window.CANTORI_DATA = {
               "dmg": 4,
               "range": 4,
               "turns": 10,
-              "hp": 20,
               "count": 3
             },
             {
@@ -3483,7 +3474,6 @@ window.CANTORI_DATA = {
               "dmg": 5,
               "range": 4,
               "turns": 12,
-              "hp": 24,
               "count": 3
             },
             {
@@ -3492,7 +3482,6 @@ window.CANTORI_DATA = {
               "dmg": 6,
               "range": 5,
               "turns": 14,
-              "hp": 28,
               "count": 4
             },
             {
@@ -3501,7 +3490,6 @@ window.CANTORI_DATA = {
               "dmg": 7,
               "range": 5,
               "turns": 16,
-              "hp": 32,
               "count": 4
             }
           ],
