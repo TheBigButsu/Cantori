@@ -3321,6 +3321,19 @@ It still dies to sustained attention, which is the point — but "attackable" ha
 mean *a decision about placement*, not *a rat walks over and the class stops
 working*.
 
+### Sharp Note is innate
+
+She has it from the first step, the way ToneTum always has Magic Missile. Without
+it her opening floor is a bow and nothing else, and the class does not exist until
+she finds a skill point — which is a strange thing to say about the node the whole
+character is built on.
+
+`innate` sets rank 1 at class pick and costs no point; `learnSkill` only gates on
+`rank >= max`, so unlike Magic Missile — a single-rank skill — Sharp Note is still
+bought up to 4 with points as normal. Verified: a fresh level-1 Sera has it at rank
+1 with zero unspent points, the hotbar reads `♪ Sharp Note` on turn one, and three
+points take it 1 → 2 → 3 → 4.
+
 ### Worth knowing
 
 The Horror clock and a turret class pull against each other — turrets reward

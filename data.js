@@ -2974,9 +2974,10 @@ window.CANTORI_DATA = {
           "name": "Sharp Note",
           "icon": "♪",
           "kind": "notecast",
-          "desc": "Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it.",
+          "innate": true,
+          "desc": "Hers from the first step, the way ToneTum always has his missile. Strike a note onto a tile you can see, at least two paces off. It hangs there and plucks at the nearest thing it can see, once a turn, until it runs out or something smashes it.",
           "levels": [
-            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · 14 HP · 14 turn cooldown",
+            "8 MP · 2 + ½DEX mod damage a turn · range 3 · 8 turns · 14 HP · 14 turn cooldown · known from the start",
             "3 + ½DEX mod · 9 turns · 18 HP",
             "4 + ½DEX mod · range 4 · 10 turns · 22 HP · 12 turn cooldown",
             "5 + ½DEX mod · range 4 · 12 turns · 26 HP"
