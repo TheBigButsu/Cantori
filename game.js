@@ -208,7 +208,7 @@
   // it bare-skinned, tier + plus in medium, none in light or heavy. See ARMOR_SUB.
   // Happy Feet is the first thing that adds AC from a passive, and the Meditate
   // afterglow the first that adds it on a timer.
-  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac");
+  const playerAC = () => AC_BASE + armorDexAllowed(mod("DEX")) + armorAC() + passiveMod("ac") + timedBonus("ac") + balladBonus();
   // Evasion is NOT armour class. AC is how hard you are to aim at; Evasion is
   // slipping a blow that was already aimed true — it is rolled AFTER the attack
   // roll has beaten your AC. Keeping them apart is what lets Ourn's Foresight
@@ -287,12 +287,14 @@
     statPoints: 0,
     mp: 5, maxMp: 5, lvlHp: 0, lvlAcc: 0, lvlEva: 0,   // per-level flat bonuses (class levelUp set)
     lvlEvaPct: 0, lvlRegenInt: 0, lvlMitMax: 0,        // per-level class progression (dodge %, mana-regen INT, block ceiling)
+    lvlNote: 0,                                        // ...and what Sera's levels add to every note
     regenAcc: 0, mpRegenAcc: 0,                        // fractional HP / MP regen carry-over
     killCount: 0,                                      // per-run kill counter (Compost Pile / Gift / Future Sight / Dilating Pupils / Pride)
     secondChanceUsed: false,                            // Maelon's Second Chance: consumed once
     boonAcc: 0, boonEva: 0, boonHaste: 0,               // permanent flat bonuses from kill-counter boons
     hasteBuff: 0,                                       // temporary % Haste from Speed of Light, decays 1/turn
     invisible: 0,                                       // turns left unseen (Scroll of Invisibility)
+    ward: 0, wardTurns: 0, wardReflect: 0,              // ToneTum's Ward: a shell that eats damage, and expires
   };
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   // Equipment slots: cat -> which player field(s) it fills.
@@ -312,7 +314,7 @@
     player.inv = []; player.gold = 0;
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
-    player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0;
+    player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0; player.lvlNote = 0;
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -320,6 +322,7 @@
     player.stun = 0;                           // turns you're dazed (e.g. slammed into a wall) — actions are wasted
     player.rage = null;                        // Raging Smite's temporary STR/VIT
     player.shield = 0;                         // Healing Smite's overflow
+    player.ward = 0; player.wardTurns = 0; player.wardReflect = 0;   // ToneTum's Ward
     clearHexes();                              // the crypt's songs don't survive a death
     player.burn = null; player.poison = 0;     // nor does anything still burning in you
     player.toxin = 0; player.para = 0;         // nor a draught still working through you
@@ -359,6 +362,13 @@
   let decoys = [];
   const DECOY_TURNS = 30;
   const decoyAt = (x, y) => decoys.find((dc) => dc.x === x && dc.y === y) || null;
+  // Sera's notes. A fourth kind of thing on the board, built on exactly the shape
+  // decoys established — its own list, its own tick, its own draw pass, cleared
+  // per floor — with the two differences that make it a turret rather than a
+  // feint: it SHOOTS on its turn, and it has hit points, so a monster that reaches
+  // it can silence it. A note you could not kill would be free damage forever.
+  let notes = [];
+  const noteAt = (x, y) => notes.find((n) => n.x === x && n.y === y) || null;
   let pullZone = null;    // Kethara's Faith's Pull: { x, y, turns } — pulls monster pathing to its center
   let biomeScrollFloors = null;   // Set of 2 floor-in-biome numbers (1-5) that guarantee a Scroll of Upgrade this biome
   let bossRoom = null;            // the room the current floor's boss occupies (its exit opens on the nearest wall, not the death tile)
@@ -1582,6 +1592,36 @@
         if (map[y][x] === FLOOR && reach.has(y * MAP_W + x)) return true;
     return false;
   }
+  // A vault's promise is one line: brambles are the only way in. Everything that
+  // digs after makeThornVaults can breach that sideways — the loop pass did it head
+  // on, and fixOpenCorners does it by opening a wall cell when neither floor cell of
+  // an open corner is safe to solidify. Teaching each pass about brambles caught the
+  // ones we knew about and missed the next one, so instead the invariant is simply
+  // restated last: if a vault interior became reachable torch-free, put THORN back
+  // across every opening it now has (the breach included, since roomOpenings finds
+  // it). Reverted whole if that would strand a room or the stairs — a vault is
+  // always optional, and that outranks it being sealed.
+  function resealVaults(rooms, restricted) {
+    if (!restricted || !restricted.size) return;
+    const stairs = findStairs();
+    for (const i of restricted) {
+      const r = rooms[i];
+      if (!r || !interiorReachableTorchFree(r)) continue;      // still sealed
+      const openings = roomOpenings(r);
+      if (!openings.length) continue;
+      const saved = openings.map(([x, y]) => map[y][x]);
+      for (const [x, y] of openings) map[y][x] = THORN;
+      const reach = floodReach(player.x, player.y, true);
+      let ok = !interiorReachableTorchFree(r);
+      if (ok && stairs && !reach.has(stairs.y * MAP_W + stairs.x)) ok = false;
+      for (let j = 0; j < rooms.length && ok; j++) {
+        if (j === i) continue;
+        const c = roomCenter(rooms[j]);
+        if (!reach.has(c.y * MAP_W + c.x)) ok = false;
+      }
+      if (!ok) openings.forEach(([x, y], o) => { map[y][x] = saved[o]; });
+    }
+  }
   // Tiles reachable from (sx,sy) by real movement (8-dir + corner rule). When
   // blockThorns is true, brambles count as walls — i.e. reachable WITHOUT a torch.
   function floodReach(sx, sy, blockThorns) {
@@ -1646,6 +1686,7 @@
           for (const [ox, oy] of openCells) {
             if (map[oy][ox] !== FLOOR) continue;   // never wall over a door threshold
             if ((ox === player.x && oy === player.y) || monsterAt(ox, oy) || itemAt(ox, oy)) continue;  // never bury an occupant
+            if (secretApproach.has(oy * MAP_W + ox)) continue;   // nor the only ground a hidden door opens onto
             map[oy][ox] = WALL;
             if (allRoomsReachable(rooms, anchor.x, anchor.y)) { fixed = true; break; }
             map[oy][ox] = FLOOR;
@@ -1944,12 +1985,13 @@
     items = [];
     traps = [];
     decoys = [];
+    notes = [];
     turns = 0;
     sarcophagi = new Set();
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
     // run that pass, so a door found on the last floor would otherwise stay in the
     // list pointing at a tile that is now something else entirely.
-    secretDoors = []; secretsHinted = new Set();
+    secretDoors = []; secretsHinted = new Set(); secretApproach = new Set();
     auraSig = "";                              // whatever field you stood in is a floor behind you
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
 
@@ -2104,6 +2146,7 @@
     resolveDeadEnds(rooms);
     addLoops(rooms);
     resolveDeadEnds(rooms);
+    resealVaults(rooms, restricted);   // last word: brambles are the only way into a vault
     if (!isBossDepth(depth)) placeTraps();             // hidden traps (never on a boss floor)
     placeTorches(rooms, restricted, countThorns());   // 1 torch per thorn on the level
     genStats = computeFill(rooms);
@@ -2137,12 +2180,13 @@
     items = [];
     traps = [];
     decoys = [];
+    notes = [];
     turns = 0;
     sarcophagi = new Set();
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
     // run that pass, so a door found on the last floor would otherwise stay in the
     // list pointing at a tile that is now something else entirely.
-    secretDoors = []; secretsHinted = new Set();
+    secretDoors = []; secretsHinted = new Set(); secretApproach = new Set();
     auraSig = "";
     horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
     bossActive = false;
@@ -2262,6 +2306,17 @@
   const LOBE_GAIN_MIN = 2;     // ...and only if the short cut actually saves steps
   const LOBE_BRIDGES = 5;      // per floor — past this the floor reads as swiss cheese
   const tkey = (x, y) => y * MAP_W + x;
+  // Everything you can reach WITHOUT walking through brambles. Both passes below
+  // must leave the other side of that line alone.
+  //
+  // makeThornVaults guarantees a vault interior is unreachable torch-free — that
+  // invariant is the whole point of a vault, and both passes here flood with
+  // thorns treated as walkable, so to them a sealed vault is just "a wing behind
+  // one tile". The loop pass duly dug a tunnel straight into it. Measured over 80
+  // floors: 39% of all thorn tiles gated nothing at all afterwards, and on 15 of
+  // 29 thorny floors EVERY thorn was pointless — you spend a torch, or take 5-10
+  // damage, to enter a room you could have walked into. It was 0% before.
+  const torchFreeSet = () => floodReach(player.x, player.y, true);
   // Articulation points of the walkable 8-graph — the tiles you can be shut in by.
   // Tarjan, iterative because a floor's spanning tree is ~1,000 deep and recursion
   // at that depth is a stack overflow on a phone. One pass, so this is cheap; the
@@ -2324,6 +2379,7 @@
   // player happened to be standing in the nook.
   function findLobes() {
     const full = floodReach(player.x, player.y, false);
+    const tf = torchFreeSet();
     const out = [], claimed = new Set();
     for (const k of articulationTiles(player.x, player.y)) {
       const parts = sidesWithout(full, k);
@@ -2331,6 +2387,11 @@
       parts.sort((a, b) => a.length - b.length);
       const small = parts[0];
       if (small.length < LOBE_MIN) continue;
+      // EVERY tile, not some: a wing that merely contains a vault is still a wing
+      // worth looping, and skipping those cost more than it bought (walkable ground
+      // behind one tile went 6% back up to 19%). What must not happen is a tunnel
+      // ACROSS the bramble line, and bridgeLobe refuses that pair by pair.
+      if (small.every((q) => !tf.has(q))) continue;     // the vault itself: not ours to open
       if (small.some((q) => claimed.has(q))) continue;
       for (const q of small) claimed.add(q);
       out.push({ mouth: { x: k % MAP_W, y: (k - (k % MAP_W)) / MAP_W }, tiles: small });
@@ -2384,6 +2445,7 @@
   function bridgeLobe(lobe) {
     const inLobe = new Set(lobe.tiles);
     const dist = walkDistances(lobe.mouth.x, lobe.mouth.y);
+    const tf = torchFreeSet();
     let best = null;
     for (const ak of lobe.tiles) {
       const ax = ak % MAP_W, ay = (ak - (ak % MAP_W)) / MAP_W;
@@ -2397,6 +2459,9 @@
           if (inLobe.has(bk) || (bx === lobe.mouth.x && by === lobe.mouth.y)) continue;
           const db = dist.get(bk);
           if (db == null) continue;
+          // A tunnel that crosses the bramble line unseals a vault. Belt and braces
+          // with the findLobes check above, because resolveDeadEnds also calls this.
+          if (tf.has(ak) !== tf.has(bk)) continue;
           for (const horizFirst of [true, false]) {
             const rock = tunnelRock(ax, ay, bx, by, horizFirst);
             if (!rock || !rock.length || rock.length > LOBE_TUNNEL_MAX) continue;
@@ -2424,15 +2489,41 @@
     for (let i = 0; i < LOBE_BRIDGES; i++) {
       const lobes = findLobes();
       if (!lobes.length) break;
+      // What brambles are gating right now. Nothing this round may shrink it.
+      // Only a floor that HAS a vault pays for the snapshot below.
+      const tfBefore = torchFreeSet();
+      const gated = [];
+      for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+        if (passable(x, y) && !tfBefore.has(tkey(x, y))) gated.push(tkey(x, y));
+      }
       let dug = false;
       for (const lobe of lobes) if (bridgeLobe(lobe)) { dug = true; break; }
       if (!dug) break;
       // fixOpenCorners can wall a tile, so it gets its say BEFORE the next scan
       // reads the map — otherwise we would be bridging a floor plan that is about
       // to change under us.
+      const preFix = gated.length ? map.map((r) => r.slice()) : null;
       fixOpenCorners(rooms);
+      // It can also OPEN a wall cell, when neither floor cell of an open corner is
+      // safe to solidify — and beside a vault that punches the bramble seal open
+      // sideways. Put back exactly what it opened and nothing else: the tunnel is
+      // never the culprit, because bridgeLobe refuses a pair that crosses the
+      // bramble line. Undoing the whole round instead threw away a good tunnel
+      // somewhere else on the floor and tripled the ground left behind one tile.
+      // What survives is a cosmetic diagonal-only touch, on about 1 floor in 20 —
+      // a far smaller price than a vault you can walk into.
+      if (preFix) {
+        const tfAfter = torchFreeSet();
+        if (gated.some((k) => tfAfter.has(k))) {
+          for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+            if (preFix[y][x] === WALL && map[y][x] !== WALL) map[y][x] = WALL;
+          }
+        }
+      }
     }
   }
+
+
 
   // ---- Dead ends: seal them, or make them worth walking ---------------------
   //
@@ -2460,7 +2551,19 @@
   // most — the forest is largely made of it, and testing for FLOOR alone made every
   // grassy dead end invisible to both passes below, which is exactly the kind the
   // player walked into. Stairs and doorways are never touched.
-  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR;
+  // THORN is excluded even though it is walkable: brambles are a placed gate with a
+  // torch budget counted against them, so walling one over strands a torch and
+  // leaves the vault behind it with no way in.
+  const sealableTile = (x, y) => passable(x, y) && map[y][x] !== STAIRS && map[y][x] !== DOOR && map[y][x] !== THORN && !besideSecret(x, y);
+  // The nook a hidden room was dug off is no longer a pointless nook: it is the
+  // antechamber. Filling it on a later sweep walled the player away from the very
+  // door just carved — measured, 58% of secret doors had no reachable ground beside
+  // them at all, which is every bit of "I searched and found nothing worth it".
+  const besideSecret = (x, y) => secretApproach.has(y * MAP_W + x) || secretDoors.some((d) => cheb(d.x, d.y, x, y) === 1);
+  // Every tile of the nook a hidden room was dug off, not just the one against the
+  // door: guarding a single tile still let a later sweep seal the path leading TO
+  // it, which strands the room and its loot behind a door nobody can stand next to.
+  let secretApproach = new Set();
   function deadEndTiles(rooms) {
     const inRoom = (x, y) => rooms.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
     const out = [];
@@ -2502,7 +2605,21 @@
     const cx = doorX + dx + (dx !== 0 ? 0 : shift), cy = doorY + dy + (dy !== 0 ? 0 : shift);
     const rx = (dx !== 0 ? cx - (dx < 0 ? size - 1 : 0) : cx - half);
     const ry = (dy !== 0 ? cy - (dy < 0 ? size - 1 : 0) : cy - half);
-    const rect = { x: rx + (dx !== 0 ? 0 : 0), y: ry + (dy !== 0 ? shift : 0), w: size, h: size };
+    const rect = { x: rx, y: ry, w: size, h: size };
+    // The shift is already folded into cx/cy above — adding it to y again here (the
+    // old `ry + (dy !== 0 ? shift : 0)`) pushed a vertical chamber a tile clear of
+    // its own door, so the wall gave way onto solid rock. Rather than trust the
+    // arithmetic across every size/shift/direction combination, assert what actually
+    // matters: the door has to be orthogonally against the chamber. Measured before
+    // this, 20% of secret doors were not (and size 2 with a shift missed on the
+    // horizontal axis too, which the vertical fix alone would have left in place).
+    // Failing here just moves on to the next size/shift the caller offers.
+    let touches = false;
+    for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = doorX + ax, ny = doorY + ay;
+      if (nx >= rect.x && nx < rect.x + rect.w && ny >= rect.y && ny < rect.y + rect.h) touches = true;
+    }
+    if (!touches) return null;
     // Everything the chamber will occupy, plus a one-tile skin around it, has to be
     // solid rock right now — otherwise it would open onto the floor somewhere else
     // and stop being secret.
@@ -2557,6 +2674,7 @@
     const start = { x: player.x, y: player.y };
     const stairs = findStairs();
     const full = floodReach(start.x, start.y, false);
+    const tf = torchFreeSet();
     const pockets = [], claimed = new Set();
     for (const k of articulationTiles(start.x, start.y)) {
       const parts = sidesWithout(full, k);
@@ -2564,6 +2682,7 @@
       parts.sort((a, b) => a.length - b.length);
       const small = parts[0];
       if (!small.length || small.length > POCKET_MAX) continue;   // a whole wing is not a nook
+      if (small.some((q) => !tf.has(q))) continue;                // a vault is not a nook either
       if (small.some((q) => claimed.has(q))) continue;
       let skip = false;
       const tiles = [];
@@ -2635,10 +2754,12 @@
         const found = secretFromPocket(pk);
         if (found) {
           secretDoors.push({ x: found.door.x, y: found.door.y, room: found.room });
+          for (const t of pk.tiles) secretApproach.add(t.y * MAP_W + t.x);
           stockSecretRoom(found.room);
           continue;
         }
       }
+      if (pk.tiles.some((t) => besideSecret(t.x, t.y))) continue;   // the antechamber of a hidden room
       // Sealing is refused when the nook is load-bearing — almost always a small
       // ROOM that happens to be a dead end, and deleting a room is not on the
       // table. Give it a second door instead: that is the same answer the loop
@@ -2654,6 +2775,7 @@
         const rect = carveSecretRoom(end);
         if (rect) {
           secretDoors.push({ x: end.x + end.dir[0], y: end.y + end.dir[1], room: rect });
+          secretApproach.add(end.y * MAP_W + end.x);
           stockSecretRoom(rect);
           continue;                                     // this one earns its walk
         }
@@ -3612,7 +3734,37 @@
     o = o || {};
     dmg = Math.round(dmg * (1 - resReduction()));
     if (!o.noArmor) dmg -= armorBlock();
-    return Math.max(1, dmg);
+    dmg = Math.max(1, dmg);
+    // Rung 5 and 6, both of them yours rather than your gear's, and both able to
+    // take a blow to nothing — which is the only reason either is worth a tier-4
+    // or tier-5 node. The 1-damage floor above still applies to everything the
+    // ARMOUR did; what a spell or a skill eats after that is allowed to be all of it.
+    //
+    // The Ward goes first: it is a shell around you, so it is what the blow meets.
+    if (player.ward > 0 && dmg > 0) {
+      const soak = Math.min(player.ward, dmg);
+      player.ward -= soak; dmg -= soak;
+      floatText(player.x, player.y, "ward " + soak, "#bfe0ff");
+      // Rank 4 sends it back. Only at whatever swung — a trap has nothing to
+      // answer to — and the ward has already paid for it, so it is not free damage.
+      if (player.wardReflect && o.from && o.from.hp > 0) {
+        o.from.hp -= soak; flash(o.from);
+        floatText(o.from.x, o.from.y, "-" + soak, "#bfe0ff");
+        if (o.from.hp <= 0) killMonster(o.from, "is thrown back and broken");
+      }
+      if (player.ward <= 0) { player.ward = 0; player.wardTurns = 0; log("Your ward shatters.", "hurt"); }
+    }
+    // Body of Iron: a share of what is left comes out of MP instead of HP. Capped
+    // by the MP you actually have, so it degrades into nothing rather than failing.
+    const soakPct = passiveMod("mpSoak");
+    if (soakPct > 0 && dmg > 0 && player.mp > 0) {
+      const paid = Math.min(player.mp, Math.round(dmg * soakPct / 100));
+      if (paid > 0) {
+        player.mp -= paid; dmg -= paid;
+        floatText(player.x, player.y, "-" + paid + " MP", "#7fb2ff");
+      }
+    }
+    return Math.max(0, dmg);
   }
   // The whole ladder from `rung` down. `o.acc` is the attacker's to-hit, needed only
   // at rung 1; `o.noArmor` drops rung 4. Returns the damage that lands, or 0 for a
@@ -3628,6 +3780,7 @@
     if (rung <= DMG_EVADE && Math.random() < dodgeChance()) {
       floatText(player.x, player.y, "dodge", "#9ad0ff");
       if (o.dodgeMsg) log(o.dodgeMsg, "hit");
+      riposte(o.from);          // Brynn: a dodge is an opening, if she has bought one
       return 0;
     }
     return mitigateDamage(dmg, o);
@@ -3732,10 +3885,13 @@
       // "with no floor", so a low-STR character on a weak weapon really could get
       // there. Rolling STR rather than adding it flat lowers the bottom end, which
       // is what brought this within reach rather than merely theoretical.
-      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg") + timedBonus("dmg"));
+      let dmg = Math.max(1, randInt(weaponDmgMin(), weaponDmgMax()) + strDmgRoll() + player.atkBonus + bonus + passiveMod("dmg") + timedBonus("dmg") + balladBonus());
       // The per-square multiplier lands BEFORE the crit, so a critical Dragon Kick
       // multiplies the whole run-up rather than one square of it.
       if (opts && opts.per > 0) dmg = Math.max(1, (dmg - (opts.full ? 0 : 1)) * opts.per);
+      // A flat multiplier on the blow, used by Riposte (a fraction) and Sneak
+      // Attack (a multiple). Separate from `per`, which is Dragon Kick's run-up.
+      if (opts && opts.mult != null) dmg = Math.max(1, Math.round(dmg * opts.mult));
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
@@ -3746,6 +3902,31 @@
         : pinned ? "Wedged in the " + doorWordOne() + ", the "
         : "You strike the ";
       if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
+      // Pressure Point: a passive rider, gated `when: "unarmed"` in the data, so
+      // passiveMod already returns 0 the moment she picks a weapon up. Applied
+      // after the damage rather than before, because a stun on something already
+      // dead is a wasted proc and reads as one.
+      const ppct = passiveMod("stunPct");
+      if (ppct > 0 && target.hp > 0 && Math.random() < ppct / 100) {
+        target.stun = (target.stun || 0) + Math.max(1, passiveMod("stunTurns") || 1);
+        floatText(target.x, target.y, "stun!", "#cfe6ff");
+        log("You find the nerve — the " + monName(target) + " seizes up.", "hit");
+      }
+      // Sneak Attack's payout: damage spent past what the kill needed buys back
+      // the dark. Overkill only, so it rewards picking the right target rather
+      // than hitting the biggest thing on the floor.
+      if (opts && opts.sneak && opts.invisPer > 0) {
+        const over = Math.max(0, -target.hp);          // hp is already decremented, so this IS the overkill
+        // Capped. Uncapped it paid ~30 turns for one overkilled rat, because
+        // overkill against something small is most of the blow — the payout has to
+        // be "enough to reposition", not "the floor is now optional".
+        const gain = Math.min(opts.invisCap || 12, Math.floor(over / opts.invisPer));
+        if (gain > 0) {
+          player.invisible = Math.max(player.invisible || 0, gain + 1);
+          floatText(player.x, player.y, "\u25cc " + gain, "#bfe0ff");
+          log("You are gone before it falls. (" + gain + " turns unseen)", "hit");
+        }
+      }
       // Maelon's Merciful End: an execute threshold on a connecting hit.
       if (target.hp > 0 && player.boons && player.boons.has("merciful") && target.hp / target.maxHp < player.level / 100) {
         target.hp = 0; floatText(target.x, target.y, "EXECUTED", "#e0685a");
@@ -3770,6 +3951,7 @@
       // An ordinary blow enters the ladder at the top — see incomingDamage().
       let dmg = incomingDamage(randInt(attacker.atkMin, attacker.atkMax), DMG_TOHIT, {
         acc: attacker.toHit != null ? attacker.toHit : MON_TOHIT,
+        from: attacker,                 // Riposte needs to know what to hit back
         missMsg: "You evade the " + monName(attacker) + ".",
         dodgeMsg: "You slip aside from the " + monName(attacker) + "'s blow.",
       });
@@ -4056,6 +4238,7 @@
       if (pr.toHitEvenLevels && player.level % 2 === 0) { player.lvlAcc += pr.toHitEvenLevels; grew.push("+" + pr.toHitEvenLevels + " to hit"); }
       if (pr.evaPctEvenLevels && player.level % 2 === 0) { player.lvlEvaPct += pr.evaPctEvenLevels; grew.push("+" + pr.evaPctEvenLevels + "% evade"); }
       if (pr.mitMaxOddLevels && player.level % 2 === 1) { player.lvlMitMax = (player.lvlMitMax || 0) + pr.mitMaxOddLevels; grew.push("+" + pr.mitMaxOddLevels + " max block"); }
+      if (pr.noteDmgEvenLevels && player.level % 2 === 0) { player.lvlNote = (player.lvlNote || 0) + pr.noteDmgEvenLevels; grew.push("+" + pr.noteDmgEvenLevels + " note dmg"); }
       if (pr.mpRegenIntPerLevel) {
         player.lvlRegenInt = +((player.lvlRegenInt || 0) + pr.mpRegenIntPerLevel).toFixed(2);
         grew.push("mana regen INT " + (mod("INT") + player.lvlRegenInt).toFixed(1));
@@ -4365,7 +4548,10 @@
   // faster than you can answer.
   const monSpeed = (m, axis) => {
     const v = m[axis] != null ? m[axis] : m.speed;
-    return v > 0 ? v : 1;
+    // Frost Nova: chilled things move and swing at half their clip. Applied here
+    // rather than by editing m.speed, so it is one place, it cannot leak into the
+    // data row, and it lifts by itself when the counter runs out.
+    return (v > 0 ? v : 1) * (m.chill > 0 ? 0.5 : 1);
   };
   const monWalkSpeed = (m) => monSpeed(m, "walkSpeed");
   const monAtkSpeed = (m) => monSpeed(m, "attackSpeed");
@@ -4715,6 +4901,12 @@
     // an image that pulled monsters across the room would be a wall, not a feint.
     const near = nearestDecoy(m.x, m.y, 1);
     if (near) { strikeDecoy(m, near); return; }
+    // A note beside it is a nuisance it wants gone, and it gets priority over you
+    // for the same reason the decoy does: it is the thing actually hurting it.
+    // Adjacency only, so a note is silenced by something reaching it rather than
+    // by something noticing it across the room.
+    const nn = nearestNote(m.x, m.y, 1);
+    if (nn) { strikeNote(m, nn); return; }
     const d = cheb(m.x, m.y, player.x, player.y);
     if (d === 1) { attack(m, player); return; }
     if (m.ranged && d <= (m.range || 4) && lineOfSight(m.x, m.y, player.x, player.y)) { spawnProjectile(m.x, m.y, player.x, player.y, m.color || "#e0d0a0"); attack(m, player); return; }
@@ -5005,6 +5197,154 @@
     floatText(dc.x, dc.y, "shatters", "#9ad0ff");
     log("The " + monName(m) + " strikes an image of you — it bursts like glass.");
   }
+  function nearestNote(x, y, within) {
+    let best = null, bd = Infinity;
+    for (const n of notes) {
+      const d = cheb(x, y, n.x, n.y);
+      if (d <= within && d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+  // Unlike a decoy, a note takes the blow and may survive it. That is what makes
+  // placement a decision: a note dropped next to a bear is silenced next turn, and
+  // that is the placement being bad rather than the skill being bad.
+  function strikeNote(m, n) {
+    bump(m, n.x, n.y);
+    const dmg = randInt(m.atkMin, m.atkMax);
+    n.hp -= dmg;
+    flash(n);
+    floatText(n.x, n.y, "-" + dmg, "#ff8f84");
+    if (n.hp <= 0) {
+      notes = notes.filter((o) => o !== n);
+      spawnBurst(n.x, n.y, "#f2c76a");
+      log("The " + monName(m) + " smashes the note flat — it goes silent.", "hurt");
+    } else {
+      log("The " + monName(m) + " strikes at the note.");
+    }
+  }
+  // What a note is worth on the turn it fires: its rank's base, her DEX, whatever
+  // her levels bought, and Crescendo's reward for having placed it early.
+  // Deliberately NOT the full DEX modifier, and deliberately a slow level dial.
+  // A turret fires every turn without costing her one, so every term here is
+  // multiplied by however many notes are on the board and then by the whole fight.
+  // At full investment and level 20 this is about 18 a note, three notes, ~54 a
+  // turn — roughly one good bow shot's worth spread across the room, which is the
+  // budget a passive damage source gets. The first pass put it at 128 a turn from
+  // TWO notes, which is not a class, it is a cheat code.
+  function noteDamage(n) {
+    const cres = passiveMod("crescendo");
+    const aged = cres ? Math.min(cres, Math.floor((n.age || 0) / 3)) : 0;
+    return Math.max(1, (n.dmg || 1) + Math.floor(mod("DEX") / 2) + Math.floor(player.lvlNote || 0) + aged);
+  }
+  // Notes act, once per world turn, after the player and before the monsters. Each
+  // picks the nearest thing it can SEE inside its range — the same rule the slime
+  // auras are held to, because damage arriving from something two corners away in
+  // an unlit room is a bug report rather than a mechanic.
+  function noteTick() {
+    if (!notes.length) return;
+    const alive = [];
+    for (const n of notes) {
+      n.age = (n.age || 0) + 1;
+      if (--n.turns <= 0) { spawnBurst(n.x, n.y, "#f2c76a"); floatText(n.x, n.y, "\u266a", "#f2c76a"); continue; }
+      alive.push(n);
+    }
+    notes = alive;
+    const shots = 1 + (passiveMod("noteShots") || 0);
+    for (let pass = 0; pass < shots; pass++) {
+      for (const n of notes.slice()) {
+        let tgt = null, td = Infinity;
+        for (const m of monsters) {
+          if (m.hp <= 0) continue;
+          const d = cheb(n.x, n.y, m.x, m.y);
+          if (d > n.range || d >= td) continue;
+          if (!lineOfSight(n.x, n.y, m.x, m.y)) continue;
+          td = d; tgt = m;
+        }
+        if (!tgt) continue;
+        if (n.chill) {
+          // Dissonance: no damage, it just drags on everything it can reach.
+          for (const m of monsters) {
+            if (m.hp <= 0 || cheb(n.x, n.y, m.x, m.y) > n.range) continue;
+            if (!lineOfSight(n.x, n.y, m.x, m.y)) continue;
+            m.chill = Math.max(m.chill || 0, n.chill);
+            floatText(m.x, m.y, "\u2744", "#9fd8ff");
+          }
+          continue;
+        }
+        if (n.sleep) {
+          // Lullaby: the same threshold Sleep uses, applied by the note rather than
+          // by her — so it keeps working while she is somewhere else entirely.
+          if (!tgt.magicSleep && tgt.hp <= eff("INT") * n.sleep) {
+            tgt.magicSleep = SLEEP_TURNS; setState(tgt, SLEEPING); tgt.aware = false; tgt.target = null;
+            floatText(tgt.x, tgt.y, "\ud83d\udca4", "#bfa8e0");
+          }
+          continue;
+        }
+        const dmg = noteDamage(n);
+        spawnProjectile(n.x, n.y, tgt.x, tgt.y, "#f2c76a");
+        tgt.hp -= dmg; flash(tgt);
+        floatText(tgt.x, tgt.y, "-" + dmg, "#f2c76a");
+        startHunting(tgt);
+        if (tgt.hp <= 0) killMonster(tgt, "is struck silent");
+      }
+    }
+    chordTick();
+    // Cadence — only while something is actually ringing, so it is an engine that
+    // runs on her playing rather than a flat regen bonus wearing a hat.
+    const cad = passiveMod("cadence");
+    if (cad > 0 && notes.length && player.mp < player.maxMp) {
+      const back = Math.min(cad, player.maxMp - player.mp);
+      player.mp += back;
+      if (back > 0) floatText(player.x, player.y, "+" + back + " MP", "#7fb2ff");
+    }
+  }
+  // Chord: two notes on the board are not two turrets, they are a line. Anything
+  // standing on the segment between any pair takes the lower of the two notes'
+  // damage. It is what turns placement from "near the enemy" into "across the path".
+  function chordLine(a, b) {
+    const out = [];
+    let x = a.x, y = a.y, guard = 0;
+    const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y);
+    const sx = x < b.x ? 1 : -1, sy = y < b.y ? 1 : -1;
+    let err = dx - dy;
+    while ((x !== b.x || y !== b.y) && guard++ < 120) {
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+      if (x === b.x && y === b.y) break;
+      out.push({ x, y });
+    }
+    return out;
+  }
+  function chordTick() {
+    if (!passiveMod("chord") || notes.length < 2) return;
+    const seen = new Set();
+    for (let i = 0; i < notes.length; i++) {
+      for (let j = i + 1; j < notes.length; j++) {
+        const a = notes[i], b = notes[j];
+        if (a.chill || a.sleep || b.chill || b.sleep) continue;   // only singing notes carry a line
+        if (cheb(a.x, a.y, b.x, b.y) > a.range + b.range) continue;
+        for (const t of chordLine(a, b)) {
+          const m = monsterAt(t.x, t.y);
+          if (!m || m.hp <= 0 || seen.has(m)) continue;
+          seen.add(m);
+          const dmg = Math.max(1, Math.round(Math.min(noteDamage(a), noteDamage(b)) * 0.5));
+          m.hp -= dmg; flash(m);
+          floatText(m.x, m.y, "-" + dmg, "#ffd98a");
+          startHunting(m);
+          if (m.hp <= 0) killMonster(m, "is cut apart by the chord");
+        }
+      }
+    }
+  }
+  // Ballad: the aura system reads monsters only, so Sera's is its own two lines
+  // rather than a generalisation nothing else would use.
+  const balladBonus = () => {
+    const b = passiveMod("ballad");
+    if (!b) return 0;
+    for (const n of notes) if (cheb(n.x, n.y, player.x, player.y) <= 2) return b;
+    return 0;
+  };
   // Decoys age out, and the roaming ones drift a tile at a time.
   function decoyTick() {
     if (!decoys.length) return;
@@ -5094,6 +5434,22 @@
       if (canStep(m.x, m.y, dx, dy, m) && !shuns(nx, ny) && !monsterAt(nx, ny) && !(nx === player.x && ny === player.y)) moveMonster(m, nx, ny);
       return;
     }
+    if (m.chill > 0) m.chill--;
+    // Dominated: it has a side now. Unlike berserk it never weighs the player as a
+    // target at all — it goes for the nearest OTHER monster and waits if there is
+    // none, which is what separates "it fights for you" from "it fights everyone".
+    if (m.dominated) {
+      let nearest = null, nd = Infinity;
+      for (const o of monsters) {
+        if (o === m || o.hp <= 0 || o.dominated || o.type === "healing_node") continue;
+        const dd = cheb(m.x, m.y, o.x, o.y);
+        if (dd < nd) { nd = dd; nearest = o; }
+      }
+      if (!nearest) return;                       // nothing to fight: it holds station
+      if (nd === 1) { monsterVsMonster(m, nearest); return; }
+      stepMonsterTo(m, nearest.x, nearest.y);
+      return;
+    }
     // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just you.
     if (m.berserk > 0) {
       m.berserk--;
@@ -5179,6 +5535,7 @@
     if (player.invisible > 0 && --player.invisible <= 0) endInvisible("The air around you settles — you're visible again.");
     if (player.retribution && --player.retribution.turns <= 0) { player.retribution = null; log("Your guard drops."); }
     if (player.zen && --player.zen.turns <= 0) { player.zen = null; log("The stillness fades from your limbs."); }
+    if (player.wardTurns > 0 && --player.wardTurns <= 0 && player.ward > 0) { player.ward = 0; log("Your ward fades."); }
     if (player.unseen && --player.unseen.turns <= 0) { player.unseen = null; log("The edge you brought out of the dark dulls."); }
     dragonEncoreTick();
     rageTick();
@@ -5257,6 +5614,7 @@
     healQueueTick();
     searchForTraps();
     decoyTick();
+    noteTick();       // her turrets take their turn after her and before the monsters
     maybeReinforce();
     maybeHorror();
     updateHotbar();
@@ -5378,6 +5736,16 @@
       if (pk === "blinkcast") {
         if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); return; }
         executeBlink(pendingSkill, tx, ty);
+        return;
+      }
+      if (pk === "frostcast") { executeFrostNova(pendingSkill, tx, ty); return; }   // a tile, not a monster
+      if (pk === "notecast") { placeNote(pendingSkill, tx, ty, null); return; }     // ...and so is a note
+      if (pk === "symphony") { placeNote(pendingSkill, tx, ty, { spread: (skillCur(pendingSkill) || {}).count || 3 }); return; }
+      if (pk === "sneakcast" || pk === "dominatecast") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty)) { log("No target there."); return; }
+        if (pk === "sneakcast") executeSneakAttack(pendingSkill, tx, ty);
+        else executeDominate(pendingSkill, tx, ty);
         return;
       }
     }
@@ -5699,6 +6067,32 @@
     ctx.beginPath(); ctx.arc(px + t * 0.5, py + t * 0.40, t * 0.09, 0, Math.PI * 2); ctx.fill();
     ctx.fillRect(px + t * 0.42, py + t * 0.50, t * 0.16, t * 0.30);
   }
+  // A wall the player has been TOLD sounds hollow. The log line scrolls away after
+  // four more messages; the wall does not, and a clue you have to remember is not a
+  // clue. Drawn over whatever the biome's wall sprite is — a chalk ring and a
+  // sparkle read on tree bark as well as on stone, which a recoloured tile would
+  // not. Only ever shown for a door still unfound: searchHere drops it from
+  // secretDoors, and the mark goes with it.
+  function drawSecretHint(px, py, now) {
+    const t = tile;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 380);
+    const cx = px + t * 0.5, cy = py + t * 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.35 * pulse;
+    ctx.strokeStyle = "#f0c14b";
+    ctx.lineWidth = Math.max(1, t * 0.07);
+    ctx.beginPath(); ctx.arc(cx, cy, t * 0.30, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 0.65 + 0.35 * pulse;
+    ctx.fillStyle = "#ffe9a8";
+    const r = t * 0.17;                                   // a four-point sparkle
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r); ctx.quadraticCurveTo(cx, cy, cx + r, cy);
+    ctx.quadraticCurveTo(cx, cy, cx, cy + r); ctx.quadraticCurveTo(cx, cy, cx - r, cy);
+    ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+    ctx.fill();
+    ctx.restore();
+  }
+  const hintedSecretAt = (x, y) => secretsHinted.has(y * MAP_W + x) && secretDoors.some((d) => d.x === x && d.y === y);
   function drawGrass(px, py, b) { ctx.fillStyle = shade("#3a6b2e", b); ctx.fillRect(px, py, tile, tile); }
   // Wall-mounted torch: a bracket and a flickering flame, with a soft glow pool.
   function drawTorch(px, py, b, now) {
@@ -6085,6 +6479,7 @@
         if (t === WALL) {
           if (sarcophagi.has(my * MAP_W + mx)) drawSarcophagus(px, py, b);
           else if (!drawImg(SPRITES[biome.wall], px, py)) { ctx.fillStyle = shade(COL.wallFace, b); ctx.fillRect(px, py, tile, tile); }
+          if (hintedSecretAt(mx, my)) drawSecretHint(px, py, now);
         } else {
           if (!drawImg(SPRITES[biome.floor], px, py)) {
             ctx.fillStyle = shade((mx + my) % 2 === 0 ? COL.floorA : COL.floorB, b);
@@ -6238,6 +6633,46 @@
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText("z", px + tile * 0.80, py + tile * 0.18);
       }
+    }
+
+    // Sera's notes. Drawn as a ring with the glyph inside rather than a sprite, so
+    // they read as an object she put there rather than a creature — and with a
+    // health bar, because a note you cannot tell is about to die is a note you
+    // cannot make a decision about.
+    for (const n of notes) {
+      if (!inBounds(n.x, n.y) || !visible[n.y][n.x]) continue;
+      const nx = SX(n.x), ny = SY(n.y);
+      const col = n.chill ? "#9fd8ff" : n.sleep ? "#bfa8e0" : "#f2c76a";
+      const pulse = 0.55 + 0.45 * Math.sin(now / 300 + n.x + n.y);
+      ctx.save();
+      ctx.globalAlpha = n.turns <= 2 ? 0.45 : 0.85;
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, tile * 0.06);
+      ctx.beginPath(); ctx.arc(nx + tile * 0.5, ny + tile * 0.5, tile * (0.30 + 0.04 * pulse), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      drawGlyphInto(ctx, nx, ny, tile, n.sleep ? "\u266d" : n.chill ? "\u266e" : "\u266a", col);
+      hitFlash(n, nx, ny, now);
+      if (n.hp < n.maxHp) {
+        const w = tile * 0.7, h = Math.max(2, tile * 0.07), bx = nx + tile * 0.15, by = ny + tile * 0.86;
+        ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(bx, by, w, h);
+        ctx.fillStyle = col; ctx.fillRect(bx, by, w * Math.max(0, n.hp / n.maxHp), h);
+      }
+    }
+    // Chord: the line between two notes is a thing the player has to be able to
+    // SEE, or placing them is guesswork.
+    if (passiveMod("chord") && notes.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,217,138,0.35)"; ctx.lineWidth = Math.max(1, tile * 0.08);
+      for (let i = 0; i < notes.length; i++) for (let j = i + 1; j < notes.length; j++) {
+        const a = notes[i], b = notes[j];
+        if (a.chill || a.sleep || b.chill || b.sleep) continue;
+        if (cheb(a.x, a.y, b.x, b.y) > a.range + b.range) continue;
+        if (!visible[a.y][a.x] || !visible[b.y][b.x]) continue;
+        ctx.beginPath();
+        ctx.moveTo(SX(a.x) + tile * 0.5, SY(a.y) + tile * 0.5);
+        ctx.lineTo(SX(b.x) + tile * 0.5, SY(b.y) + tile * 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Mirror Image decoys: the player's own sprite, translucent and faintly blue, so
@@ -6438,6 +6873,15 @@
         else if (t === CHASM) { mctx.fillStyle = been ? "#1a1a1e" : "#0c0c0e"; mctx.fillRect(px, py, sz, sz); }
         else if (t === RUBBLE) { mctx.fillStyle = been ? "#8a8578" : "#4e4a40"; mctx.fillRect(px, py, sz, sz); }
         else if (t === GRASS) { mctx.fillStyle = been ? "#4a7a3a" : "#2a4520"; mctx.fillRect(px, py, sz, sz); }
+        // A hollow wall you have found but not yet opened, in the stairs' own gold:
+        // the map is where you decide what to walk back to, so it has to be on it.
+        // Inset, not the whole cell: filled it read as another player pip when the
+        // two sat side by side, and as the stairs when they did not.
+        if (t === WALL && hintedSecretAt(x, y)) {
+          const in1 = Math.max(1, Math.floor(sz * 0.25));
+          mctx.fillStyle = "#f0c14b";
+          mctx.fillRect(px + in1, py + in1, Math.max(1, sz - in1 * 2), Math.max(1, sz - in1 * 2));
+        }
       }
     }
     const pc = Math.max(cell + 2, 5);
@@ -7672,10 +8116,15 @@
     else if (d.kind === "selfheal") executeLayOnHands(key);              // aimed at yourself
     else if (d.kind === "sol") executeSpeedOfLight(key);
     else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
+    else if (d.kind === "wardcast") executeWard(key);                    // aimed at yourself
+    else if (d.kind === "encore") executeEncore(key);                    // every note she already placed
+    else if (d.kind === "finale") executeFinalMovement(key);
     else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
              d.kind === "smite" || d.kind === "ragesmite" || d.kind === "healsmite" || d.kind === "throwmon" ||
              d.kind === "sleepcast" || d.kind === "blinkcast" ||
-             d.kind === "madnesscast" || d.kind === "burncast") beginTargetedSkill(key);
+             d.kind === "madnesscast" || d.kind === "burncast" ||
+             d.kind === "sneakcast" || d.kind === "frostcast" || d.kind === "dominatecast" ||
+             d.kind === "notecast" || d.kind === "symphony") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -8016,12 +8465,16 @@
         bump(player, nx, ny);
         if (steps > 0) {
           floatText(player.x, player.y, "×" + steps, "#ffd98a");
+          const before = mon.hp;
           attack(player, mon, 0, { per: steps, full: !!cur.full });
+          dragonFury(nx, ny, Math.max(0, before - mon.hp), mon);   // the ring, if she has bought one
           landed = true;
         } else {
           // Nothing to run up. The kick still connects, at its ordinary weight —
           // silently doing zero would read as the button being broken.
+          const before = mon.hp;
           attack(player, mon, 0);
+          dragonFury(nx, ny, Math.max(0, before - mon.hp), mon);
           landed = true;
           log("No room to build up — the kick lands flat.");
         }
@@ -8138,6 +8591,245 @@
   // Now You See Me. The Scroll of Invisibility's trick on a cooldown, with rank 4
   // paying you for coming out of it: strike from the veil and the strike after it
   // hits harder too.
+  // ---- Sera: placing notes ------------------------------------------------
+  // Every note skill lands through here. The three rules that keep a turret from
+  // being a win button live in this one function:
+  //   · a CAP on how many can be on the board at once, so placement is a choice
+  //     about where rather than a question of how many;
+  //   · never adjacent to her, or she is a melee character with extra steps;
+  //   · it must be somewhere she can see, like every other targeted cast.
+  // Over the cap, the oldest note is spent rather than the cast being refused —
+  // refusing would mean reading a counter before every button press.
+  function placeNote(key, tx, ty, opts) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); updateHotbar(); return; }
+    if (!passable(tx, ty) || isWall(tx, ty)) { log("A note needs somewhere to stand."); updateHotbar(); return; }
+    const spread = opts && opts.spread;
+    // A spread cast lays its notes AROUND the tap, so an occupied centre is not a
+    // reason to refuse the whole thing — noteSpread simply skips that tile.
+    if (!spread && (monsterAt(tx, ty) || decoyAt(tx, ty) || noteAt(tx, ty))) { log("Something is already there."); updateHotbar(); return; }
+    if (cheb(player.x, player.y, tx, ty) < 2) { log("Too close — a note has to be struck at a distance."); updateHotbar(); return; }
+    payCast(key, c);
+    const spots = spread ? noteSpread(tx, ty, spread) : [{ x: tx, y: ty }];
+    // Symphony throws out more than the passive cap allows, so for that cast its
+    // own count IS the cap — otherwise the skill would spend three notes to leave
+    // one standing, which is not what the button says it does.
+    const cap = Math.max(noteCap(), spots.length);
+    const born = [];
+    for (const sp of spots) {
+      while (notes.length >= cap) { const old = notes.shift(); spawnBurst(old.x, old.y, "#f2c76a"); }
+      const hp = Math.max(1, (c.cur.hp || 6) + player.level + (passiveMod("noteHp") || 0));
+      born.push({ x: sp.x, y: sp.y, turns: (c.cur.turns || 6) + 1 + (passiveMod("noteLife") || 0), age: 0, hp, maxHp: hp,
+                  dmg: c.cur.dmg || 0, range: (c.cur.range || 3) + (passiveMod("noteRange") || 0),
+                  chill: c.cur.chill || 0, sleep: c.cur.sleep || 0 });
+      notes.push(born[born.length - 1]);
+    }
+    for (const n of born) { floatText(n.x, n.y, "\u266a", "#f2c76a"); spawnProjectile(player.x, player.y, n.x, n.y, "#f2c76a"); }
+    log(born.length === 1 ? "A note hangs in the air." : born.length + " notes hang in the air.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  const noteCap = () => 1 + (passiveMod("noteCap") || 0);
+  // Symphony: a ring of tiles around the tap, so the three land as a shape rather
+  // than a stack — which is what gives Chord something to draw lines between.
+  function noteSpread(tx, ty, n) {
+    const free = (x, y) => inBounds(x, y) && passable(x, y) && !isWall(x, y) && !monsterAt(x, y) &&
+                           !noteAt(x, y) && !decoyAt(x, y) && cheb(player.x, player.y, x, y) >= 2 &&
+                           visible[y] && visible[y][x];
+    const out = free(tx, ty) ? [{ x: tx, y: ty }] : [];
+    for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [2, -2], [-2, 2],
+                            [1, 2], [-1, 2], [1, -2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1],
+                            [3, 0], [-3, 0], [0, 3], [0, -3]]) {
+      if (out.length >= n) break;
+      const x = tx + dx, y = ty + dy;
+      if (!free(x, y)) continue;
+      out.push({ x, y });
+    }
+    return out.slice(0, n);
+  }
+  // Encore — every note on the board goes back to full life and full duration.
+  // The deliberate opposite of Final Movement: one holds the room, the other
+  // spends it, and taking both means choosing which every fight.
+  function executeEncore(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!notes.length) { log("There is nothing left ringing."); updateHotbar(); return; }
+    payCast(key, c);
+    for (const n of notes) {
+      n.turns = Math.max(n.turns, (c.cur.turns || 8) + 1);
+      n.hp = n.maxHp;
+      floatText(n.x, n.y, "\u266b", "#ffe9a8");
+    }
+    log("You take it from the top — " + notes.length + " note" + (notes.length === 1 ? "" : "s") + " ring out again.", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Final Movement — spend the board. Every note bursts for real damage in a
+  // radius and is gone, which is why it is worth a tier-5 slot despite costing
+  // you everything you spent the fight building.
+  function executeFinalMovement(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!notes.length) { log("There is nothing to end."); updateHotbar(); return; }
+    payCast(key, c);
+    const r = c.cur.radius || 2, spent = notes.slice();
+    notes = [];
+    let hit = 0;
+    for (const n of spent) {
+      spawnBurst(n.x, n.y, "#ffb26a");
+      for (const m of monsters.slice()) {
+        if (m.hp <= 0 || cheb(n.x, n.y, m.x, m.y) > r) continue;
+        if (!lineOfSight(n.x, n.y, m.x, m.y)) continue;
+        const dmg = Math.max(1, Math.round(noteDamage(n) * (c.cur.mult || 2)));
+        m.hp -= dmg; flash(m); hit++;
+        floatText(m.x, m.y, "-" + dmg, "#ffb26a");
+        startHunting(m);
+        if (m.hp <= 0) killMonster(m, "is shaken apart");
+      }
+    }
+    flashScreen("#3a2410", 320);
+    log("Every note breaks at once. (" + spent.length + " spent, " + hit + " struck)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
+  // ---- Brynn: Riposte, Sneak Attack, Dragon's Fury -------------------------
+  // Riposte is a passive, so it has no button and no cast — it is simply what a
+  // dodge now means. Everything about it is in the data: `ripostePct` is how much
+  // of an ordinary blow the counter is worth, and going through attack() rather
+  // than dealing damage directly means it crits, procs enchants, and carries
+  // Pressure Point exactly as a real swing does.
+  //
+  // Only against something standing next to her, and never off a ranged shot or a
+  // trap: a counter is an opening in someone's guard, not a magic reprisal.
+  function riposte(from) {
+    if (!from || from.hp <= 0 || dead) return;
+    const pct = passiveMod("ripostePct");
+    if (pct <= 0) return;
+    if (cheb(player.x, player.y, from.x, from.y) !== 1) return;
+    floatText(player.x, player.y, "riposte", "#ffd98a");
+    attack(player, from, 0, { mult: pct / 100 });
+  }
+  // Sneak Attack — the opener, and it refuses to be anything else. If the target
+  // has already seen you it costs nothing and is not spent: a skill whose whole
+  // premise is surprise should not punish you for tapping it a beat too late.
+  function executeSneakAttack(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    if (cheb(player.x, player.y, m.x, m.y) !== 1) { log("Too far — a sneak attack is made at arm's length."); updateHotbar(); return; }
+    if (m.aware) { log("The " + monName(m) + " has already seen you."); updateHotbar(); return; }
+    payCast(key, c);
+    floatText(m.x, m.y, "\u2726", "#ffd98a");
+    log("You step in behind the " + monName(m) + ".", "hit");
+    // attack() reads `!target.aware` itself, so the ambush's guaranteed hit comes
+    // along for free — this only supplies the multiplier and the overkill payout.
+    attack(player, m, 0, { mult: c.cur.mult || 2, sneak: true, invisPer: c.cur.invisPer || 0, invisCap: c.cur.invisCap || 0 });
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Dragon's Fury is a passive that rides Dragon Kick rather than a button of its
+  // own — "runs on dragon kick" is the brief, and a second button you have to press
+  // after the first would lose the moment. The kick lands, and the impact goes out
+  // around it: full weight on the tile struck, halved for every ring beyond.
+  function dragonFury(cx, cy, kickDmg, hit) {
+    const r = passiveMod("furyRadius");
+    if (r <= 0 || kickDmg <= 0) return;
+    spawnBurst(cx, cy, "#ff9a4a");
+    for (const m of monsters.slice()) {
+      if (m.hp <= 0 || m === hit) continue;
+      const d = cheb(cx, cy, m.x, m.y);
+      if (d < 1 || d > r) continue;
+      if (!lineOfSight(cx, cy, m.x, m.y)) continue;     // the blast does not go round corners
+      const dmg = Math.max(1, Math.round(kickDmg / Math.pow(2, d)));
+      m.hp -= dmg; flash(m);
+      floatText(m.x, m.y, "-" + dmg, "#ffb26a");
+      startHunting(m);
+      if (m.hp <= 0) killMonster(m, "is blown apart");
+    }
+    log("The impact goes out in a ring.", "hit");
+  }
+
+  // ---- ToneTum: Ward, Frost Nova, Dominate ---------------------------------
+  // Ward — RES finally does something that is HIS. A shell that eats damage before
+  // anything else does (see mitigateDamage), sized by the stat his class is built
+  // on, and it expires so it cannot be pre-stacked before every fight.
+  function executeWard(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    payCast(key, c);
+    const amount = Math.max(1, (c.cur.base || 10) + Math.max(0, mod("RES")) * (c.cur.perRes || 3));
+    player.ward = amount;
+    player.wardTurns = (c.cur.turns || 40) + 1;   // +1: this cast's own worldTurn ticks it once
+    player.wardReflect = c.cur.reflect ? 1 : 0;
+    flashScreen("#1b2840", 260);
+    floatText(player.x, player.y, "\u25c7 " + amount, "#bfe0ff");
+    log("A ward closes around you. (" + amount + " damage, " + (c.cur.turns || 40) + " turns)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Frost Nova — the crowd control he did not have. Sleep is a threshold and
+  // Madness is a coin flip on one target; this is the answer to a room, and it
+  // SCALES rather than switching on and off. Damage only from rank 2, as asked.
+  function executeFrostNova(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); updateHotbar(); return; }
+    payCast(key, c);
+    const r = c.cur.radius || 2, turns = c.cur.chill || 10;
+    spawnBurst(tx, ty, "#9fd8ff");
+    let caught = 0;
+    for (const m of monsters.slice()) {
+      if (m.hp <= 0 || cheb(tx, ty, m.x, m.y) > r) continue;
+      if (!lineOfSight(tx, ty, m.x, m.y)) continue;
+      caught++;
+      m.chill = Math.max(m.chill || 0, turns);
+      floatText(m.x, m.y, "\u2744", "#9fd8ff");
+      if (c.cur.dmg > 0) {
+        const dmg = Math.max(1, c.cur.dmg + mod("INT"));
+        m.hp -= dmg; flash(m);
+        floatText(m.x, m.y, "-" + dmg, "#bfe0ff");
+        if (m.hp <= 0) { killMonster(m, "freezes solid"); continue; }
+      }
+      startHunting(m);
+    }
+    log(caught ? "Frost blooms — " + caught + " caught in it, moving at half speed." : "Frost blooms over empty ground.", caught ? "hit" : "");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Dominate — the capstone of the mind school, and the only thing in the game
+  // that turns a monster into an ally outright. The cost IS the balance: MP equal
+  // to what the thing has left, so the healthier the prize the less likely you can
+  // afford it, and taking the big one empties you for the fight you are still in.
+  function executeDominate(key, tx, ty) {
+    pendingSkill = null;
+    const st = player.skills[key], cur = skillCur(key), d = skillDef(key);
+    if (!st || !cur || !d) { updateHotbar(); return; }
+    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ")."); updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    if (DATA.bosses[m.type]) { log("The " + monName(m) + " is far beyond your reach."); updateHotbar(); return; }
+    if (!visible[ty][tx]) { log("Out of sight."); updateHotbar(); return; }
+    // The price is read off the target, not the rank — ranks buy the DISCOUNT.
+    const cost = Math.max(1, Math.ceil(m.hp * (cur.hpCost != null ? cur.hpCost : 1)));
+    if (player.mp < cost) { log("The " + monName(m) + " will not bend — it would cost " + cost + " MP and you have " + player.mp + "."); updateHotbar(); return; }
+    player.mp -= cost;
+    st.cd = cur.cd || 400;
+    m.dominated = true;
+    m.berserk = 0;                      // dominated outranks berserk; it never turns on you
+    startHunting(m);
+    floatText(m.x, m.y, "\u265b", "#c58fd6");
+    flashScreen("#2a1b33", 280);
+    log("The " + monName(m) + " kneels. It fights for you now. (" + cost + " MP)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
   function executeVanish(key) {
     const cur = skillCur(key);
     if (!cur) return;
@@ -8757,6 +9449,11 @@
       const k = d.y * MAP_W + d.x;
       if (secretsHinted.has(k)) continue;
       secretsHinted.add(k);
+      // Stop, the way a trap does. Auto-travel walks straight past this otherwise:
+      // the line appears and four more messages push it off the log before you have
+      // finished crossing the room, and the one moment you could have acted on it
+      // is gone.
+      walkPath = [];
       log("The wall here sounds hollow. Wait to search it.", "hit");
       floatText(d.x, d.y, "?", "#f0c14b");
     }
@@ -8931,6 +9628,8 @@
         acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(),
         lvlAcc: player.lvlAcc || 0, lvlEvaPct: player.lvlEvaPct || 0, lvlRegenInt: player.lvlRegenInt || 0,
         lvlMitMax: player.lvlMitMax || 0,
+        ward: player.ward || 0, wardTurns: player.wardTurns || 0, wardReflect: player.wardReflect || 0,
+        lvlNote: player.lvlNote || 0, notes: notes.length,
         lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
@@ -8953,7 +9652,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, para: m.para || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, para: m.para || 0, chill: m.chill || 0, dominated: !!m.dominated, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),
@@ -9057,6 +9756,10 @@
     godBoons: (g) => godBoonKeys(g),
     openBoonsOf: (g) => godOpenBoons(g),
     decoys: () => decoys.map((dc) => ({ x: dc.x, y: dc.y, turns: dc.turns, roam: !!dc.roam })),
+    notes: () => notes.map((n) => ({ x: n.x, y: n.y, turns: n.turns, hp: n.hp, maxHp: n.maxHp, dmg: n.dmg,
+                                     out: noteDamage(n), range: n.range, chill: n.chill || 0, sleep: n.sleep || 0, age: n.age || 0 })),
+    noteCap: () => noteCap(),
+    ballad: () => balladBonus(),
     // ---- Horror (the floor's patience) test hooks ----
     setTurns: (n) => { turns = n; },
     horrorState: () => {

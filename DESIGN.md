@@ -2972,3 +2972,359 @@ one now gets a second door, the same answer a wing gets.
 Level generation goes from roughly 20ms to roughly 28ms median on desktop, and the
 boss floor from 4ms to 29ms because it now does the work at all. It happens once per
 floor, behind the descent.
+
+---
+
+## The loop pass unsealed the thorn vaults
+
+Reported from play: two torches spent burning through brambles, and an open path
+needing no torches a few tiles away. That is not a balance complaint, it is the
+vault contract being broken, and the loop pass broke it.
+
+`makeThornVaults` seals a room's every opening with THORN and then checks two
+things before committing: every *other* room must still be reachable torch-free,
+so a vault can never wall you in, and **the vault interior must be UNREACHABLE
+torch-free**, so brambles are the only way in. That second invariant is what makes
+a torch worth carrying.
+
+`addLoops` floods with thorns treated as walkable — they are walkable, they just
+hurt — so to it a sealed vault is simply "a wing behind one tile", exactly the
+shape it exists to open up. It dug a tunnel straight in.
+
+| thorn tiles that gate nothing | |
+|---|---|
+| before the loop pass | **0%** (0 of 90, 200 floors) |
+| with the loop pass | **39%** (17 of 44), and on **15 of 29** thorny floors *every* thorn was pointless |
+| after this fix | **0%** (0 of 73, 200 floors) |
+
+### The fix, and the one that was worse than the bug
+
+Both passes now take `torchFreeSet()` — everything reachable without crossing
+brambles — and hold to one side of that line:
+
+- `bridgeLobe` refuses any tunnel whose two ends fall on opposite sides.
+- `findLobes` skips a wing that is *entirely* thorn-gated: that wing is the vault.
+- `findPockets` skips a pocket with any gated tile, so a vault is never sealed or
+  hollowed into a hidden room either.
+- `sealableTile` excludes THORN. Brambles are a placed gate with a torch counted
+  against them one for one, so walling one over strands a torch *and* leaves the
+  vault with no way in.
+
+That got it to 91% of the way. The last 9% was `fixOpenCorners`: it resolves a
+diagonal-only touch by solidifying a floor cell, or — when neither cell is safe —
+by **opening a wall cell**, and next to a vault that punches the seal open
+sideways.
+
+The first attempt at that undid the whole round and banned the lobe. It worked, and
+it was a bad trade: it threw away a perfectly good tunnel somewhere else on the
+floor, and **walkable ground behind a single tile went from 7% back up to 20%** —
+most of the original fix, given away to catch a rare edge.
+
+The undo is now surgical. Snapshot after the dig, run `fixOpenCorners`, and if a
+gated tile became reachable, put back only the tiles it turned from WALL to FLOOR.
+The tunnel stays, because `bridgeLobe` already refuses to cross the line and is
+therefore never the culprit. What survives is a cosmetic diagonal-only touch on
+about one floor in twenty, which is a far smaller price than a vault you can walk
+into. Loop-pass quality is unchanged by the whole affair: 7.1% behind one tile,
+2.37 tunnels a floor, 1.41 hidden rooms.
+
+### On the metric
+
+`behind%` counts walkable ground sitting behind a single cut tile — and a correctly
+sealed thorn vault *is* ground behind one gate, deliberately. Fixing the vault bug
+therefore made the metric look worse, which cost a long detour before it was
+spotted. The probe now excludes thorn-gated wings from that count. A metric that
+punishes the game for working is worse than no metric.
+
+---
+
+## A secret you were told about once is not a clue
+
+The hollow-wall hint printed one log line and floated a "?" for a second. Four more
+messages and the line is gone, with nothing on screen to say a secret is there —
+and if you were auto-travelling, all of that happened while you were still crossing
+the room.
+
+Two changes:
+
+- **The mark stays.** A hinted door keeps a pulsing gold ring with a four-point
+  sparkle on its tile, and an inset gold mark on the floor map. Both vanish the
+  moment the door opens, because `searchHere` drops it from `secretDoors` and the
+  mark is drawn from that list.
+- **The hint stops you**, the way a trap does: `hintSecrets` clears `walkPath`.
+
+The tile mark is drawn *over* the biome's wall sprite rather than recolouring the
+tile, because it has to read on tree bark as well as on stone. The map mark is
+inset rather than a filled cell: filled, it read as a second player pip when the
+two were adjacent and as the stairs when they were not.
+
+Auto-travel already routes around brambles — THORN carries `noTravel` — so the
+thorn damage in the same report was a manual step, and pathing was left alone.
+
+---
+
+## Most hidden rooms were not there
+
+"Secret opened like this. No good." The wall gives way, and behind it is nothing
+worth the walk — or nothing at all. Measured over 125–145 secret doors:
+
+| | before | after |
+|---|---|---|
+| door not orthogonally touching its own chamber | **20%** | **0%** |
+| door with no reachable ground beside it | **58%** | **3%** |
+| chamber still unreachable after opening it | **12%** | **0%** |
+
+Three separate defects, all in the same feature.
+
+### The chamber was placed a tile clear of its door
+
+`trySecretRect` folds the sideways nudge into `cx`/`cy` and then did it again:
+
+```js
+const rect = { x: rx + (dx !== 0 ? 0 : 0), y: ry + (dy !== 0 ? shift : 0), ... };
+```
+
+On a vertical door with a non-zero shift, that moves the chamber one tile further
+up or down — so the door opens onto solid rock with the room behind it, permanently
+sealed. The `x` half of that line is `+ 0` either way, which is the tell: it was
+never doing anything.
+
+Fixing the arithmetic would have left the size-2 fallback still missing on the
+horizontal axis. So instead the function now **asserts what actually matters**: the
+door must be orthogonally against the chamber, or the placement is rejected and the
+caller's next size/shift is tried. 20% to 0%, and it stays 0% whatever anyone does
+to the geometry later.
+
+### The antechamber was filled in behind you
+
+`resolveDeadEnds` sweeps four times. A hidden room is dug off a nook, and that nook
+is *still a nook* on the next round — the secret door is a WALL, so nothing about
+reachability changed. With `SECRET_MAX` already spent, the second round did the
+other thing it knows how to do and filled the nook in, walling the player away from
+the door just carved. 58% of secret doors had no reachable ground beside them.
+
+A nook that produced a hidden room is not a pointless nook any more, it is the
+antechamber. Its tiles go into `secretApproach`, and `sealableTile`, the pocket
+filler and `fixOpenCorners` all refuse to touch them.
+
+That last one matters and is easy to miss: `fixOpenCorners` buries a floor tile to
+resolve a diagonal-only touch, and it was burying the one tile you have to stand on.
+
+### Nooks that lead to secrets now survive on purpose
+
+Unresolved nooks per floor read 0.02 before and 0.63 after, and that is the feature
+working rather than a regression: an antechamber is a dead end *until you search
+it*. That is the shape the whole thing was asked for in — "these should end in a
+secret passage" — and the pulsing mark on the wall is what tells you which dead ends
+are which.
+
+### Vaults get the invariant restated, not another special case
+
+Guarding `fixOpenCorners` against burying the antechamber pushed it toward its other
+fallback — **opening** a wall cell — which beside a thorn vault punches the seal open
+sideways. Pointless thorns went 0% → 6%. Patching each pass that digs had now failed
+twice in a row, so the fix is `resealVaults`, run last: if a vault interior became
+reachable without a torch, put THORN back across every opening it now has (the
+breach included, since `roomOpenings` finds it), and revert the lot if that would
+strand a room or the stairs — a vault is always optional, and that outranks it being
+sealed.
+
+Final: **1 pointless thorn in 83**, against 3 in 90 on the pre-regression baseline.
+Loop quality is unchanged throughout: 7.9% of ground behind a single tile, 2.42
+tunnels a floor, 1.49 hidden rooms.
+
+---
+
+## Brynn gets tiers 4 and 5, ToneTum gets tier 3
+
+Both trees were shopping lists. Chadwick has ten nodes across four rows with three
+prerequisite edges and a branching Smite family; Brynn had six nodes and ToneTum
+eight, and **neither had a single prerequisite between them**. Every node was
+independently purchasable, so there was no build — you could not specialise, could
+not misbuild, and could not feel clever.
+
+Eight new nodes, and every one of them is gated on something.
+
+### Brynn — tier 4 (level 15)
+
+| | kind | what it is |
+|---|---|---|
+| **Pressure Point** | passive, `when: unarmed` | 10/15/20/25% to stun, two turns at rank 4 |
+| **Riposte** | passive | dodge a melee blow and answer it for 50/75/100/125% |
+| **Sneak Attack** | `sneakcast` | ×2–×3.5 on something that has not seen you; overkill buys turns unseen |
+
+Riposte is the one that changes how she plays. Evasion was a number she had; now it
+is a build she commits to, and it is the first thing that pays off Happy Feet's
+dodge. It hangs off the dodge branch of `incomingDamage`, which now carries `from`
+so it knows what to hit back, and it goes through `attack()` rather than dealing
+damage directly — so the counter crits, procs enchants, and carries Pressure Point
+exactly as a real swing does. Melee only and adjacent only: a counter is an opening
+in someone's guard, not a magic reprisal, so a trap or an arrow gets nothing.
+
+Sneak Attack refuses an aware target **and does not spend itself doing so**. A skill
+whose whole premise is surprise should not punish you for tapping it a beat late.
+Its payout is overkill only, which rewards picking the right target rather than the
+biggest one — and it needed a cap: uncapped, one overkilled rat paid about **thirty
+turns of invisibility**, which is not a reward, it is the floor becoming optional.
+
+### Brynn — tier 5 (level 20)
+
+**Body of Iron** takes 20/30/40/50% of everything that gets through out of MP
+instead of HP. **Dragon's Fury** is a passive rather than a button, because "runs on
+Dragon Kick" is the brief and a second button after the first would lose the moment:
+every kick that lands sends the impact out in a ring, full weight on the tile struck
+and halved for each ring beyond, reaching 1 to 4 tiles. It is gated on Dragon Kick
+**maxed** — the Spinning Smite pattern, and the single node that makes an earlier
+pick mean something.
+
+### ToneTum — tier 3 (level 10)
+
+Left tier 1 alone, as asked; it is already the strongest opening in the game.
+
+**Ward** finally gives RES something of its own: a shell sized by the stat his class
+is built on, which eats damage before armour or HP sees any, expires so it cannot be
+pre-stacked, and at rank 4 throws back exactly what it ate. **Frost Nova** is the
+crowd control he did not have — Sleep is an HP threshold and Madness is one target,
+both binary; this is the answer to a room and it *scales*, with the slow at rank 1
+and damage from rank 2. **Dominate** reads its price off the target rather than the
+rank: MP equal to its current HP, discounted to 55% by rank 4. The healthier the
+prize the less likely you can afford it, and taking the big one empties you for the
+fight you are still in.
+
+### Where the new numbers live
+
+Two engine rungs were added at the bottom of `mitigateDamage`, both after the
+armour's 1-damage floor and both allowed to take a blow to **nothing** — which is
+the only reason either is worth a tier-4 or tier-5 node:
+
+1. the **Ward** absorbs first, because it is the outer shell;
+2. **Body of Iron** takes its share of whatever is left, capped by the MP you have.
+
+`m.chill` halves a monster's walk and its swing inside `monSpeed`, so the slow lives
+in one place, cannot leak into a data row, and lifts itself when the counter runs
+out. A **dominated** monster is not berserk: berserk weighs the player as one target
+among many, dominated never considers them at all — it goes for the nearest other
+monster and holds station if there is none.
+
+### Measured, at rank 4
+
+| | authored | measured |
+|---|---|---|
+| Pressure Point | 25% | **21%** of 300 swings (25% of the ~85% that connect) |
+| Riposte | every dodge | **69** counters over 300 incoming blows |
+| Sneak Attack | ×3.5, capped 14 | ×3.5 landed, 7 turns unseen off a 4 HP rat, refused and unspent vs an aware foe |
+| Body of Iron | 50% | **56%** — `Math.round` on small per-blow numbers rounds up more often than down |
+| Dragon's Fury | halve per ring | a 135 kick put **68** into range 1 and **34** into range 2 |
+| Ward | 10 + 3×RES... | **59** absorb at RES 20; 11 bear blows, 40 absorbed, **0 reached HP**, 40 reflected |
+| Frost Nova | 18 turns, 11+INT | **17** turns of chill and **19** damage to everything in the bloom |
+| Dominate | 55% of current HP | a 40 HP rat cost **20 MP**, and never turned on its owner |
+
+---
+
+## Sera, the fourth class: notes as turrets
+
+Chadwick is where the damage is, Brynn is where the damage isn't, ToneTum deletes
+things from across the room. **Sera builds a room and makes you fight in it.** She
+spends her turn placing notes; they spend their turns for her.
+
+Starts unlocked, alongside the other three. DEX main, INT secondary, opening with a
+shortbow and grass armour — the bow line already ran tiers 1–5, so `when: "bow"`
+works exactly as Sword Master does and she needed no new gear.
+
+### A note is a fourth kind of thing on the board
+
+`decoys` had already established the shape — its own list, its own tick, its own
+draw pass, cleared per floor, neither a monster nor the player. A note is that with
+two differences, and those two differences are the class:
+
+- **It shoots.** After the player acts and before the monsters do, each note picks
+  the nearest thing it can *see* inside its range and plucks it. The visibility rule
+  is the same one the slime auras are held to: damage arriving from something two
+  corners away in an unlit room is a bug report, not a mechanic.
+- **It has hit points.** A monster standing beside a note swings at the note, before
+  it swings at you. Unlike a decoy, which always shatters, a note takes the blow and
+  may survive it — which is what makes placement a decision rather than a formality.
+  A note dropped next to a bear is silenced next turn, and that is the *placement*
+  being bad rather than the skill being bad.
+
+Three more rules keep the turret from being a win button: a **board cap** (so
+placement is a question of where, not how many), never **adjacent to her** (or she
+is a melee character with extra steps), and it must be somewhere she can **see**.
+Over the cap the oldest note is spent rather than the cast refused — refusing would
+mean reading a counter before every button press.
+
+### The tree
+
+| tier | | | |
+|---|---|---|---|
+| **1 · L0** | Sharp Note | Grace Note · Carrying Tone | Cadence |
+| **2 · L5** | Dissonance | Counterpoint | Lullaby |
+| **3 · L10** | Shatter | Ballad | Encore |
+| **4 · L15** | **Chord** | Crescendo | |
+| **5 · L20** | **Symphony** | Final Movement | |
+
+Seven prerequisite edges, including the two that matter. **Chord** is gated on Sharp
+Note maxed and is the node that changes how she plays: any pair of singing notes
+cuts anything standing on the line between them, so placement stops being "near the
+enemy" and becomes "across the path". **Symphony** needs Chord maxed *and*
+Counterpoint 3 — the cross-tree double gate, the Spinning Smite device.
+
+Encore and Final Movement are deliberately opposed: one resets every note to full
+life, the other breaks them all for ×2–×3.5 in a radius and leaves the board empty.
+Taking both means choosing which, every fight.
+
+### The number that had to come down
+
+A turret fires every turn without costing her one, so **every term in its damage is
+multiplied by the board and then by the whole fight.** The first pass used the full
+DEX modifier, a full point per even level, and Crescendo at +1 per two turns, and
+measured:
+
+> **128 damage in one turn, from two notes.**
+
+That is not a class, it is a cheat code — ToneTum's Magic Missile, the strongest
+nuke in the game, is about 88 and costs him his turn. Every term was cut: half the
+DEX modifier, **half** a point per even level, Crescendo at +1 per three turns with a
++5 ceiling, Counterpoint buying board slots and toughness instead of double shots,
+and note range capped at 6 rather than 8.
+
+| measured at level 20, everything maxed | |
+|---|---|
+| one note | **13–14** damage a turn, range 6, 15 turns, 46 HP |
+| a full board of three, target on a Chord line | **54.5** a turn |
+| Cadence | **+5** MP a turn while notes are ringing |
+| Ballad | **+4** AC and damage standing inside her own music |
+| Symphony | 4 notes laid out in a shape, not a stack |
+
+54.5 a turn is the ceiling, and it requires the target to stand still in the middle
+of three notes she spent three turns and 30 MP placing, any of which a monster can
+walk up and smash.
+
+### A rat deleted her in two turns
+
+The first level-1 playtest, before she ever reached a human:
+
+```
+turn 1: rat 40->37 | note 5t 3hp | The Rat strikes at the note.
+turn 2: rat 37->34 | note 4t 1hp | The Rat strikes at the note.
+turn 3: rat 34->34 | note gone   | The Rat smashes the note flat.
+```
+
+A note opened at 7 hit points — 6 from the rank plus her character level — against
+the weakest monster in the game, which hits for 3 to 4. Two turns, for a third of
+her mana. Every number in the class had been measured at level 20, where a note has
+46 HP and this never comes up.
+
+Note hit points now open at 14 and run to 26 by rank, so a note survives four or
+five hits from a common early monster: long enough to do the job it was placed for.
+It still dies to sustained attention, which is the point — but "attackable" has to
+mean *a decision about placement*, not *a rat walks over and the class stops
+working*.
+
+### Worth knowing
+
+The Horror clock and a turret class pull against each other — turrets reward
+camping, and the floor's spark dies at 300 turns. The answer here was short note
+durations (6–16 turns) so she is always moving to re-place rather than settling in
+for a siege. Whether that is enough tension or too much is a play question, not an
+implementation one.
