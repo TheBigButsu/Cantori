@@ -293,6 +293,7 @@
     boonAcc: 0, boonEva: 0, boonHaste: 0,               // permanent flat bonuses from kill-counter boons
     hasteBuff: 0,                                       // temporary % Haste from Speed of Light, decays 1/turn
     invisible: 0,                                       // turns left unseen (Scroll of Invisibility)
+    ward: 0, wardTurns: 0, wardReflect: 0,              // ToneTum's Ward: a shell that eats damage, and expires
   };
   const STAT_KEYS = ["STR", "INT", "VIT", "DEX", "RES", "LCK"];
   // Equipment slots: cat -> which player field(s) it fills.
@@ -320,6 +321,7 @@
     player.stun = 0;                           // turns you're dazed (e.g. slammed into a wall) — actions are wasted
     player.rage = null;                        // Raging Smite's temporary STR/VIT
     player.shield = 0;                         // Healing Smite's overflow
+    player.ward = 0; player.wardTurns = 0; player.wardReflect = 0;   // ToneTum's Ward
     clearHexes();                              // the crypt's songs don't survive a death
     player.burn = null; player.poison = 0;     // nor does anything still burning in you
     player.toxin = 0; player.para = 0;         // nor a draught still working through you
@@ -3722,7 +3724,37 @@
     o = o || {};
     dmg = Math.round(dmg * (1 - resReduction()));
     if (!o.noArmor) dmg -= armorBlock();
-    return Math.max(1, dmg);
+    dmg = Math.max(1, dmg);
+    // Rung 5 and 6, both of them yours rather than your gear's, and both able to
+    // take a blow to nothing — which is the only reason either is worth a tier-4
+    // or tier-5 node. The 1-damage floor above still applies to everything the
+    // ARMOUR did; what a spell or a skill eats after that is allowed to be all of it.
+    //
+    // The Ward goes first: it is a shell around you, so it is what the blow meets.
+    if (player.ward > 0 && dmg > 0) {
+      const soak = Math.min(player.ward, dmg);
+      player.ward -= soak; dmg -= soak;
+      floatText(player.x, player.y, "ward " + soak, "#bfe0ff");
+      // Rank 4 sends it back. Only at whatever swung — a trap has nothing to
+      // answer to — and the ward has already paid for it, so it is not free damage.
+      if (player.wardReflect && o.from && o.from.hp > 0) {
+        o.from.hp -= soak; flash(o.from);
+        floatText(o.from.x, o.from.y, "-" + soak, "#bfe0ff");
+        if (o.from.hp <= 0) killMonster(o.from, "is thrown back and broken");
+      }
+      if (player.ward <= 0) { player.ward = 0; player.wardTurns = 0; log("Your ward shatters.", "hurt"); }
+    }
+    // Body of Iron: a share of what is left comes out of MP instead of HP. Capped
+    // by the MP you actually have, so it degrades into nothing rather than failing.
+    const soakPct = passiveMod("mpSoak");
+    if (soakPct > 0 && dmg > 0 && player.mp > 0) {
+      const paid = Math.min(player.mp, Math.round(dmg * soakPct / 100));
+      if (paid > 0) {
+        player.mp -= paid; dmg -= paid;
+        floatText(player.x, player.y, "-" + paid + " MP", "#7fb2ff");
+      }
+    }
+    return Math.max(0, dmg);
   }
   // The whole ladder from `rung` down. `o.acc` is the attacker's to-hit, needed only
   // at rung 1; `o.noArmor` drops rung 4. Returns the damage that lands, or 0 for a
@@ -3738,6 +3770,7 @@
     if (rung <= DMG_EVADE && Math.random() < dodgeChance()) {
       floatText(player.x, player.y, "dodge", "#9ad0ff");
       if (o.dodgeMsg) log(o.dodgeMsg, "hit");
+      riposte(o.from);          // Brynn: a dodge is an opening, if she has bought one
       return 0;
     }
     return mitigateDamage(dmg, o);
@@ -3846,6 +3879,9 @@
       // The per-square multiplier lands BEFORE the crit, so a critical Dragon Kick
       // multiplies the whole run-up rather than one square of it.
       if (opts && opts.per > 0) dmg = Math.max(1, (dmg - (opts.full ? 0 : 1)) * opts.per);
+      // A flat multiplier on the blow, used by Riposte (a fraction) and Sneak
+      // Attack (a multiple). Separate from `per`, which is Dragon Kick's run-up.
+      if (opts && opts.mult != null) dmg = Math.max(1, Math.round(dmg * opts.mult));
       const crit = Math.random() < critChance();       // 5%+ chance for 125%+ damage
       if (crit) dmg = Math.round(dmg * critMult());
       dmg = _boss.damageIn(target, dmg);   // a boss's playbook (e.g. the Golem's nodes) may shield it
@@ -3856,6 +3892,31 @@
         : pinned ? "Wedged in the " + doorWordOne() + ", the "
         : "You strike the ";
       if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
+      // Pressure Point: a passive rider, gated `when: "unarmed"` in the data, so
+      // passiveMod already returns 0 the moment she picks a weapon up. Applied
+      // after the damage rather than before, because a stun on something already
+      // dead is a wasted proc and reads as one.
+      const ppct = passiveMod("stunPct");
+      if (ppct > 0 && target.hp > 0 && Math.random() < ppct / 100) {
+        target.stun = (target.stun || 0) + Math.max(1, passiveMod("stunTurns") || 1);
+        floatText(target.x, target.y, "stun!", "#cfe6ff");
+        log("You find the nerve — the " + monName(target) + " seizes up.", "hit");
+      }
+      // Sneak Attack's payout: damage spent past what the kill needed buys back
+      // the dark. Overkill only, so it rewards picking the right target rather
+      // than hitting the biggest thing on the floor.
+      if (opts && opts.sneak && opts.invisPer > 0) {
+        const over = Math.max(0, -target.hp);          // hp is already decremented, so this IS the overkill
+        // Capped. Uncapped it paid ~30 turns for one overkilled rat, because
+        // overkill against something small is most of the blow — the payout has to
+        // be "enough to reposition", not "the floor is now optional".
+        const gain = Math.min(opts.invisCap || 12, Math.floor(over / opts.invisPer));
+        if (gain > 0) {
+          player.invisible = Math.max(player.invisible || 0, gain + 1);
+          floatText(player.x, player.y, "\u25cc " + gain, "#bfe0ff");
+          log("You are gone before it falls. (" + gain + " turns unseen)", "hit");
+        }
+      }
       // Maelon's Merciful End: an execute threshold on a connecting hit.
       if (target.hp > 0 && player.boons && player.boons.has("merciful") && target.hp / target.maxHp < player.level / 100) {
         target.hp = 0; floatText(target.x, target.y, "EXECUTED", "#e0685a");
@@ -3880,6 +3941,7 @@
       // An ordinary blow enters the ladder at the top — see incomingDamage().
       let dmg = incomingDamage(randInt(attacker.atkMin, attacker.atkMax), DMG_TOHIT, {
         acc: attacker.toHit != null ? attacker.toHit : MON_TOHIT,
+        from: attacker,                 // Riposte needs to know what to hit back
         missMsg: "You evade the " + monName(attacker) + ".",
         dodgeMsg: "You slip aside from the " + monName(attacker) + "'s blow.",
       });
@@ -4475,7 +4537,10 @@
   // faster than you can answer.
   const monSpeed = (m, axis) => {
     const v = m[axis] != null ? m[axis] : m.speed;
-    return v > 0 ? v : 1;
+    // Frost Nova: chilled things move and swing at half their clip. Applied here
+    // rather than by editing m.speed, so it is one place, it cannot leak into the
+    // data row, and it lifts by itself when the counter runs out.
+    return (v > 0 ? v : 1) * (m.chill > 0 ? 0.5 : 1);
   };
   const monWalkSpeed = (m) => monSpeed(m, "walkSpeed");
   const monAtkSpeed = (m) => monSpeed(m, "attackSpeed");
@@ -5204,6 +5269,22 @@
       if (canStep(m.x, m.y, dx, dy, m) && !shuns(nx, ny) && !monsterAt(nx, ny) && !(nx === player.x && ny === player.y)) moveMonster(m, nx, ny);
       return;
     }
+    if (m.chill > 0) m.chill--;
+    // Dominated: it has a side now. Unlike berserk it never weighs the player as a
+    // target at all — it goes for the nearest OTHER monster and waits if there is
+    // none, which is what separates "it fights for you" from "it fights everyone".
+    if (m.dominated) {
+      let nearest = null, nd = Infinity;
+      for (const o of monsters) {
+        if (o === m || o.hp <= 0 || o.dominated || o.type === "healing_node") continue;
+        const dd = cheb(m.x, m.y, o.x, o.y);
+        if (dd < nd) { nd = dd; nearest = o; }
+      }
+      if (!nearest) return;                       // nothing to fight: it holds station
+      if (nd === 1) { monsterVsMonster(m, nearest); return; }
+      stepMonsterTo(m, nearest.x, nearest.y);
+      return;
+    }
     // Kethara's Anger of Kethara: a berserk monster turns on whatever's nearest, not just you.
     if (m.berserk > 0) {
       m.berserk--;
@@ -5289,6 +5370,7 @@
     if (player.invisible > 0 && --player.invisible <= 0) endInvisible("The air around you settles — you're visible again.");
     if (player.retribution && --player.retribution.turns <= 0) { player.retribution = null; log("Your guard drops."); }
     if (player.zen && --player.zen.turns <= 0) { player.zen = null; log("The stillness fades from your limbs."); }
+    if (player.wardTurns > 0 && --player.wardTurns <= 0 && player.ward > 0) { player.ward = 0; log("Your ward fades."); }
     if (player.unseen && --player.unseen.turns <= 0) { player.unseen = null; log("The edge you brought out of the dark dulls."); }
     dragonEncoreTick();
     rageTick();
@@ -5488,6 +5570,14 @@
       if (pk === "blinkcast") {
         if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); return; }
         executeBlink(pendingSkill, tx, ty);
+        return;
+      }
+      if (pk === "frostcast") { executeFrostNova(pendingSkill, tx, ty); return; }   // a tile, not a monster
+      if (pk === "sneakcast" || pk === "dominatecast") {
+        const m = monsterAt(tx, ty);
+        if (!m || !inBounds(tx, ty)) { log("No target there."); return; }
+        if (pk === "sneakcast") executeSneakAttack(pendingSkill, tx, ty);
+        else executeDominate(pendingSkill, tx, ty);
         return;
       }
     }
@@ -7818,10 +7908,12 @@
     else if (d.kind === "selfheal") executeLayOnHands(key);              // aimed at yourself
     else if (d.kind === "sol") executeSpeedOfLight(key);
     else if (d.kind === "mirrorcast") executeMirrorImage(key);           // no target to pick — it lands beside you
+    else if (d.kind === "wardcast") executeWard(key);                    // aimed at yourself
     else if (d.kind === "wallcast" || d.kind === "pullcast" || d.kind === "eyecast" || d.kind === "angercast" ||
              d.kind === "smite" || d.kind === "ragesmite" || d.kind === "healsmite" || d.kind === "throwmon" ||
              d.kind === "sleepcast" || d.kind === "blinkcast" ||
-             d.kind === "madnesscast" || d.kind === "burncast") beginTargetedSkill(key);
+             d.kind === "madnesscast" || d.kind === "burncast" ||
+             d.kind === "sneakcast" || d.kind === "frostcast" || d.kind === "dominatecast") beginTargetedSkill(key);
   }
   // Ourn's Speed of Light: 25 MP for an instant, decaying burst of Haste.
   function executeSpeedOfLight(key) {
@@ -8162,12 +8254,16 @@
         bump(player, nx, ny);
         if (steps > 0) {
           floatText(player.x, player.y, "×" + steps, "#ffd98a");
+          const before = mon.hp;
           attack(player, mon, 0, { per: steps, full: !!cur.full });
+          dragonFury(nx, ny, Math.max(0, before - mon.hp), mon);   // the ring, if she has bought one
           landed = true;
         } else {
           // Nothing to run up. The kick still connects, at its ordinary weight —
           // silently doing zero would read as the button being broken.
+          const before = mon.hp;
           attack(player, mon, 0);
+          dragonFury(nx, ny, Math.max(0, before - mon.hp), mon);
           landed = true;
           log("No room to build up — the kick lands flat.");
         }
@@ -8284,6 +8380,141 @@
   // Now You See Me. The Scroll of Invisibility's trick on a cooldown, with rank 4
   // paying you for coming out of it: strike from the veil and the strike after it
   // hits harder too.
+  // ---- Brynn: Riposte, Sneak Attack, Dragon's Fury -------------------------
+  // Riposte is a passive, so it has no button and no cast — it is simply what a
+  // dodge now means. Everything about it is in the data: `ripostePct` is how much
+  // of an ordinary blow the counter is worth, and going through attack() rather
+  // than dealing damage directly means it crits, procs enchants, and carries
+  // Pressure Point exactly as a real swing does.
+  //
+  // Only against something standing next to her, and never off a ranged shot or a
+  // trap: a counter is an opening in someone's guard, not a magic reprisal.
+  function riposte(from) {
+    if (!from || from.hp <= 0 || dead) return;
+    const pct = passiveMod("ripostePct");
+    if (pct <= 0) return;
+    if (cheb(player.x, player.y, from.x, from.y) !== 1) return;
+    floatText(player.x, player.y, "riposte", "#ffd98a");
+    attack(player, from, 0, { mult: pct / 100 });
+  }
+  // Sneak Attack — the opener, and it refuses to be anything else. If the target
+  // has already seen you it costs nothing and is not spent: a skill whose whole
+  // premise is surprise should not punish you for tapping it a beat too late.
+  function executeSneakAttack(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    if (cheb(player.x, player.y, m.x, m.y) !== 1) { log("Too far — a sneak attack is made at arm's length."); updateHotbar(); return; }
+    if (m.aware) { log("The " + monName(m) + " has already seen you."); updateHotbar(); return; }
+    payCast(key, c);
+    floatText(m.x, m.y, "\u2726", "#ffd98a");
+    log("You step in behind the " + monName(m) + ".", "hit");
+    // attack() reads `!target.aware` itself, so the ambush's guaranteed hit comes
+    // along for free — this only supplies the multiplier and the overkill payout.
+    attack(player, m, 0, { mult: c.cur.mult || 2, sneak: true, invisPer: c.cur.invisPer || 0, invisCap: c.cur.invisCap || 0 });
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Dragon's Fury is a passive that rides Dragon Kick rather than a button of its
+  // own — "runs on dragon kick" is the brief, and a second button you have to press
+  // after the first would lose the moment. The kick lands, and the impact goes out
+  // around it: full weight on the tile struck, halved for every ring beyond.
+  function dragonFury(cx, cy, kickDmg, hit) {
+    const r = passiveMod("furyRadius");
+    if (r <= 0 || kickDmg <= 0) return;
+    spawnBurst(cx, cy, "#ff9a4a");
+    for (const m of monsters.slice()) {
+      if (m.hp <= 0 || m === hit) continue;
+      const d = cheb(cx, cy, m.x, m.y);
+      if (d < 1 || d > r) continue;
+      if (!lineOfSight(cx, cy, m.x, m.y)) continue;     // the blast does not go round corners
+      const dmg = Math.max(1, Math.round(kickDmg / Math.pow(2, d)));
+      m.hp -= dmg; flash(m);
+      floatText(m.x, m.y, "-" + dmg, "#ffb26a");
+      startHunting(m);
+      if (m.hp <= 0) killMonster(m, "is blown apart");
+    }
+    log("The impact goes out in a ring.", "hit");
+  }
+
+  // ---- ToneTum: Ward, Frost Nova, Dominate ---------------------------------
+  // Ward — RES finally does something that is HIS. A shell that eats damage before
+  // anything else does (see mitigateDamage), sized by the stat his class is built
+  // on, and it expires so it cannot be pre-stacked before every fight.
+  function executeWard(key) {
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    payCast(key, c);
+    const amount = Math.max(1, (c.cur.base || 10) + Math.max(0, mod("RES")) * (c.cur.perRes || 3));
+    player.ward = amount;
+    player.wardTurns = (c.cur.turns || 40) + 1;   // +1: this cast's own worldTurn ticks it once
+    player.wardReflect = c.cur.reflect ? 1 : 0;
+    flashScreen("#1b2840", 260);
+    floatText(player.x, player.y, "\u25c7 " + amount, "#bfe0ff");
+    log("A ward closes around you. (" + amount + " damage, " + (c.cur.turns || 40) + " turns)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Frost Nova — the crowd control he did not have. Sleep is a threshold and
+  // Madness is a coin flip on one target; this is the answer to a room, and it
+  // SCALES rather than switching on and off. Damage only from rank 2, as asked.
+  function executeFrostNova(key, tx, ty) {
+    pendingSkill = null;
+    const c = castCheck(key);
+    if (!c) { updateHotbar(); return; }
+    if (!inBounds(tx, ty) || !visible[ty][tx]) { log("Out of sight."); updateHotbar(); return; }
+    payCast(key, c);
+    const r = c.cur.radius || 2, turns = c.cur.chill || 10;
+    spawnBurst(tx, ty, "#9fd8ff");
+    let caught = 0;
+    for (const m of monsters.slice()) {
+      if (m.hp <= 0 || cheb(tx, ty, m.x, m.y) > r) continue;
+      if (!lineOfSight(tx, ty, m.x, m.y)) continue;
+      caught++;
+      m.chill = Math.max(m.chill || 0, turns);
+      floatText(m.x, m.y, "\u2744", "#9fd8ff");
+      if (c.cur.dmg > 0) {
+        const dmg = Math.max(1, c.cur.dmg + mod("INT"));
+        m.hp -= dmg; flash(m);
+        floatText(m.x, m.y, "-" + dmg, "#bfe0ff");
+        if (m.hp <= 0) { killMonster(m, "freezes solid"); continue; }
+      }
+      startHunting(m);
+    }
+    log(caught ? "Frost blooms — " + caught + " caught in it, moving at half speed." : "Frost blooms over empty ground.", caught ? "hit" : "");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+  // Dominate — the capstone of the mind school, and the only thing in the game
+  // that turns a monster into an ally outright. The cost IS the balance: MP equal
+  // to what the thing has left, so the healthier the prize the less likely you can
+  // afford it, and taking the big one empties you for the fight you are still in.
+  function executeDominate(key, tx, ty) {
+    pendingSkill = null;
+    const st = player.skills[key], cur = skillCur(key), d = skillDef(key);
+    if (!st || !cur || !d) { updateHotbar(); return; }
+    if (st.cd > 0) { log(d.name + " is on cooldown (" + st.cd + ")."); updateHotbar(); return; }
+    const m = monsterAt(tx, ty);
+    if (!m || m.hp <= 0) { log("No target there."); updateHotbar(); return; }
+    if (DATA.bosses[m.type]) { log("The " + monName(m) + " is far beyond your reach."); updateHotbar(); return; }
+    if (!visible[ty][tx]) { log("Out of sight."); updateHotbar(); return; }
+    // The price is read off the target, not the rank — ranks buy the DISCOUNT.
+    const cost = Math.max(1, Math.ceil(m.hp * (cur.hpCost != null ? cur.hpCost : 1)));
+    if (player.mp < cost) { log("The " + monName(m) + " will not bend — it would cost " + cost + " MP and you have " + player.mp + "."); updateHotbar(); return; }
+    player.mp -= cost;
+    st.cd = cur.cd || 400;
+    m.dominated = true;
+    m.berserk = 0;                      // dominated outranks berserk; it never turns on you
+    startHunting(m);
+    floatText(m.x, m.y, "\u265b", "#c58fd6");
+    flashScreen("#2a1b33", 280);
+    log("The " + monName(m) + " kneels. It fights for you now. (" + cost + " MP)", "hit");
+    updateHUD(); updateHotbar();
+    worldTurn();
+  }
+
   function executeVanish(key) {
     const cur = skillCur(key);
     if (!cur) return;
@@ -9082,6 +9313,7 @@
         acc: playerToHit(), eva: playerAC(), toHit: playerToHit(), ac: playerAC(),
         lvlAcc: player.lvlAcc || 0, lvlEvaPct: player.lvlEvaPct || 0, lvlRegenInt: player.lvlRegenInt || 0,
         lvlMitMax: player.lvlMitMax || 0,
+        ward: player.ward || 0, wardTurns: player.wardTurns || 0, wardReflect: player.wardReflect || 0,
         lvlHp: player.lvlHp, level: player.level, xp: player.xp,
         killCount: player.killCount || 0, boonAcc: player.boonAcc || 0, boonEva: player.boonEva || 0,
         boonHaste: player.boonHaste || 0, hasteBuff: player.hasteBuff || 0, invisible: player.invisible || 0, critChance: critChance(),
@@ -9104,7 +9336,7 @@
         grid: { w: MAP_W, h: MAP_H }, fill: genStats,
         hasStairs: map.some((row) => row.includes(STAIRS)),
         monsters: monsters.length,
-        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, para: m.para || 0, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
+        mlist: monsters.map((m) => ({ x: m.x, y: m.y, type: m.type, hp: m.hp, maxHp: m.maxHp, level: m.level, ranged: !!m.ranged, charge: !!m.charge, toHit: m.toHit != null ? m.toHit : MON_TOHIT, ac: m.ac != null ? m.ac : MON_AC, aware: !!m.aware, dots: m.dots ? m.dots.map((d) => Object.assign({}, d)) : [], stun: m.stun || 0, para: m.para || 0, chill: m.chill || 0, dominated: !!m.dominated, summoned: !!m.summoned, phased: !!m.phased, beam: m.beam ? { tiles: m.beam.tiles.map((t) => t.slice()) } : null, windup: m.windup ? { kind: m.windup.kind, turns: m.windup.turns } : null, slamCd: m.slamCd || 0, fleeing: m.fleeing || 0, berserk: m.berserk || 0, magicSleep: m.magicSleep || 0, state: m.state || null, target: m.target ? { x: m.target.x, y: m.target.y } : null })),
         items: items.map((it) => ({ x: it.x, y: it.y, key: it.key, rarity: it.rarity || null, plus: it.plus || 0, stats: it.stats || null, enchants: it.enchants || null, variant: it.variant || null, vault: !!it.vault })),
         torches: torches.map((t) => ({ x: t.x, y: t.y })),
         traps: traps.map((t) => ({ x: t.x, y: t.y, key: t.key, revealed: !!t.revealed, sprung: !!t.sprung, armed: t.armed || 0 })),

@@ -3132,3 +3132,89 @@ sealed.
 Final: **1 pointless thorn in 83**, against 3 in 90 on the pre-regression baseline.
 Loop quality is unchanged throughout: 7.9% of ground behind a single tile, 2.42
 tunnels a floor, 1.49 hidden rooms.
+
+---
+
+## Brynn gets tiers 4 and 5, ToneTum gets tier 3
+
+Both trees were shopping lists. Chadwick has ten nodes across four rows with three
+prerequisite edges and a branching Smite family; Brynn had six nodes and ToneTum
+eight, and **neither had a single prerequisite between them**. Every node was
+independently purchasable, so there was no build — you could not specialise, could
+not misbuild, and could not feel clever.
+
+Eight new nodes, and every one of them is gated on something.
+
+### Brynn — tier 4 (level 15)
+
+| | kind | what it is |
+|---|---|---|
+| **Pressure Point** | passive, `when: unarmed` | 10/15/20/25% to stun, two turns at rank 4 |
+| **Riposte** | passive | dodge a melee blow and answer it for 50/75/100/125% |
+| **Sneak Attack** | `sneakcast` | ×2–×3.5 on something that has not seen you; overkill buys turns unseen |
+
+Riposte is the one that changes how she plays. Evasion was a number she had; now it
+is a build she commits to, and it is the first thing that pays off Happy Feet's
+dodge. It hangs off the dodge branch of `incomingDamage`, which now carries `from`
+so it knows what to hit back, and it goes through `attack()` rather than dealing
+damage directly — so the counter crits, procs enchants, and carries Pressure Point
+exactly as a real swing does. Melee only and adjacent only: a counter is an opening
+in someone's guard, not a magic reprisal, so a trap or an arrow gets nothing.
+
+Sneak Attack refuses an aware target **and does not spend itself doing so**. A skill
+whose whole premise is surprise should not punish you for tapping it a beat late.
+Its payout is overkill only, which rewards picking the right target rather than the
+biggest one — and it needed a cap: uncapped, one overkilled rat paid about **thirty
+turns of invisibility**, which is not a reward, it is the floor becoming optional.
+
+### Brynn — tier 5 (level 20)
+
+**Body of Iron** takes 20/30/40/50% of everything that gets through out of MP
+instead of HP. **Dragon's Fury** is a passive rather than a button, because "runs on
+Dragon Kick" is the brief and a second button after the first would lose the moment:
+every kick that lands sends the impact out in a ring, full weight on the tile struck
+and halved for each ring beyond, reaching 1 to 4 tiles. It is gated on Dragon Kick
+**maxed** — the Spinning Smite pattern, and the single node that makes an earlier
+pick mean something.
+
+### ToneTum — tier 3 (level 10)
+
+Left tier 1 alone, as asked; it is already the strongest opening in the game.
+
+**Ward** finally gives RES something of its own: a shell sized by the stat his class
+is built on, which eats damage before armour or HP sees any, expires so it cannot be
+pre-stacked, and at rank 4 throws back exactly what it ate. **Frost Nova** is the
+crowd control he did not have — Sleep is an HP threshold and Madness is one target,
+both binary; this is the answer to a room and it *scales*, with the slow at rank 1
+and damage from rank 2. **Dominate** reads its price off the target rather than the
+rank: MP equal to its current HP, discounted to 55% by rank 4. The healthier the
+prize the less likely you can afford it, and taking the big one empties you for the
+fight you are still in.
+
+### Where the new numbers live
+
+Two engine rungs were added at the bottom of `mitigateDamage`, both after the
+armour's 1-damage floor and both allowed to take a blow to **nothing** — which is
+the only reason either is worth a tier-4 or tier-5 node:
+
+1. the **Ward** absorbs first, because it is the outer shell;
+2. **Body of Iron** takes its share of whatever is left, capped by the MP you have.
+
+`m.chill` halves a monster's walk and its swing inside `monSpeed`, so the slow lives
+in one place, cannot leak into a data row, and lifts itself when the counter runs
+out. A **dominated** monster is not berserk: berserk weighs the player as one target
+among many, dominated never considers them at all — it goes for the nearest other
+monster and holds station if there is none.
+
+### Measured, at rank 4
+
+| | authored | measured |
+|---|---|---|
+| Pressure Point | 25% | **21%** of 300 swings (25% of the ~85% that connect) |
+| Riposte | every dodge | **69** counters over 300 incoming blows |
+| Sneak Attack | ×3.5, capped 14 | ×3.5 landed, 7 turns unseen off a 4 HP rat, refused and unspent vs an aware foe |
+| Body of Iron | 50% | **56%** — `Math.round` on small per-blow numbers rounds up more often than down |
+| Dragon's Fury | halve per ring | a 135 kick put **68** into range 1 and **34** into range 2 |
+| Ward | 10 + 3×RES... | **59** absorb at RES 20; 11 bear blows, 40 absorbed, **0 reached HP**, 40 reflected |
+| Frost Nova | 18 turns, 11+INT | **17** turns of chill and **19** damage to everything in the bloom |
+| Dominate | 55% of current HP | a 40 HP rat cost **20 MP**, and never turned on its owner |

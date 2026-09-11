@@ -2586,7 +2586,13 @@ window.CANTORI_DATA = {
           ],
           "req": []
         }
-      ]
+      ,
+      {"id": "pressure_point", "x": 0, "y": 3, "name": "Pressure Point", "icon": "☝", "kind": "passive", "when": "unarmed", "desc": "You know where the nerve is. Bare-handed blows can lock a foe up outright — nothing while you are holding a weapon.", "levels": ["10% chance to stun for 1 turn.", "15% chance to stun for 1 turn.", "20% chance to stun for 1 turn.", "25% chance to stun for 2 turns."], "ranks": [{"stunPct": 10, "stunTurns": 1}, {"stunPct": 15, "stunTurns": 1}, {"stunPct": 20, "stunTurns": 1}, {"stunPct": 25, "stunTurns": 2}], "req": [["unarmed_master", 2]]},
+      {"id": "riposte", "x": 1, "y": 3, "name": "Riposte", "icon": "↺", "kind": "passive", "desc": "Every blow you slip is an opening. When you dodge a melee attack, you answer it for free — a real swing, so it crits and carries everything else you have.", "levels": ["Counter for 50% of a blow.", "Counter for 75%.", "Counter for 100% — a full swing.", "Counter for 125%."], "ranks": [{"ripostePct": 50}, {"ripostePct": 75}, {"ripostePct": 100}, {"ripostePct": 125}], "req": [["happy_feet", 2]]},
+      {"id": "sneak_attack", "x": 2, "y": 3, "name": "Sneak Attack", "icon": "🗡", "kind": "sneakcast", "desc": "Tap an adjacent foe that has not seen you. Damage spent past what the kill needed buys back the dark. Refused — and not spent — against anything already looking at you.", "levels": ["8 MP · ×2 damage · 60 turn cooldown", "×2.5 damage, and every 6 overkill damage is a turn unseen", "×3 damage, and every 4 overkill damage is a turn unseen", "×3.5 damage, and every 3 overkill damage is a turn unseen"], "ranks": [{"mp": 8, "cd": 60, "mult": 2, "invisPer": 0, "invisCap": 0}, {"mp": 8, "cd": 60, "mult": 2.5, "invisPer": 6, "invisCap": 6}, {"mp": 8, "cd": 50, "mult": 3, "invisPer": 4, "invisCap": 10}, {"mp": 8, "cd": 40, "mult": 3.5, "invisPer": 3, "invisCap": 14}], "req": [["now_you_see_me", 2]]},
+      {"id": "body_of_iron", "x": 0, "y": 4, "name": "Body of Iron", "icon": "🛡", "kind": "passive", "desc": "You take the blow somewhere other than your body. A share of every hit that gets through comes out of MP instead of HP — and can take it to nothing, if you have the mana.", "levels": ["20% of damage taken comes from MP.", "30% from MP.", "40% from MP.", "50% from MP."], "ranks": [{"mpSoak": 20}, {"mpSoak": 30}, {"mpSoak": 40}, {"mpSoak": 50}], "req": [["meditate", 2]]},
+      {"id": "dragons_fury", "x": 1, "y": 4, "name": "Dragon's Fury", "icon": "💥", "kind": "passive", "desc": "The kick no longer stops at what it hits. Every Dragon Kick that lands sends the impact out in a ring — full weight on the tile struck, halved for each ring beyond it.", "levels": ["The blast reaches 1 tile.", "2 tiles.", "3 tiles.", "4 tiles."], "ranks": [{"furyRadius": 1}, {"furyRadius": 2}, {"furyRadius": 3}, {"furyRadius": 4}], "req": [["dragon_kick", "max"]]}
+    ]
     },
     "mage": {
       "progression": {
@@ -2913,7 +2919,11 @@ window.CANTORI_DATA = {
           ],
           "req": []
         }
-      ],
+      ,
+      {"id": "ward", "x": 0, "y": 2, "name": "Ward", "icon": "◇", "kind": "wardcast", "desc": "A shell around you that eats damage before your armour, your HP or anything else sees it. Sized by RES — the stat the class is built on and had nothing of its own to show for it.", "levels": ["15 MP · absorbs 10 + 3×RES mod · 40 turns · 120 turn cooldown", "Absorbs 16 + 5×RES mod", "Absorbs 24 + 7×RES mod, 60 turns", "Absorbs 24 + 7×RES mod, and what it eats is thrown back at whatever swung"], "ranks": [{"mp": 15, "cd": 120, "base": 10, "perRes": 3, "turns": 40}, {"mp": 15, "cd": 120, "base": 16, "perRes": 5, "turns": 40}, {"mp": 15, "cd": 100, "base": 24, "perRes": 7, "turns": 60}, {"mp": 15, "cd": 100, "base": 24, "perRes": 7, "turns": 60, "reflect": true}], "req": [["mp_recovery", 2]]},
+      {"id": "frost_nova", "x": 1, "y": 2, "name": "Frost Nova", "icon": "❄", "kind": "frostcast", "desc": "Tap anywhere you can see. Everything caught in the bloom moves and swings at half speed. No damage at first — the slow IS the spell — but it learns to bite.", "levels": ["12 MP · radius 2 · chilled 10 turns · no damage · 60 turn cooldown", "Radius 2, 12 turns, and 4 + INT mod damage", "Radius 3, 14 turns, and 7 + INT mod damage", "Radius 3, 18 turns, and 11 + INT mod damage"], "ranks": [{"mp": 12, "cd": 60, "radius": 2, "chill": 10, "dmg": 0}, {"mp": 12, "cd": 60, "radius": 2, "chill": 12, "dmg": 4}, {"mp": 14, "cd": 55, "radius": 3, "chill": 14, "dmg": 7}, {"mp": 14, "cd": 50, "radius": 3, "chill": 18, "dmg": 11}], "req": [["burning_sensation", 2]]},
+      {"id": "dominate", "x": 2, "y": 2, "name": "Dominate", "icon": "♛", "kind": "dominatecast", "desc": "Tap a foe you can see and it changes sides for good — it hunts the others and never you. The price is read off the target, not the rank: MP equal to the health it has left. Bosses will not bend.", "levels": ["MP = the target's current HP · 400 turn cooldown", "MP = 85% of its current HP", "MP = 70% of its current HP, 350 turn cooldown", "MP = 55% of its current HP, 300 turn cooldown"], "ranks": [{"mp": 0, "cd": 400, "hpCost": 1}, {"mp": 0, "cd": 400, "hpCost": 0.85}, {"mp": 0, "cd": 350, "hpCost": 0.7}, {"mp": 0, "cd": 300, "hpCost": 0.55}], "req": [["sleep", 2], ["madness", 2]]}
+    ],
       "icon": "✨",
       "baseHp": 20,
       "baseMp": 20,
