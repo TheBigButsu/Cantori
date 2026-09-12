@@ -3504,3 +3504,53 @@ now reads "Worn, not trained".
 the row ran off a phone. Past six it takes a second row, with the container width
 capped at `ceil(n/2)` slots — flex-wrap left to itself fills the first row and drops
 the remainder, which came out 7 and 1 rather than 4 and 4.
+
+---
+
+## The clock, identification, and what a merchant pays
+
+**The Horror bank caps at 1000**, not 1400. The point of banking is to reward
+moving; a ceiling holding two floors' worth let you bank your way back into
+camping.
+
+| left when you take the stairs | next floor opens on |
+|---|---|
+| 300 or more | **1000** (capped) |
+| 100 | **800** |
+| nothing | **700** |
+
+The penalty only starts biting once you have spent more than 700 of the budget,
+which makes it a gradient rather than a cliff.
+
+**Identification costs about a floor of experience.** It is paid for in XP, so the
+target is set in the same currency. A floor's yield, measured on a full clear:
+
+| depth | 1 | 3 | 5 | 9 | 14 |
+|---|---|---|---|---|---|
+| XP earned clearing it | 7 | 12 | ~20 | 29 | 62 |
+
+That is about `4 × depth + 5`, so `idNeed = (5 + 4 × depth) × a rarity factor`
+(white 0.5, green 0.7, blue 1.0, purple 1.4, gold 1.8). Measured: a blue found on
+depth 5 wants 25 XP against a floor yielding 25.
+
+It keys off the **drop depth**, not the item's tier — a tier-1 ring found on floor
+10 should still take a floor-10 floor to learn, because that is the time it is
+competing with.
+
+**A merchant pays for quality.** `tier × 2` was the only input, so a gold tier-5
+relic and the white tier-5 base it was rolled from both fetched 10 gold. Against a
+20g potion and a 100g boon, selling was pointless.
+
+| | white | green | blue | purple | gold |
+|---|---|---|---|---|---|
+| tier 1 | 2g | 4g | 8g | 16g | 30g |
+| tier 5 | 10g | 20g | 40g | 80g | 150g |
+
+Rarity is the colour the item is already drawn in, so paying for it leaks nothing
+the player cannot see, and the enchant level is appraised even when unidentified —
+the merchant knows their business.
+
+The enchant level **multiplies** (`× (1 + 0.25 × plus)`) rather than adding. Added,
+it swamped rarity at low tiers: a +2 white dagger fetched 8 gold against a +0
+green's 4, so the price stopped reading as quality, which is the one thing it is
+for. Multiplied, the ladder holds at every tier and a +3 blue sword goes 8g → 14g.

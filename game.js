@@ -111,7 +111,21 @@
   const SHOP_REROLL_BASE = 1;
   const shopRerollCost = () => SHOP_REROLL_BASE * Math.pow(2, shopRerolls);
   const ALTAR_BOON_PRICE = 100;   // gold for one god's offer of three boons
-  const sellPrice = (inst) => gearTier(inst.key) * 2;
+  // What a merchant pays. Tier was the only input, so a gold tier-5 relic and the
+  // white tier-5 base it was rolled from both fetched 10 gold — against a 20g
+  // potion and a 100g boon, selling anything was pointless. Rarity is the colour
+  // the item is already drawn in, so paying for it leaks nothing the player cannot
+  // see, and the enchant level is appraised even when the player has not learned
+  // it yet: the merchant knows their business.
+  const SELL_BY_RARITY = { white: 1, green: 2, blue: 4, purple: 8, gold: 15 };
+  const sellPrice = (inst) => {
+    const tier = gearTier(inst.key);
+    const mult = SELL_BY_RARITY[inst.rarity] != null ? SELL_BY_RARITY[inst.rarity] : 1;
+    // The enchant level MULTIPLIES rather than adds. Added, it swamped rarity at
+    // low tiers — a +2 white dagger fetched 8 gold against a +0 green's 4, so the
+    // price stopped reading as quality, which is the one thing it is for.
+    return Math.max(1, Math.round(tier * 2 * mult * (1 + 0.25 * (inst.plus || 0))));
+  };
 
   // Stats → effects, D&D style.
   //
@@ -4222,7 +4236,9 @@
   // happens. ×6 pulls the whole curve in by a quarter and level 2 in particular.
   const XP_PER_LEVEL = 6.6;   // was 6 — levels arrive 10% slower
   const xpToNext = () => Math.round(player.level * XP_PER_LEVEL);
+  let _xpEver = 0;
   function gainXP(amount) {
+    _xpEver += amount;
     player.xp += amount;
     idFromXP(amount);          // what you carry becomes familiar as you grow
     let threshold = xpToNext();
@@ -5135,7 +5151,9 @@
   // every floor, forever — the clock reset was a free refill and the anti-grind
   // was only ever a per-floor speed limit.
   const FLOOR_GRANT = 700;        // fresh turns handed out on arrival
-  const FLOOR_BANK_MAX = 1400;    // ...and the most that can ever be standing
+  // 1000, not 1400: the point of banking is to reward moving, and a ceiling that
+  // holds two floors' worth lets you bank your way back into camping.
+  const FLOOR_BANK_MAX = 1000;    // ...and the most that can ever be standing
   let floorPatience = FLOOR_GRANT;
   // Three warnings on the way, and the FIRST one costs something real rather than
   // just saying words: the floor stops giving your health back. A clock that only
@@ -9741,6 +9759,7 @@
     // (`accuracy`) that the d20 migration had removed.
     itemText: (inst) => itemAffixText(inst),
     rollGear: (f) => rollGearDrop(f != null ? f : depth),
+    sellPriceOf: (inst) => sellPrice(inst),
     rollTrinket: (f) => rollTrinket(f != null ? f : depth),
     costs: () => ({ walk: walkCost(), attack: attackCost() }),
     turnMeter: () => ({ turnMeter, lastActionCost }),
@@ -9822,6 +9841,7 @@
     tileDeclared: (t) => Object.prototype.hasOwnProperty.call(TILE, t),
     pan: (dxPx, dyPx) => panBy(dxPx, dyPx),
     addXp: (n) => gainXP(n || 0),
+    totalXp: () => _xpEver,
     doorOpenAt: (x, y) => doorOpen(x, y),
     visibleAt: (x, y) => (inBounds(x, y) && visible[y] ? !!visible[y][x] : false),
     spawnAt: (type, x, y, hp, level) => {   // dev: drop a monster with custom HP next to you

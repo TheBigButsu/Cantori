@@ -115,18 +115,21 @@ window.CantoriLoot = function (deps) {
     if (JEWELRY[base.cat] && stats.length === 0 && enchants.length === 0) {
       if (ekeys.length && Math.random() < 0.5) addEnchant(); else addStat();
     }
-    // Identification: how much USE it takes to learn this item's hidden properties.
-    //   idNeed = (tier + plus) * (1..10 + rarity rank) * ID_EFFORT,  white=1 … gold=5
+    // Identification is paid for in EXPERIENCE (see gainXP), so the target is set
+    // in the same currency: roughly one floor's worth of it, scaled by how much
+    // there is to learn.
     //
-    // ID_EFFORT is the whole dial. It was 3, on the reasoning that identification
-    // shouldn't resolve inside a single fight — but "a use" is one swing of that
-    // weapon, or one hit taken while wearing that armor, not one turn, so the real
-    // cost was three times what it looked like: an ordinary tier-3 blue wanted ~76
-    // connecting blows before it would say what it was. Long enough that most gear
-    // was replaced unidentified, which makes the whole affix system invisible.
-    const ID_EFFORT = 0.5;
-    const rank = LOOT.rarities.findIndex((r) => r.key === rarity) + 1;
-    const idNeed = Math.max(1, Math.round((tier + plus) * (randInt(1, 10) + (rank > 0 ? rank : 5)) * ID_EFFORT));
+    // A floor's XP yield, measured on a full clear, is about 4 x depth + 5 — 7 at
+    // depth 1, 29 at depth 9, 62 at depth 14. It is the DROP DEPTH that matters
+    // rather than the item's tier: a tier-1 ring found on floor 10 should still
+    // take a floor-10 floor to learn, because that is the time it is competing with.
+    //
+    // The old formula keyed off (tier + plus) x a random 1..10 and was calibrated
+    // for "a use" meaning one swing — which made an ordinary blue resolve inside a
+    // single fight once identification moved onto XP.
+    const floorXP = 5 + 4 * Math.max(1, floor);
+    const ID_FLOORS = { white: 0.5, green: 0.7, blue: 1.0, purple: 1.4, gold: 1.8 };
+    const idNeed = Math.max(1, Math.round(floorXP * (ID_FLOORS[rarity] != null ? ID_FLOORS[rarity] : 1)));
     const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0 && !grant;
     const inst = { key, rarity, plus, stats, enchants, idNeed, idXp: 0, identified: nothingHidden };
     if (grant) inst.grant = grant;
