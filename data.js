@@ -645,22 +645,6 @@ window.CANTORI_DATA = {
       "color": "#7fc4d8",
       "range": 5
     },
-    "Shitty_sword": {
-      "cat": "weapon",
-      "sub": "sword",
-      "name": "Shitty sword",
-      "dmgMin": 1,
-      "dmgMax": 2,
-      "toHit": 2,
-      "tier": 0,
-      "req": {
-        "STR": 0
-      },
-      "speed": 1.2,
-      "rarity": 0,
-      "glyph": "/",
-      "color": "#cccccc"
-    },
     "grass_armor": {
       "cat": "armor",
       "sub": "light",
@@ -1926,7 +1910,7 @@ window.CANTORI_DATA = {
         "LCK": 10
       },
       "start": {
-        "weapon": "Shitty_sword",
+        "weapon": "sword",
         "armor": "rusted_mail"
       },
       "baseHp": 23,
@@ -2067,15 +2051,15 @@ window.CANTORI_DATA = {
           "id": "sword_master",
           "x": 2,
           "y": 0,
-          "name": "Sword Master",
+          "name": "Melee Master",
           "icon": "⚔",
           "kind": "passive",
-          "when": "sword",
-          "desc": "Mastery of the sword — passive bonuses that apply while a sword is equipped.",
+          "when": "dagger,sword,axe",
+          "desc": "Every blade and every haft, not one of them. Applies while you are holding a dagger, a sword or an axe — so picking up the better weapon is never punished for being the wrong shape.",
           "levels": [
-            "+1 to hit with a sword",
-            "+2 to hit with a sword",
-            "+2 to hit and +1 max damage with a sword",
+            "+1 to hit with a dagger, sword or axe",
+            "+2 to hit",
+            "+2 to hit and +1 max damage",
             "+3 to hit, +1 min and max damage — and a blue sword of your own"
           ],
           "ranks": [
@@ -2399,7 +2383,7 @@ window.CANTORI_DATA = {
             "+1 min / +2 max unarmed damage. Unarmed attack speed 1.5.",
             "+2 min / +4 max unarmed damage. (requires character level 3)",
             "+4 min / +12 max unarmed damage. (requires character level 6)",
-            "Same, plus (DEX+VIT)/2 bonus damage. (requires character level 9)"
+            "Same, plus your DEX modifier + your VIT modifier as bonus damage. (requires character level 9)"
           ],
           "ranks": [
             {

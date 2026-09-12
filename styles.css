@@ -360,13 +360,20 @@ body{
 #hotbar{
   flex:none;
   display:flex;
+  flex-wrap:wrap;
   align-items:center;
   justify-content:center;
-  gap:10px;
+  gap:8px;
   padding:8px 12px 6px;
   min-height:0;
 }
 #hotbar:empty{display:none}
+/* Past six buttons the single row stopped fitting a phone and the end of it ran
+   off the screen — ToneTum at level 8 carries nine. Two rows instead, with the
+   slots shrunk a little so two rows still cost less height than a scrolling one. */
+#hotbar.two-row{gap:6px 8px;padding:6px 10px 5px;margin:0 auto}
+#hotbar.two-row .slot{width:46px;height:46px;font-size:21px}
+#hotbar.two-row .slot .lbl{font-size:7px}
 .slot{
   position:relative;
   width:52px;height:52px;
