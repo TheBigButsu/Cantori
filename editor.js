@@ -1267,6 +1267,15 @@
       ],
     },
     {
+      title: "The clock, identification, and what a merchant pays",
+      rows: [
+        { name: "The Horror bank caps at 1000", formula: "a floor grants 700 and adds what was left, ceiling 1000 (was 1400)", note: "The point of banking is to reward MOVING, and a ceiling holding two floors\u2019 worth let you bank your way back into camping. Measured: descend with 300 or more unspent and you get the full 1000; with 100 left you open on 800; camp to the wire and you get the bare 700. The penalty only starts biting once you have spent more than 700 of the budget, which is the gradient \u2014 not a cliff." },
+        { name: "Identification costs about a floor of XP", formula: "idNeed = (5 + 4 \u00d7 drop depth) \u00d7 {white .5, green .7, blue 1.0, purple 1.4, gold 1.8}", note: "A floor\u2019s XP yield was measured on a full clear: 7 at depth 1, 29 at depth 9, 62 at depth 14 \u2014 about 4 \u00d7 depth + 5. Identification is paid for in experience, so the target is set in the same currency. It keys off the DROP DEPTH rather than the item\u2019s tier: a tier-1 ring found on floor 10 should still take a floor-10 floor to learn, because that is the time it is competing with. Measured: a blue at depth 5 wants 25 XP against a floor yielding 25." },
+        { name: "A merchant pays for quality", formula: "tier \u00d7 2 \u00d7 {white 1, green 2, blue 4, purple 8, gold 15} \u00d7 (1 + 0.25 \u00d7 plus)", note: "Tier was the only input, so a gold tier-5 relic and the white tier-5 base it was rolled from both fetched 10 gold \u2014 against a 20g potion and a 100g boon, selling anything was pointless. Now 2g for a white dagger up to 150g for a gold stormcaller. Rarity is the colour the item is already drawn in, so paying for it leaks nothing; the enchant level is appraised even unidentified, because the merchant knows their business." },
+        { name: "Why plus MULTIPLIES", formula: "\u00d7(1 + 0.25 \u00d7 plus), not + plus \u00d7 tier \u00d7 3", note: "Added, it swamped rarity at low tiers: a +2 white dagger fetched 8 gold against a +0 green\u2019s 4, so the price stopped reading as quality \u2014 the one thing it is for. Multiplied, the rarity ladder stays intact at every tier and a +3 blue sword goes 8g to 14g." },
+      ],
+    },
+    {
       title: "Play-test pass: the clock, the curve, and four fixes",
       rows: [
         { name: "The Horror clock banks", formula: "a floor grants 700 turns and ADDS whatever was left when you took the stairs, capped at 1400", note: "A flat 600 a floor made the optimal play \u201crest until 150 left, then descend\u201d, every floor, forever \u2014 the reset was a free refill and the anti-grind was only ever a per-floor speed limit. Measured: camp to 650 used and the next floor opens on 750; leave at 100 used and it opens on 1350. Leaving early now BANKS time, which is the behaviour the mechanic was always asking for." },
