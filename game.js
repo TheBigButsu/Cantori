@@ -314,6 +314,7 @@
     player.xp = 0; player.level = 1;
     player.lvlHp = 0; player.lvlAcc = 0; player.lvlEva = 0; player.lvlMp = 0;   // reset per-level bonuses
     player.lvlEvaPct = 0; player.lvlRegenInt = 0; player.lvlMitMax = 0; player.lvlNote = 0;
+    floorPatience = FLOOR_GRANT;               // a new run does not inherit the last one's clock
     player.regenAcc = 0; player.mpRegenAcc = 0;
     identified.clear();
     player.stoneSkin = null;                   // timed buffs don't carry across a new run
@@ -1707,7 +1708,10 @@
       const r = rooms[i];
       if (r === last) continue;
       const openings = roomOpenings(r).length;
-      if (openings >= 1 && openings <= 14 && r.w * r.h <= 55) candidates.push({ i, openings });
+      // EXACTLY one. A room sealed on two sides costs two torches for one prize and
+      // reads as the floor taxing you twice for the same room — and with the thorn
+      // on each side leading to the same place, neither one is a decision.
+      if (openings === 1 && r.w * r.h <= 55) candidates.push({ i, openings });
     }
     candidates.sort((a, b) => a.openings - b.openings);   // fewest entrances = tidiest vaults
     candidates = candidates.map((c) => c.i);
@@ -1985,6 +1989,9 @@
     traps = [];
     decoys = [];
     notes = [];
+    // Bank what was left of the last floor's welcome, then add this floor's grant.
+    // Read BEFORE turns is zeroed, which is the whole point of doing it here.
+    floorPatience = Math.min(FLOOR_BANK_MAX, FLOOR_GRANT + Math.max(0, floorPatience - turns));
     turns = 0;
     sarcophagi = new Set();
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
@@ -1992,7 +1999,7 @@
     // list pointing at a tile that is now something else entirely.
     secretDoors = []; secretsHinted = new Set(); secretApproach = new Set();
     auraSig = "";                              // whatever field you stood in is a floor behind you
-    horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
+    horrorWarned = false; horrorDeadAt = -1; sparkGone = false;
 
     // The biome (and so which boss, and so which arena) has to be known before the
     // layout is built, not after it.
@@ -2180,6 +2187,9 @@
     traps = [];
     decoys = [];
     notes = [];
+    // Bank what was left of the last floor's welcome, then add this floor's grant.
+    // Read BEFORE turns is zeroed, which is the whole point of doing it here.
+    floorPatience = Math.min(FLOOR_BANK_MAX, FLOOR_GRANT + Math.max(0, floorPatience - turns));
     turns = 0;
     sarcophagi = new Set();
     // Cleared HERE, not in resolveDeadEnds — boss floors and the merchant den never
@@ -2187,7 +2197,7 @@
     // list pointing at a tile that is now something else entirely.
     secretDoors = []; secretsHinted = new Set(); secretApproach = new Set();
     auraSig = "";
-    horrorWarned = false; horrorDeadAt = -1; sparkGone = false;   // the new floor's patience starts over
+    horrorWarned = false; horrorDeadAt = -1; sparkGone = false;
     bossActive = false;
     bossRoom = null;
 
@@ -3194,14 +3204,14 @@
     const fill = document.getElementById("vTm"), num = document.getElementById("vTmNum");
     if (!row || !fill || !num) return;
     const running = !bossActive && !inShop;
-    const left = Math.max(0, FLOOR_PATIENCE - turns);
+    const left = Math.max(0, floorPatience - turns);
     row.classList.toggle("off", !running);
     row.classList.toggle("low", running && left > 0 && turns >= FLOOR_WARNING);
     row.title = !running ? "No clock on this floor."
       : sparkGone ? "The spark is gone — no health regenerates here. " + left + " turns before something comes."
       : left + " turns before the floor turns on you.";
     row.classList.toggle("spent", running && left <= 0);
-    fill.style.width = (running ? (left / FLOOR_PATIENCE) * 100 : 100) + "%";
+    fill.style.width = (running ? (left / Math.max(1, floorPatience)) * 100 : 100) + "%";
     num.textContent = running ? String(left) : "—";
   }
   function setDepthLabel() {
@@ -3900,7 +3910,7 @@
       const pre = surprise ? "Surprise! You strike the "
         : pinned ? "Wedged in the " + doorWordOne() + ", the "
         : "You strike the ";
-      if (player.weapon) gainIdentify(player.weapon, 1);   // learn a weapon by swinging it
+
       // Pressure Point: a passive rider, gated `when: "unarmed"` in the data, so
       // passiveMod already returns 0 the moment she picks a weapon up. Applied
       // after the damage rather than before, because a stun on something already
@@ -4020,7 +4030,7 @@
       // enchants (armor, rings, trinket, necklace) lash back at the attacker
       for (const it of wornItems()) {
         if (GEAR[it.key].cat === "weapon") continue;
-        gainIdentify(it, 1);
+
         if (attacker.hp > 0 && it.enchants && it.enchants.length) procEnchants(it.enchants, attacker, itemPower(it), dmg, it);
       }
     }
@@ -4210,10 +4220,11 @@
   // floor is where you have the fewest ways to earn and the most need of a level,
   // and 8 XP of depth-1 vermin at 1 XP each is a lot of rats before anything
   // happens. ×6 pulls the whole curve in by a quarter and level 2 in particular.
-  const XP_PER_LEVEL = 6;
-  const xpToNext = () => player.level * XP_PER_LEVEL;
+  const XP_PER_LEVEL = 6.6;   // was 6 — levels arrive 10% slower
+  const xpToNext = () => Math.round(player.level * XP_PER_LEVEL);
   function gainXP(amount) {
     player.xp += amount;
+    idFromXP(amount);          // what you carry becomes familiar as you grow
     let threshold = xpToNext();
     while (player.xp >= threshold) {
       player.xp -= threshold;
@@ -5105,7 +5116,7 @@
   }
 
   // ---- The floor's patience: the Horror -------------------------------------
-  // A floor tolerates you for FLOOR_PATIENCE turns. Past that it sends something
+  // A floor tolerates you for its patience budget. Past that it sends something
   // after you, and it does not stop sending it.
   //
   // This is the anti-grind, and it is deliberately a MONSTER rather than a rule.
@@ -5118,7 +5129,14 @@
   //
   // `turns` already resets in generateLevel, so it IS the per-floor clock; no
   // second counter to keep in sync.
-  const FLOOR_PATIENCE = 600;     // turns of welcome before the floor turns on you
+  // A floor now GRANTS 700 turns and adds whatever you had left when you took the
+  // last stairs, so leaving early banks time and camping to the wire spends it.
+  // Flat 600 a floor made the optimal play "rest until 150 left, then descend",
+  // every floor, forever — the clock reset was a free refill and the anti-grind
+  // was only ever a per-floor speed limit.
+  const FLOOR_GRANT = 700;        // fresh turns handed out on arrival
+  const FLOOR_BANK_MAX = 1400;    // ...and the most that can ever be standing
+  let floorPatience = FLOOR_GRANT;
   // Three warnings on the way, and the FIRST one costs something real rather than
   // just saying words: the floor stops giving your health back. A clock that only
   // talks is a clock you learn to ignore.
@@ -5180,7 +5198,7 @@
       flashScreen("#3a1e1e", 420);
       if (st.spark) { sparkGone = true; player.regenAcc = 0; }
     }
-    if (turns < FLOOR_PATIENCE) return;
+    if (turns < floorPatience) return;
     if (monsters.some((m) => m.horror && m.hp > 0)) return;    // one at a time
     // Killing it buys a breather, not the floor back.
     if (horrorDeadAt >= 0 && turns - horrorDeadAt < HORROR_RESPAWN) return;
@@ -5500,6 +5518,19 @@
 
   // Accrue identify-progress on one equipped item through *use* (a weapon when you
   // strike, worn gear when you're hit) — not from idly walking. Reveal once reached.
+  // Identification runs off EXPERIENCE now, and off nothing else. It used to tick
+  // on every swing with a weapon and every blow taken in armour, which meant the
+  // ring you never used stayed a mystery forever while the sword revealed itself
+  // in one fight — and a piece could finish identifying in the middle of a swing,
+  // for reasons the player had no way to connect to anything. Learning what you
+  // carry is now paid for by the same thing everything else is: getting better.
+  function idFromXP(amount) {
+    if (amount <= 0) return;
+    for (const slot of ["weapon", "armor", "ring", "necklace", "trinket"]) {
+      const it = player[slot];
+      if (it && !it.identified) gainIdentify(it, amount);
+    }
+  }
   function gainIdentify(it, amount) {
     if (!it || it.identified) return;
     it.idXp = (it.idXp || 0) + (amount || 1);
@@ -7921,7 +7952,10 @@
       // before the weapon-subtype branch below, which would otherwise read
       // "softarmor" as the name of a weapon class and never match.
       else if (d.when === "softarmor") { const a = armorSubName(); if (a !== "light" && a !== "medium") continue; }
-      else if (d.when && d.when !== weaponSub()) continue;
+      // `when` may name several subtypes, comma-separated — Melee Master covers
+      // dagger, sword and axe, so the warrior is not punished for picking up the
+      // better weapon that happens to be the wrong shape.
+      else if (d.when && d.when.split(",").map((w) => w.trim()).indexOf(weaponSub()) < 0) continue;
       const rd = d.ranks[r - 1] || {}; if (rd[field] != null) v += rd[field];
     }
     return v;
@@ -7933,12 +7967,21 @@
     const r0 = skillRank("unarmed_master"); if (r0 < 1) return 0;
     const d = classSkills().unarmed_master; if (!d) return 0;
     const r = d.ranks[r0 - 1];
-    return (r && r.statScale) ? Math.max(0, mod("DEX") + mod("VIT")) * 2 : 0;
+    // The MODIFIER, once. It used to be the sum doubled, which measured 24-33
+    // bare-handed damage at level 12 with no gear at all — the largest flat term
+    // in the game, on a tier-1 node, against a Caves roster that tops out at 25 HP.
+    return (r && r.statScale) ? Math.max(0, mod("DEX") + mod("VIT")) : 0;
   }
 
+  // Only what is actually on YOUR class's tree can be bought. A trinket folds a
+  // foreign skill into classSkills() so the hotbar and cooldowns treat it as
+  // ordinary — but the ranks come from the trinket, and offering "Learn (1 pt)"
+  // on ToneTum's borrowed Dragon Kick sells a point for nothing.
+  const ownSkill = (key) => !!treeSkills(player.cls).skills[key];
   function learnSkill(key) {
     const d = skillDef(key), st = player.skills[key];
     if (!d || !st || st.rank >= d.max || player.statPoints <= 0) return;
+    if (!ownSkill(key)) { log(d.name + " is not yours to train — it comes from what you are wearing.", ""); return; }
     if (!prereqsMet(d)) { log("Requires " + (prereqNames(d).join(", ") || "a prerequisite") + " first.", ""); return; }
     const nextDef = d.ranks[st.rank];
     if (nextDef && nextDef.minLevel && player.level < nextDef.minLevel) { log("Requires character level " + nextDef.minLevel + " first.", ""); return; }
@@ -7964,9 +8007,9 @@
       const g = GEAR[k];
       return g && (!spec.cat || g.cat === spec.cat) && (!spec.sub || (g.sub || "") === spec.sub);
     };
-    // NOT gearTier() here: that reads `tier || 1`, so an explicitly tier-0 row (the
-    // Shitty_sword) reports as tier 1 and ties with the real one. For picking a
-    // reward the authored number is what matters.
+    // NOT gearTier() here: that reads `tier || 1`, so an explicitly tier-0 row
+    // would report as tier 1 and tie with a real one. For picking a reward the
+    // authored number is what matters.
     const trueTier = (k) => (GEAR[k].tier != null ? GEAR[k].tier : 1);
     const lo = spec.tierMin || 1, hi = spec.tierMax || 5;
     let pool = GEAR_KEYS.filter((k) => inCat(k) && trueTier(k) >= lo && trueTier(k) <= hi);
@@ -9215,8 +9258,9 @@
     const locked = prereqLocked || !!rankGate;
     const curTxt = st.rank > 0 ? (d.levels[st.rank - 1] || skillFmt(d.ranks[st.rank - 1])) : null;
     const nextTxt = st.rank < d.max ? (d.levels[st.rank] || skillFmt(d.ranks[st.rank])) : "Maxed.";
-    const canUp = st.rank < d.max && player.statPoints > 0 && !locked;
-    const label = locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
+    const borrowed = !ownSkill(key);
+    const canUp = st.rank < d.max && player.statPoints > 0 && !locked && !borrowed;
+    const label = borrowed ? "Worn, not trained" : locked ? "🔒 Locked" : st.rank === 0 ? "Learn (1 pt)" : st.rank < d.max ? "Upgrade (1 pt)" : "Maxed";
     const kindTag = d.kind === "passive" ? " · passive" : "";
     const tierTag = d.tier ? ` · tier ${d.tier}` : "";
     const reqParts = prereqNames(d);
@@ -9400,6 +9444,8 @@
     b.addEventListener("click", onClick);
     return b;
   }
+  const HOTBAR_ONE_ROW = 6;    // buttons that fit across a phone before it has to wrap
+  const HOTBAR_SLOT = 46, HOTBAR_GAP = 8, HOTBAR_PAD = 10;   // must match the .two-row rule in styles.css
   function updateHotbar() {
     const bar = document.getElementById("hotbar");
     if (!bar) return;
@@ -9415,6 +9461,17 @@
       const badge = ch !== null ? (ch > 0 ? "\u00d7" + ch : (st.cd > 0 ? st.cd : 0)) : (st.cd > 0 ? st.cd : 0);
       bar.appendChild(makeSlot(d.icon, d.name, ready, badge, pendingSkill === key, () => useSkill(key)));
     }
+    // Wrap rather than overflow. The class (not a media query) because what
+    // matters is how many buttons there ARE, not how wide the screen is.
+    const n = bar.children.length, wrapped = n > HOTBAR_ONE_ROW;
+    bar.classList.toggle("two-row", wrapped);
+    // Left to itself, flex-wrap fills the first row and drops the remainder — nine
+    // buttons came out 7 and 2. Cap the width at half of them so the two rows are
+    // even, which is what makes it read as a pad rather than an overflow.
+    if (wrapped) {
+      const per = Math.ceil(n / 2);
+      bar.style.maxWidth = (per * HOTBAR_SLOT + (per - 1) * HOTBAR_GAP + HOTBAR_PAD * 2) + "px";
+    } else bar.style.maxWidth = "";
   }
 
   // ---- Main loop -----------------------------------------------------------
@@ -9727,6 +9784,7 @@
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         boons: player.boons ? [...player.boons] : [], boonPending, classPending,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
+        ring: player.ring, necklace: player.necklace, trinket: player.trinket,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
         weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponToHit: weaponToHit(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],
@@ -9856,7 +9914,8 @@
     setTurns: (n) => { turns = n; },
     horrorState: () => {
       const h = monsters.find((m) => m.horror && m.hp > 0);
-      return { turns, warned: horrorWarned, deadAt: horrorDeadAt, type: horrorType(),
+      return { turns, patience: floorPatience, left: Math.max(0, floorPatience - turns),
+               warned: horrorWarned, deadAt: horrorDeadAt, type: horrorType(),
                alive: !!h, at: h ? { x: h.x, y: h.y } : null, hp: h ? h.hp : 0,
                maxHp: h ? h.maxHp : 0, atk: h ? [h.atkMin, h.atkMax] : null, state: h ? h.state : null };
     },
@@ -9897,7 +9956,7 @@
     setEva: (n) => { player.boonEva = n; updateHUD(); },
     dodgeChance: () => dodgeChance(),
     sparkGone: () => sparkGone,
-    floorStages: () => ({ patience: FLOOR_PATIENCE, stages: FLOOR_STAGES.map((s) => ({ at: s.at, msg: s.msg, spark: !!s.spark })) }),
+    floorStages: () => ({ patience: floorPatience, grant: FLOOR_GRANT, bankMax: FLOOR_BANK_MAX, stages: FLOOR_STAGES.map((s) => ({ at: s.at, msg: s.msg, spark: !!s.spark })) }),
     setMp: (n) => { player.mp = Math.min(player.maxMp, n); updateHUD(); },
     setHasteBuff: (n) => { player.hasteBuff = n; },
     setInvisible: (n) => { player.invisible = n; },

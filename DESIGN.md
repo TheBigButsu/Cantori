@@ -3429,3 +3429,78 @@ hit points**. Anything that reaches one ends it. The limiter is no longer the si
 of the board, it is keeping the board alive, which is the trade the LUCK change made
 deliberately. Worth watching in play — if a five-note board turns out to be easy to
 protect, the ceiling is the number to cut, not the count.
+
+---
+
+## The level-vs-depth curve, and a play-test pass
+
+A design review was written against level-20 numbers and got most of its
+conclusions wrong, because level 20 is not where the game is. So first, the thing
+that had never been measured: a **100%-clear run down twenty floors**, recording
+the level at each depth.
+
+| depth | 1 | 4 | **5** boss | 9 | **10** boss | 14 | **15** boss | 17 |
+|---|---|---|---|---|---|---|---|---|
+| level | 2 | 4 | **6** | 9 | **12** | 14 | **19** | 20 |
+
+Skill points are `1/floor + 3/boss` — **8 by depth 5, 16 by depth 10, 24 by 15** —
+and they buy skill ranks only. Stats come from levels and potions; there is no
+stat-point spend at all.
+
+Against the tier gates (tier N needs level 5N), that means **tier 4 arrives around
+depth 14 and tier 5 around depth 17**. Anything authored above tier 3 is content
+for the last third of a run. Worth keeping in view when adding nodes.
+
+### What the play-test actually found
+
+Two of the review's conclusions were simply wrong and are struck: ToneTum is not a
+fragile glass cannon (he spams Magic Missile and out-regenerates his own spending),
+and Sera's 2-HP notes are fine in play because they auto-hit and kill bats. Measured
+numbers are not the same thing as a played game.
+
+**The Horror clock now banks.** A floor grants 700 turns and adds whatever was left
+when you took the stairs, capped at 1400. Flat 600 a floor made the optimal play
+"rest until 150 left, then descend" — every floor, forever. The reset was a free
+refill, so the anti-grind was only ever a per-floor speed limit. Measured: camp to
+650 used and the next floor opens on **750**; leave at 100 used and it opens on
+**1350**. Leaving early banks time, which is what the mechanic was always asking for.
+
+**Levels 10% slower.** `XP_PER_LEVEL` 6 → 6.6: 7 / 13 / 20 / 26 / 33 / 40 for the
+first six levels, against 6 / 12 / 18 / 24 / 30 / 36.
+
+**Identification tracks experience and nothing else.** It used to tick on every
+swing with a weapon and every blow taken in armour, so the ring you never used
+stayed a mystery forever while the sword revealed itself in one fight — and a piece
+could finish identifying mid-swing for reasons the player could not connect to
+anything. Now `gainXP` feeds every unidentified worn slot by the amount gained.
+Measured: 25 swings at a rat move a blue sword 0%, then 2 XP takes it to 50% and 4
+more finishes it.
+
+**Melee Master.** A passive's `when` now accepts several subtypes comma-separated
+(`dagger,sword,axe`). Sword Master punished the warrior for picking up the better
+weapon that happened to be the wrong shape. Measured at rank 4: sword +7, dagger
++8, hatchet +3 to hit, and a bow correctly gets nothing. The **Shitty sword** —
+1–2 damage, tier 0, rarity 0 so it never dropped — is deleted, and Chadwick opens
+with the real Sword at 2–6.
+
+**Unarmed Master rank 4** was `(mod(DEX) + mod(VIT)) × 2`, which measured **24–33
+bare-handed damage at level 12 with no gear at all**: the largest flat damage term
+in the game, on a tier-1 node, against a Caves roster topping out at 25 HP. Now the
+sum, once — 15–24 at the same level. The skill text also claimed "(DEX+VIT)/2",
+which was never what the code did.
+
+**A thorn vault has exactly one way in.** Candidate rooms are filtered on
+`openings === 1` rather than 1–14. A room sealed on two sides charged two torches
+for one prize, and with both thorns leading to the same place neither was a
+decision. Measured after: 0 of 13 thorn floors had more than one gate.
+
+**A borrowed skill is not a skill you can buy.** A trinket folds a foreign-class
+skill into `classSkills()` so the hotbar and cooldowns treat it as ordinary — but
+its ranks come from the trinket, and the character screen was offering
+"Learn (1 pt)" on ToneTum's borrowed Dragon Kick, selling a point for nothing. It
+now reads "Worn, not trained".
+
+**The hotbar wraps at seven.** ToneTum at level 9 carries eight or nine buttons and
+the row ran off a phone. Past six it takes a second row, with the container width
+capped at `ceil(n/2)` slots — flex-wrap left to itself fills the first row and drops
+the remainder, which came out 7 and 1 rather than 4 and 4.
