@@ -3554,3 +3554,57 @@ The enchant level **multiplies** (`× (1 + 0.25 × plus)`) rather than adding. A
 it swamped rarity at low tiers: a +2 white dagger fetched 8 gold against a +0
 green's 4, so the price stopped reading as quality, which is the one thing it is
 for. Multiplied, the ladder holds at every tier and a +3 blue sword goes 8g → 14g.
+
+## "The updates aren't live" — the game now checks
+
+Chadwick turned up holding a Shitty sword two builds after the Shitty sword was
+deleted from the game. `main` was correct, Pages had deployed the right commit,
+and the sword did not exist in any file on the server. The stale content was
+entirely on the player's device, and nothing on screen said so.
+
+There are exactly two ways that happens, and **neither is fixed by reloading**:
+
+1. **A Playtest draft in `localStorage`.** The editor's Playtest button stashes a
+   whole `data.js` under `cantori_data_override`, and the game prefers it. That
+   key is not the HTTP cache, so a hard refresh does not touch it. One Playtest
+   click months ago outranks every build shipped since, forever.
+2. **A cached `index.html`.** Bumping `?v=` works because the *page* names the new
+   URLs — but if the page itself comes out of cache, it names the **old** ones, and
+   `game.js`, `data.js` and `loot.js` all come back stale together. The cache
+   buster cannot bust the file that carries it.
+
+The editor has named its own source in the header since the `?v=75` incident. The
+game only had a small green ⚙ DRAFT badge, and **a badge you have to already know
+to look for is not a diagnostic** — it is a reminder for someone who has been told.
+
+So the game now asks the server directly. On boot it re-fetches `data.js` with
+`cache: "no-store"` and compares it, key-order-independent, against what it is
+actually playing with:
+
+| what it finds | what it does |
+|---|---|
+| no draft, server agrees | nothing — this is the normal path |
+| draft, saved under an hour ago | badge only — you are mid-Playtest, that is the workflow |
+| draft, saved under an hour ago but identical to `data.js` | badge only — nothing is being hidden |
+| draft, old **and** disagreeing with `data.js` | a bar: *"You are playing an editor draft saved 45 days ago"* → **Use the live game** |
+| no draft, server disagrees | a bar: *"Your browser is running an old copy of the game"* → **Load the current build** |
+
+The one-hour cutoff is what separates the two drafts: a draft from a minute ago is
+the Playtest flow working, and a draft from last month is the footgun. Age is the
+only thing that tells them apart, which is why the editor writes
+`cantori_data_override_at` alongside the draft.
+
+Both buttons navigate to `index.html?fresh=<now>` rather than calling
+`location.reload()`. A reload re-*requests* the page and the browser may answer it
+out of cache — which is the exact failure being fixed. A query string the cache has
+never seen has no cached answer, so it has to reach the network, and the fresh page
+then names `?v=` URLs that are themselves new.
+
+The badge also now carries the draft's age (`⚙ DRAFT · 45 days ago`), because "a
+draft is active" and "a draft from before the last eight releases is active" are
+very different sentences.
+
+`window.cantori.dataSource()` reports `{draft, savedAt, checked, stale}`, and
+`smoke.js` asserts a clean boot comes back `stale: null`. That check is guarding
+against false positives rather than false negatives: a warning that fires when
+nothing is wrong teaches the player to dismiss the one that matters.

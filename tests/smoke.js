@@ -132,6 +132,20 @@ async function main() {
   });
   check(undeclared.length === 0, `tile constant(s) with no TILE row: ${undeclared.join(", ")}`);
 
+  // C2: a clean boot must agree with the data.js the server actually serves.
+  // The game re-fetches data.js with cache:"no-store" and raises a bar if the
+  // two differ, because a stale Playtest draft or a cached index.html can leave
+  // a player weeks behind a shipped build with nothing on screen to say so.
+  // Here there is neither, so the bar must stay away — a failure means the
+  // comparison itself has started crying wolf, which would train the user to
+  // ignore the one warning that matters.
+  await page.waitForFunction(() => window.cantori.dataSource().checked, null, { timeout: 15000 })
+    .catch(() => {});
+  const src = await page.evaluate(() => window.cantori.dataSource());
+  check(src.checked === true, "the data freshness check never ran on a clean boot");
+  check(src.stale === null, `clean boot reported stale content (${src.stale})`);
+  check(src.draft === false, "clean boot thinks it is running an editor draft");
+
   for (let d = 1; d <= DEPTHS; d++) {
     const state = await page.evaluate(() => window.cantori.peek());
 
