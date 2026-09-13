@@ -426,6 +426,10 @@
   // The admin editor (editor.html) can stash a draft in localStorage to playtest
   // changes before they're committed; use it if present and structurally sane.
   let usingDraft = false;
+  // What the freshness check found (see "Am I actually playing the current
+  // build?" near the bottom) — surfaced on window.cantori so a probe can assert
+  // it, because the failure mode is invisible from inside the game otherwise.
+  const staleState = { checked: false, stale: null };
   const DATA = (() => {
     try {
       const raw = localStorage.getItem("cantori_data_override");
@@ -10034,7 +10038,112 @@
     wallState: () => activeWalls.map((w) => Object.assign({}, w)),
     pullState: () => (pullZone ? Object.assign({}, pullZone) : null),
     secondChanceUsed: () => player.secondChanceUsed,
+    dataSource: () => ({ draft: usingDraft, savedAt: draftSavedAt(), checked: staleState.checked, stale: staleState.stale }),
+    recheckData: () => verifyFresh(),
   };
+
+  // ---- "Am I actually playing the current build?" -------------------------
+  // Two entirely separate things can hand a phone months-old content, and
+  // NEITHER of them is fixed by reloading — which is the whole reason this
+  // check has to exist:
+  //   1. a Playtest draft in localStorage outranks data.js, and localStorage is
+  //      not the HTTP cache, so a hard refresh leaves it exactly where it was;
+  //   2. index.html itself can come out of the cache, and index.html is the file
+  //      carrying the ?v= for every script — a stale shell asks for the OLD
+  //      version of data.js, game.js and loot.js, so bumping ?v= does nothing.
+  // The editor has named its source in the header for a while. The game only had
+  // a small badge, and a badge you must already know to look for is not a
+  // diagnostic: it cost a round of "the update isn't live" against a build that
+  // had shipped hours earlier. So the game now asks the server what it actually
+  // serves and says, in the player's face, which of the two is happening.
+  const DRAFT_KEY = "cantori_data_override";
+  const DRAFT_AT = "cantori_data_override_at";
+  // A draft you saved a minute ago is the Playtest flow working. A draft you
+  // saved last month is the footgun. Age is what separates them.
+  const DRAFT_STALE_MS = 60 * 60 * 1000;
+
+  const draftSavedAt = () => { try { return Number(localStorage.getItem(DRAFT_AT)) || 0; } catch (e) { return 0; } };
+  function dropDraft() { try { localStorage.removeItem(DRAFT_KEY); localStorage.removeItem(DRAFT_AT); } catch (e) {} }
+
+  function ago(ms) {
+    if (!ms) return "unknown age";
+    const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (mins < 1) return "just now";
+    if (mins < 60) return mins + " min ago";
+    const hrs = Math.round(mins / 60);
+    return hrs < 48 ? hrs + "h ago" : Math.round(hrs / 24) + " days ago";
+  }
+
+  // location.reload() re-requests index.html, but the browser is free to answer
+  // it out of cache — and index.html is the one file whose staleness hides every
+  // other file's. A query string the cache has never seen cannot be answered
+  // locally, so it is the only reload that reliably reaches the network.
+  function reloadFresh() { location.replace("./index.html?fresh=" + Date.now()); }
+
+  // Key order is an artifact of how a file was written, not a difference in what
+  // it says — canonicalise before comparing, or a re-ordered save reads as a
+  // stale build and cries wolf.
+  function canon(v) {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const k of Object.keys(v).sort()) out[k] = canon(v[k]);
+      return out;
+    }
+    return v;
+  }
+  const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+
+  function showStaleBar(html, label, fn) {
+    let bar = document.getElementById("staleBar");
+    if (!bar) { bar = document.createElement("div"); bar.id = "staleBar"; document.body.appendChild(bar); }
+    bar.innerHTML = "";
+    const msg = document.createElement("div");
+    msg.className = "stale-msg"; msg.innerHTML = html;
+    bar.appendChild(msg);
+    const b = document.createElement("button");
+    b.className = "stale-fix"; b.type = "button"; b.textContent = label;
+    b.onclick = fn;
+    bar.appendChild(b);
+    const x = document.createElement("button");
+    x.className = "stale-x"; x.type = "button"; x.textContent = "✕";
+    x.title = "Dismiss (the problem stays)";
+    x.onclick = () => bar.remove();
+    bar.appendChild(x);
+  }
+
+  // Ask the server for data.js again, bypassing the HTTP cache, and compare it to
+  // what this page is actually playing with.
+  async function verifyFresh() {
+    if (!window.fetch || location.protocol === "file:") return;   // no server to ask
+    let live = null;
+    try {
+      const res = await fetch("./data.js?fresh=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) return;
+      const text = await res.text();
+      live = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    } catch (e) { return; }       // offline, or the fetch was blocked — say nothing
+    if (!live || !live.monsters || !live.gear) return;
+    staleState.checked = true;
+    if (usingDraft) {
+      if (same(DATA, live)) return;                                  // the draft says what shipped
+      if (Date.now() - draftSavedAt() < DRAFT_STALE_MS) return;      // you just clicked Playtest
+      staleState.stale = "draft";
+      showStaleBar(
+        "You are playing an <b>editor draft</b> saved " + ago(draftSavedAt()) + " — not the game\'s own content. " +
+        "It is stored in this browser and a reload will not clear it.",
+        "Use the live game", () => { dropDraft(); reloadFresh(); }
+      );
+      return;
+    }
+    if (same(window.CANTORI_DATA, live)) return;                     // we are current
+    staleState.stale = "cache";
+    showStaleBar(
+      "Your browser is running an <b>old copy of the game</b> — the content on the server has moved on. " +
+      "This is the page itself being cached, so an ordinary reload may not fix it.",
+      "Load the current build", reloadFresh
+    );
+  }
 
   // A draft from the editor is in play — show a badge so it's obvious, and let the
   // player tap it to drop back to the live (committed) content.
@@ -10043,9 +10152,9 @@
     const hud = document.getElementById("hud");
     if (!hud) return;
     const b = document.createElement("button");
-    b.id = "draftBadge"; b.type = "button"; b.textContent = "⚙ DRAFT";
+    b.id = "draftBadge"; b.type = "button"; b.textContent = "⚙ DRAFT · " + ago(draftSavedAt());
     b.title = "Playtesting an editor draft — tap to use the live game data";
-    b.onclick = () => { try { localStorage.removeItem("cantori_data_override"); } catch (e) {} location.reload(); };
+    b.onclick = () => { dropDraft(); reloadFresh(); };
     hud.appendChild(b);
   }
 
@@ -10058,6 +10167,7 @@
   updateHUD();
   updateHotbar();
   showDraftBadge();
+  verifyFresh();
   beginNewRun();       // pick a hero, then the run's first boon — including this very first run
   requestAnimationFrame(frame);
 })();
