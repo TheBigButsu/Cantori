@@ -3608,3 +3608,17 @@ very different sentences.
 `smoke.js` asserts a clean boot comes back `stale: null`. That check is guarding
 against false positives rather than false negatives: a warning that fires when
 nothing is wrong teaches the player to dismiss the one that matters.
+
+### The build number, where you can see it
+
+"Which version am I on?" came up three times running against one stale cache, and
+the honest answer needed View Source — which on a phone is no answer at all.
+
+The `?v=` is now read off the game's own `<script>` tag and stamped under the
+hero-select card as `build v163`, plus `· ⚙ draft 45 days ago` when a draft is in
+play. Hero select is the one screen every run passes through, so the number is on
+screen **before** the first decision of the run, rather than after a hero turns up
+holding a weapon that was deleted two builds ago.
+
+It is deliberately not a warning — the bar above does warnings. This is just the
+number, small and grey, for the times you want to check rather than be told.

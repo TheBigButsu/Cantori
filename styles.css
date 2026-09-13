@@ -145,6 +145,18 @@ body{
 @media (prefers-reduced-motion: reduce){ #banner .banner-in{animation:bannerFade 1.9s linear forwards} }
 @keyframes bannerFade{0%{opacity:0}12%{opacity:1}75%{opacity:1}100%{opacity:0}}
 
+/* The build number, on the one screen every run passes through. "Which version
+   am I on?" came up three times in a row over a stale cache, and on a phone the
+   honest answer needed View Source. Now it is a glance. */
+.build-tag{
+  margin-top:12px;
+  text-align:center;
+  font-family:var(--mono);
+  font-size:9px;letter-spacing:.1em;
+  color:#6b6055;
+}
+.build-tag .bt-draft{color:#7ec98a;font-weight:700}
+
 /* "You are not playing the build you think you are." Two causes, one bar: a
    stale Playtest draft in localStorage, or a cached index.html. Both are
    invisible from inside the game, so the bar sits over everything and carries

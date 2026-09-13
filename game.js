@@ -10038,6 +10038,7 @@
     wallState: () => activeWalls.map((w) => Object.assign({}, w)),
     pullState: () => (pullZone ? Object.assign({}, pullZone) : null),
     secondChanceUsed: () => player.secondChanceUsed,
+    build: () => BUILD,
     dataSource: () => ({ draft: usingDraft, savedAt: draftSavedAt(), checked: staleState.checked, stale: staleState.stale }),
     recheckData: () => verifyFresh(),
   };
@@ -10056,6 +10057,17 @@
   // diagnostic: it cost a round of "the update isn't live" against a build that
   // had shipped hours earlier. So the game now asks the server what it actually
   // serves and says, in the player's face, which of the two is happening.
+  // The ?v= this page was served with, read off our own <script> tag. It is the
+  // one number that says which build is actually running, and until now it was
+  // only visible in View Source — which on a phone is not visible at all.
+  const BUILD = (() => {
+    try {
+      const tag = document.querySelector('script[src*="game.js"]');
+      const m = tag && /[?&]v=(\d+)/.exec(tag.getAttribute("src") || "");
+      return m ? m[1] : "?";
+    } catch (e) { return "?"; }
+  })();
+
   const DRAFT_KEY = "cantori_data_override";
   const DRAFT_AT = "cantori_data_override_at";
   // A draft you saved a minute ago is the Playtest flow working. A draft you
@@ -10145,6 +10157,22 @@
     );
   }
 
+  // Every run starts on the hero-select card, so that is where the build number
+  // goes: no menu to find, no console, and it is on screen before the first
+  // decision of the run rather than after a hero turns up with the wrong sword.
+  function showBuildTag() {
+    const el = document.getElementById("buildTag");
+    if (!el) return;
+    el.innerHTML = "";
+    el.appendChild(document.createTextNode("build v" + BUILD));
+    if (usingDraft) {
+      const d = document.createElement("span");
+      d.className = "bt-draft";
+      d.textContent = " · ⚙ draft " + ago(draftSavedAt());
+      el.appendChild(d);
+    }
+  }
+
   // A draft from the editor is in play — show a badge so it's obvious, and let the
   // player tap it to drop back to the live (committed) content.
   function showDraftBadge() {
@@ -10167,6 +10195,7 @@
   updateHUD();
   updateHotbar();
   showDraftBadge();
+  showBuildTag();
   verifyFresh();
   beginNewRun();       // pick a hero, then the run's first boon — including this very first run
   requestAnimationFrame(frame);
