@@ -178,6 +178,32 @@ async function main() {
   check(idGains.worn.length >= 5, `only ${idGains.worn.length} slots could be filled for the identification check`);
   check(idGains.stuck.length === 0, `worn slot(s) gained no identification XP: ${idGains.stuck.join(", ")}`);
 
+  // C4: identification costs loot.identifyXp x the item's TIER, and nothing else.
+  // Rarity and drop depth must not enter into it — they used to, and a price the
+  // player cannot read is the reason the progress bar stopped meaning anything.
+  const idCost = await page.evaluate(() => {
+    const c = window.cantori, D = window.CANTORI_DATA;
+    const unit = D.loot.identifyXp != null ? D.loot.identifyXp : 20;
+    const bad = [];
+    for (const k of Object.keys(D.gear)) {
+      if (D.gear[k].noDrop) continue;
+      const tier = D.gear[k].tier || 1;
+      for (let t = 0; t < 12; t++) {
+        const before = c.peek().invItems.filter((x) => x.key === k).length;
+        c.give(k);
+        const mine = c.peek().invItems.filter((x) => x.key === k);
+        if (mine.length <= before) break;        // 25-slot inventory is full; stop, do not read a stale entry
+        const it = mine[mine.length - 1];
+        if (it.identified === false && it.idNeed !== unit * tier) {
+          bad.push(`${k} (tier ${tier}, ${it.rarity}): idNeed ${it.idNeed}, expected ${unit * tier}`);
+          break;
+        }
+      }
+    }
+    return bad;
+  });
+  check(idCost.length === 0, `identification cost is not identifyXp x tier: ${idCost.slice(0, 3).join("; ")}`);
+
   for (let d = 1; d <= DEPTHS; d++) {
     const state = await page.evaluate(() => window.cantori.peek());
 
