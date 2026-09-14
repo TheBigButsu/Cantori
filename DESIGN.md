@@ -3674,10 +3674,53 @@ Measured XP for a full clear in this build:
 So 20 costs about 2.9 floors at depth 1, 1.8 at depth 3, **1.0 at depth 6**, 0.6 at
 depth 9 and 0.3 at depth 12.
 
-**The honest trade:** flat means the cost is real early and nearly free late —
-deep in, a drop identifies inside a third of a floor, and a boss floor identifies
-everything you own the moment it pays out. Depth-scaling is what used to prevent
-that, and it is the thing that made the bar unreadable. Early game is where this
-mechanic is actually played, so it is the right end to optimise; if late-game
-identification should stay a real cost, the lever is `identifyXp` in the editor's
-Loot tab, and reinstating a depth term is a one-line change in `loot.js`.
+### ...per tier
+
+Pure flat had one real cost: it decayed to nothing. Once floors started paying 60
+XP a clear, a 20-XP item resolved in a third of a floor and identification stopped
+being a mechanic at all. Depth-scaling used to prevent that, and depth-scaling is
+exactly what made the bar unreadable.
+
+**Tier is the honest version of what depth-scaling was reaching for.** Drop depth
+is invisible once an item is in your hands — the floor it came from is not written
+on it — but tier is the item's own rank, it is printed on the card, and because
+`tierBands` gates tier by floor it tracks depth anyway. Same intent, legible rule:
+
+```
+idNeed = loot.identifyXp x tier        // 20 x tier
+```
+
+| tier | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| XP to learn | 20 | 40 | 60 | 80 | 100 |
+
+Verified at depths 1/5/9/13/18/22: the ladder is identical at every one, and
+dividing by tier gives exactly 20 for white, green and blue alike — rarity and
+depth are genuinely out of it.
+
+Against the tiers that actually drop at each band, and the measured floor yields:
+
+| depth | floor XP | tiers dropping | cost | floors to learn |
+|---|---|---|---|---|
+| 1 | 7 | 1 | 20 | 2.9 |
+| 3 | 11 | 1 | 20 | 1.8 |
+| 6 | 21 | 1 / 2 | 20 / 40 | 1.0 / 1.9 |
+| 9 | 31 | 1 / 2 | 20 / 40 | 0.6 / 1.3 |
+| 12 | 60 | 1 / 2 / 3 | 20 / 40 / 60 | 0.3 / 0.7 / 1.0 |
+| 18 | 63 | 1 / 2 / 3 | 20 / 40 / 60 | 0.3 / 0.6 / 1.0 |
+
+The best thing you can find on a floor now costs about a floor to learn, the whole
+way down — which is what the depth formula was for, reached without a hidden term.
+The cheap thing resolving fast is correct: a tier-1 ring on floor 12 is not a
+mystery worth a floor of your time.
+
+`smoke.js` asserts `idNeed === identifyXp × tier` for every droppable gear row.
+Deleting the `× idTier` makes it fail naming `dirk (tier 2)`, `stiletto (tier 3)`
+and `fang_of_the_hollow (tier 4)`.
+
+**One thing this exposed:** `tierBands` weights are three-wide, so `pickTier` can
+only ever return 1, 2 or 3. Tiers 4 and 5 exist in `data.js`, are fully authored,
+and never drop from the floor — only boss trinkets reach them, and those are
+picked by key rather than by tier. So the 80 and 100 columns above are real but
+currently only reachable from a boss. Left alone: it is a loot-table question, not
+an identification one.

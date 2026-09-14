@@ -85,7 +85,7 @@ To find a symbol without reading anything, use Grep — `function name`,
 | File | ~tokens | Read whole? |
 |---|---:|---|
 | `data.js` | 25.6k | prefer Grep |
-| `loot.js` | 3.5k | yes |
+| `loot.js` | 3.6k | yes |
 | `index.html` | 2.0k | yes |
 | `styles.css` | 7.3k | yes |
 | `CLAUDE.md` | 2.2k | yes |
