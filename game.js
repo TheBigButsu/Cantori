@@ -5548,10 +5548,13 @@
   // carry is now paid for by the same thing everything else is: getting better.
   function idFromXP(amount) {
     if (amount <= 0) return;
-    for (const slot of ["weapon", "armor", "ring", "necklace", "trinket"]) {
-      const it = player[slot];
-      if (it && !it.identified) gainIdentify(it, amount);
-    }
+    // wornItems() and not a hand-written slot list. The first version of this
+    // spelled the slots out and wrote "ring" — but there is no player.ring, there
+    // is ring1 and ring2, so both of them silently sat at 0% for the whole run
+    // while every other slot learned normally. ALL_SLOTS is the one definition of
+    // "what you are wearing"; anything that needs that list must ask for it, or
+    // the next slot added gets forgotten exactly the same way.
+    for (const it of wornItems()) if (!it.identified) gainIdentify(it, amount);
   }
   function gainIdentify(it, amount) {
     if (!it || it.identified) return;
@@ -9807,7 +9810,6 @@
         cls: player.cls, stats: Object.assign({}, player.stats), statPoints: player.statPoints,
         boons: player.boons ? [...player.boons] : [], boonPending, classPending,
         atk: playerAtk(), atkBonus: player.atkBonus, gold: player.gold, weapon: player.weapon, armor: player.armor,
-        ring: player.ring, necklace: player.necklace, trinket: player.trinket,
         ring1: player.ring1, ring2: player.ring2, trinket: player.trinket, necklace: player.necklace,
         effStats: { STR: eff("STR"), INT: eff("INT"), VIT: eff("VIT"), DEX: eff("DEX"), RES: eff("RES"), LCK: eff("LCK") },
         weaponDmg: [weaponDmgMin(), weaponDmgMax()], weaponToHit: weaponToHit(), weaponSpeed: weaponSpeed(), armorDef: [armorDefMin(), armorDefMax()],

@@ -146,6 +146,38 @@ async function main() {
   check(src.stale === null, `clean boot reported stale content (${src.stale})`);
   check(src.draft === false, "clean boot thinks it is running an editor draft");
 
+  // C3: EVERY worn slot must gain identification progress from XP. This shipped
+  // broken: idFromXP walked a hand-written slot list containing "ring", but the
+  // player has ring1 and ring2 and no ring, so both rings sat at 0% for an entire
+  // run while every other slot learned normally. The list is wornItems() now, and
+  // this asserts the property rather than the spelling — add a seventh slot and
+  // it is covered automatically.
+  const idGains = await page.evaluate(() => {
+    const c = window.cantori, D = window.CANTORI_DATA;
+    const first = (cat) => Object.keys(D.gear).find((k) => D.gear[k].cat === cat && !D.gear[k].noDrop);
+    // Roll until an unidentified one turns up — an all-plain roll is born known.
+    for (const cat of ["weapon", "armor", "ring", "ring", "necklace", "trinket"]) {
+      const k = first(cat);
+      if (!k) continue;
+      for (let t = 0; t < 80; t++) {
+        c.give(k);
+        const inv = c.peek().invItems, i = inv.length - 1;
+        if (inv[i] && inv[i].identified === false) { c.equip(i); break; }
+      }
+    }
+    const slots = ["weapon", "armor", "ring1", "ring2", "trinket", "necklace"];
+    const read = () => { const st = c.peek(), o = {}; for (const sl of slots) if (st[sl]) o[sl] = st[sl].idXp || 0; return o; };
+    const before = read();
+    c.addXp(3);
+    const after = read();
+    const worn = Object.keys(after);
+    const stuck = worn.filter((sl) => after[sl] - (before[sl] || 0) !== 3);
+    for (const sl of slots) c.unequip(sl);      // leave the run as we found it
+    return { worn, stuck };
+  });
+  check(idGains.worn.length >= 5, `only ${idGains.worn.length} slots could be filled for the identification check`);
+  check(idGains.stuck.length === 0, `worn slot(s) gained no identification XP: ${idGains.stuck.join(", ")}`);
+
   for (let d = 1; d <= DEPTHS; d++) {
     const state = await page.evaluate(() => window.cantori.peek());
 

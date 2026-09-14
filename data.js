@@ -1043,6 +1043,7 @@ window.CANTORI_DATA = {
       "LCK"
     ],
     "purpleSecondStatChance": 0.75,
+    "identifyXp": 20,
     "dropWeights": {
       "gold": 14,
       "gear": 60,
