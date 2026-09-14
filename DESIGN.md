@@ -3622,3 +3622,62 @@ holding a weapon that was deleted two builds ago.
 
 It is deliberately not a warning — the bar above does warnings. This is just the
 number, small and grey, for the times you want to check rather than be told.
+
+## Rings never identified, and the price is flat now
+
+### The bug
+
+Rings sat at 0% forever. Everything else learned normally.
+
+`idFromXP` walked a hand-written list of slots — `["weapon", "armor", "ring",
+"necklace", "trinket"]` — and **there is no `player.ring`**. Rings live in `ring1`
+and `ring2`. Four of the five names were right, so four slots worked and the bug
+looked like a tuning problem rather than a typo.
+
+`ALL_SLOTS` and `wornItems()` already existed, five lines from the player object,
+and are the single definition of what you are wearing. The fix is to ask for that
+list instead of writing a new one:
+
+```js
+for (const it of wornItems()) if (!it.identified) gainIdentify(it, amount);
+```
+
+`peek()` was reporting a `ring` field too, which had also never held anything.
+Gone.
+
+`smoke.js` now equips every slot, grants 3 XP and asserts all six advanced by 3.
+It tests the property rather than the spelling, so a seventh slot is covered the
+day it is added. Reintroducing the old line makes it fail with
+`worn slot(s) gained no identification XP: ring1, ring2` — which is the whole
+point of a regression test.
+
+### Flat is the readable price
+
+Identification used to cost `(5 + 4 × drop depth) × {white .5, green .7, blue 1,
+purple 1.4, gold 1.8}`. Defensible on paper — a floor's worth of XP, more for a
+richer item — and unreadable in play: two rings picked up on two floors filled at
+different speeds for reasons nothing on screen explained, so the percentage
+stopped carrying information.
+
+It is one flat number now, `loot.identifyXp`, default **20**, the same for a white
+ring on floor 1 and a gold blade on floor 14. Every point of XP advances every
+unidentified thing you are wearing by one point. That is the entire rule, and it
+is a pace you can learn: you know what a floor is worth, so you know how long
+anything takes.
+
+Measured XP for a full clear in this build:
+
+| depth | 1 | 3 | 6 | 9 | 12 | boss 5 / 10 / 15 |
+|---|---|---|---|---|---|---|
+| XP | 7 | 11 | 21 | 31 | 60 | 75 / 175 / 375 |
+
+So 20 costs about 2.9 floors at depth 1, 1.8 at depth 3, **1.0 at depth 6**, 0.6 at
+depth 9 and 0.3 at depth 12.
+
+**The honest trade:** flat means the cost is real early and nearly free late —
+deep in, a drop identifies inside a third of a floor, and a boss floor identifies
+everything you own the moment it pays out. Depth-scaling is what used to prevent
+that, and it is the thing that made the bar unreadable. Early game is where this
+mechanic is actually played, so it is the right end to optimise; if late-game
+identification should stay a real cost, the lever is `identifyXp` in the editor's
+Loot tab, and reinstating a depth term is a one-line change in `loot.js`.

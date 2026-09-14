@@ -115,21 +115,23 @@ window.CantoriLoot = function (deps) {
     if (JEWELRY[base.cat] && stats.length === 0 && enchants.length === 0) {
       if (ekeys.length && Math.random() < 0.5) addEnchant(); else addStat();
     }
-    // Identification is paid for in EXPERIENCE (see gainXP), so the target is set
-    // in the same currency: roughly one floor's worth of it, scaled by how much
-    // there is to learn.
+    // Identification is paid for in EXPERIENCE (see gainXP) and the price is FLAT:
+    // one number, the same for a white ring on floor 1 and a gold blade on floor
+    // 14. Every point of XP the player earns moves every unidentified thing they
+    // are wearing one point closer, and that is the whole rule.
     //
-    // A floor's XP yield, measured on a full clear, is about 4 x depth + 5 — 7 at
-    // depth 1, 29 at depth 9, 62 at depth 14. It is the DROP DEPTH that matters
-    // rather than the item's tier: a tier-1 ring found on floor 10 should still
-    // take a floor-10 floor to learn, because that is the time it is competing with.
+    // It used to scale by drop depth and rarity, which was defensible on paper —
+    // "a floor's worth of XP, more for a richer item" — and unreadable in play.
+    // Two rings found on two floors filled at different speeds for reasons the
+    // player could not see, so the bar stopped meaning anything. A flat cost is a
+    // pace you can learn: you know what a floor is worth, so you know how long
+    // anything takes.
     //
-    // The old formula keyed off (tier + plus) x a random 1..10 and was calibrated
-    // for "a use" meaning one swing — which made an ordinary blue resolve inside a
-    // single fight once identification moved onto XP.
-    const floorXP = 5 + 4 * Math.max(1, floor);
-    const ID_FLOORS = { white: 0.5, green: 0.7, blue: 1.0, purple: 1.4, gold: 1.8 };
-    const idNeed = Math.max(1, Math.round(floorXP * (ID_FLOORS[rarity] != null ? ID_FLOORS[rarity] : 1)));
+    // Measured XP for a full clear, this build: 7 at depth 1, 11 at 3, 21 at 6,
+    // 31 at 9, 60 at 12 — plus 75/175/375 on the boss floors at 5/10/15. So the
+    // flat cost is about a floor through the early game, where it is a real wait,
+    // and less than a floor deep in, where the player has earned the shortcut.
+    const idNeed = Math.max(1, Math.round(LOOT.identifyXp != null ? LOOT.identifyXp : 20));
     const nothingHidden = plus === 0 && stats.length === 0 && enchants.length === 0 && !grant;
     const inst = { key, rarity, plus, stats, enchants, idNeed, idXp: 0, identified: nothingHidden };
     if (grant) inst.grant = grant;
